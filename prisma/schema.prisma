@@ -1,0 +1,322 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  admin
+  tester
+  reviewer
+  manager
+}
+
+enum ProjectStatus {
+  active
+  archived
+}
+
+enum SprintStatus {
+  planned
+  active
+  completed
+}
+
+enum IssueType {
+  epic
+  story
+  task
+  bug
+  test_case
+  test_plan
+  test_run
+}
+
+enum IssueStatus {
+  backlog
+  todo
+  in_progress
+  blocked
+  in_review
+  done
+}
+
+enum Priority {
+  highest
+  high
+  medium
+  low
+}
+
+enum SourceType {
+  manual
+  jira
+  prd
+  api_spec
+  user_story
+  changelog
+}
+
+enum GenerationMode {
+  functional
+  negative
+  edge
+  ui
+  api
+  regression
+}
+
+enum CoverageDepth {
+  basic
+  standard
+  thorough
+}
+
+enum Persona {
+  all
+  admin
+  guest
+  first_time_user
+  returning_user
+  blocked_user
+}
+
+enum SignoffStatus {
+  draft
+  in_review
+  approved
+  changes_requested
+}
+
+enum TestCaseType {
+  functional
+  regression
+  api
+  ui
+  negative
+  edge
+}
+
+enum TestCaseStatus {
+  draft
+  ready
+  review
+  approved
+  obsolete
+}
+
+model User {
+  id                  String        @id @default(cuid())
+  name                String
+  email               String        @unique
+  avatarUrl           String?
+  role                UserRole
+  isActive            Boolean       @default(true)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  ownedProjects       Project[]     @relation("ProjectOwner")
+  ledProjects         Project[]     @relation("ProjectLead")
+  teamMemberships     TeamMember[]
+  createdRequirements Requirement[] @relation("RequirementCreator")
+  testCases           TestCase[]    @relation("TestCaseOwner")
+  reportedIssues      Issue[]       @relation("IssueReporter")
+  assignedIssues      Issue[]       @relation("IssueAssignee")
+  comments            Comment[]
+}
+
+model Team {
+  id        String       @id @default(cuid())
+  name      String
+  key       String       @unique
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  members   TeamMember[]
+  projects  Project[]
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  role      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+}
+
+model Project {
+  id              String          @id @default(cuid())
+  key             String?         @unique
+  name            String
+  description     String?
+  status          ProjectStatus   @default(active)
+  input           String          @default("")
+  generationMode  GenerationMode  @default(functional)
+  coverageDepth   CoverageDepth   @default(standard)
+  persona         Persona         @default(all)
+  autosaveEnabled Boolean         @default(true)
+  reviewerName    String          @default("")
+  reviewerNotes   String          @default("")
+  signoffStatus   SignoffStatus   @default(draft)
+  rows            Json            @default("[]")
+  sourceArtifacts Json            @default("[]")
+  auditTrail      Json            @default("[]")
+  ownerId         String?
+  teamId          String?
+  leadUserId      String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  owner           User?           @relation("ProjectOwner", fields: [ownerId], references: [id])
+  team            Team?           @relation(fields: [teamId], references: [id])
+  lead            User?           @relation("ProjectLead", fields: [leadUserId], references: [id])
+  changeComparisons ChangeComparison[]
+  requirements    Requirement[]
+  testCases       TestCase[]
+  sprints         Sprint[]
+  issues          Issue[]
+}
+
+model Sprint {
+  id        String       @id @default(cuid())
+  projectId String
+  name      String
+  goal      String?
+  startDate DateTime?
+  endDate   DateTime?
+  status    SprintStatus @default(planned)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues    Issue[]
+}
+
+model Issue {
+  id            String      @id @default(cuid())
+  projectId      String
+  issueNumber    Int
+  issueKey       String      @unique
+  type           IssueType
+  summary        String
+  description    String?
+  status         IssueStatus @default(backlog)
+  priority       Priority    @default(medium)
+  reporterId     String?
+  assigneeId     String?
+  sprintId       String?
+  parentIssueId  String?
+  dueDate        DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  project        Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reporter       User?       @relation("IssueReporter", fields: [reporterId], references: [id])
+  assignee       User?       @relation("IssueAssignee", fields: [assigneeId], references: [id])
+  sprint         Sprint?     @relation(fields: [sprintId], references: [id])
+  parentIssue    Issue?      @relation("IssueHierarchy", fields: [parentIssueId], references: [id])
+  childIssues    Issue[]     @relation("IssueHierarchy")
+  labels         IssueLabel[]
+  comments       Comment[]
+  testCase       TestCase?
+
+  @@unique([projectId, issueNumber])
+}
+
+model IssueLabel {
+  id        String   @id @default(cuid())
+  issueId   String
+  label     String
+  createdAt DateTime @default(now())
+
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  issueId   String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  action     String
+  actorId    String?
+  beforeJson Json?
+  afterJson  Json?
+  createdAt  DateTime @default(now())
+}
+
+model ChangeComparison {
+  id                       String   @id @default(cuid())
+  projectId                String
+  oldRequirement           String
+  newRequirement           String
+  signature                String?
+  changes                  Json     @default("[]")
+  generatedAt              DateTime?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  project                  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Requirement {
+  id                String      @id @default(cuid())
+  projectId         String
+  title             String
+  sourceType        SourceType  @default(manual)
+  sourceRef         String?
+  rawContent        String
+  normalizedContent String
+  version           Int         @default(1)
+  isActive          Boolean     @default(true)
+  createdById       String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  project           Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy         User?       @relation("RequirementCreator", fields: [createdById], references: [id])
+  testCases         TestCase[]
+}
+
+model TestCase {
+  id             String         @id @default(cuid())
+  projectId      String
+  issueId        String?        @unique
+  requirementId  String?
+  caseKey        String         @unique
+  title          String
+  type           TestCaseType
+  preconditions  String
+  steps          String
+  expectedResult String
+  testData       String?
+  priority       String?
+  status         TestCaseStatus @default(draft)
+  ownerId        String?
+  metadata       Json?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issue          Issue?         @relation(fields: [issueId], references: [id], onDelete: SetNull)
+  requirement    Requirement?   @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+  owner          User?          @relation("TestCaseOwner", fields: [ownerId], references: [id])
+}

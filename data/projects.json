@@ -1,0 +1,146 @@
+[
+  {
+    "id": "3522ad1c-f88f-4cf1-8b68-9723b93083b0",
+    "name": "test",
+    "input": "Acceptance Criteria:\n- Users can reset their password.\n- Only the intended user roles can access this flow, and unauthorized users are redirected or denied safely.\n- Required fields, invalid input, and rejected updates must return clear validation feedback and prevent unsafe submission.\n- If the flow fails, times out, or a dependency is unavailable, the user sees a clear error and no inconsistent data is created.\n- The feature defines supported limits, empty states, and any minimum or maximum conditions that affect the behavior.\n- Behavior stays consistent across relevant account or workflow states, including which actions remain available in each state.\n- Each allowed action has a clear visible result so QA can confirm success without interpreting ambiguous system behavior.\n- Only the intended user roles can access this flow, and unauthorized users are redirected or denied safely.",
+    "rows": [
+      {
+        "id": "TC001",
+        "title": "User resets password successfully",
+        "preconditions": "User exists; Account is active; User has forgotten password",
+        "steps": "Open forgot password page; Enter email; Click send reset link; Enter new password; Confirm new password",
+        "expectedResult": "Password is reset successfully",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"",
+        "type": "Functional"
+      },
+      {
+        "id": "TC002",
+        "title": "Unauthorized users are redirected",
+        "preconditions": "User does not exist; User is inactive",
+        "steps": "Open forgot password page; Attempt to enter email",
+        "expectedResult": "User is redirected to login page",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"; Authorized user: \"admin.user\"; Unauthorized user: \"viewer.user\"",
+        "type": "Functional"
+      },
+      {
+        "id": "TC003",
+        "title": "Required fields return validation feedback",
+        "preconditions": "User exists; Account is active; User has forgotten password",
+        "steps": "Open forgot password page; Leave email blank; Click send reset link",
+        "expectedResult": "Email field is highlighted with error message",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"; Simulated timeout after 30 seconds; Service unavailable / 503 response; Empty value: \"\"; Null value; Valid text input: \"Sample QA Value\"; Special characters: \"@#$%^&*()\"; Very long text input",
+        "type": "Functional"
+      },
+      {
+        "id": "TC004",
+        "title": "Invalid input returns validation feedback",
+        "preconditions": "User exists; Account is active; User has forgotten password",
+        "steps": "Open forgot password page; Enter invalid email; Click send reset link",
+        "expectedResult": "Email field is highlighted with error message",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"; Simulated timeout after 30 seconds; Service unavailable / 503 response; Valid text input: \"Sample QA Value\"; Special characters: \"@#$%^&*()\"; Very long text input",
+        "type": "Functional"
+      },
+      {
+        "id": "TC005",
+        "title": "Rejected updates return validation feedback",
+        "preconditions": "User exists; Account is active; User has forgotten password",
+        "steps": "Open forgot password page; Enter email; Click send reset link; Enter invalid new password; Confirm new password",
+        "expectedResult": "New password field is highlighted with error message",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"; Simulated timeout after 30 seconds; Service unavailable / 503 response; Valid text input: \"Sample QA Value\"; Special characters: \"@#$%^&*()\"; Very long text input",
+        "type": "Functional"
+      },
+      {
+        "id": "TC006",
+        "title": "Error handling displays clear message",
+        "preconditions": "User exists; Account is active; User has forgotten password; Dependency is unavailable",
+        "steps": "Open forgot password page; Enter email; Click send reset link",
+        "expectedResult": "Error message is displayed indicating dependency issue",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"; Simulated timeout after 30 seconds; Service unavailable / 503 response",
+        "type": "Functional"
+      },
+      {
+        "id": "TC007",
+        "title": "Timeout handling displays clear message",
+        "preconditions": "User exists; Account is active; User has forgotten password",
+        "steps": "Open forgot password page; Enter email; Click send reset link; Wait for timeout",
+        "expectedResult": "Error message is displayed indicating timeout",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"; Simulated timeout after 30 seconds; Service unavailable / 503 response",
+        "type": "Functional"
+      },
+      {
+        "id": "TC008",
+        "title": "Supported limits are enforced",
+        "preconditions": "User exists; Account is active; User has forgotten password",
+        "steps": "Open forgot password page; Enter email; Click send reset link; Attempt to enter password exceeding limit",
+        "expectedResult": "Error message is displayed indicating password limit exceeded",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"; Simulated timeout after 30 seconds; Service unavailable / 503 response; Maximum boundary value; Over-limit value",
+        "type": "Functional"
+      },
+      {
+        "id": "TC009",
+        "title": "Empty states are displayed correctly",
+        "preconditions": "User does not exist; User is inactive",
+        "steps": "Open forgot password page",
+        "expectedResult": "Empty state is displayed indicating no users found",
+        "testData": "Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"; Empty value: \"\"; Null value",
+        "type": "Functional"
+      },
+      {
+        "id": "TC010",
+        "title": "Minimum and maximum conditions are enforced",
+        "preconditions": "User exists; Account is active; User has forgotten password",
+        "steps": "Open forgot password page; Enter email; Click send reset link; Attempt to enter password below minimum or above maximum",
+        "expectedResult": "Error message is displayed indicating password length requirements",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"; Simulated timeout after 30 seconds; Service unavailable / 503 response; Minimum boundary value; Maximum boundary value; Over-limit value",
+        "type": "Functional"
+      },
+      {
+        "id": "TC011",
+        "title": "Behavior remains consistent across account states",
+        "preconditions": "User exists; Account is active; User has forgotten password; User has active and inactive accounts",
+        "steps": "Open forgot password page; Enter email; Click send reset link",
+        "expectedResult": "Password reset link is sent successfully",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"",
+        "type": "Functional"
+      },
+      {
+        "id": "TC012",
+        "title": "Clear visible result for allowed actions",
+        "preconditions": "User exists; Account is active; User has forgotten password",
+        "steps": "Open forgot password page; Enter email; Click send reset link; Enter new password; Confirm new password",
+        "expectedResult": "Password is reset successfully with confirmation message",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"",
+        "type": "Functional"
+      },
+      {
+        "id": "TC013",
+        "title": "Only intended user roles can access the flow",
+        "preconditions": "User does not exist; User is inactive; Unauthorized role",
+        "steps": "Open forgot password page; Attempt to enter email",
+        "expectedResult": "User is redirected to login page",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"; Authorized user: \"admin.user\"; Unauthorized user: \"viewer.user\"",
+        "type": "Functional"
+      },
+      {
+        "id": "TC014",
+        "title": "User is redirected safely after accessing unauthorized flow",
+        "preconditions": "User does not exist; User is inactive; Unauthorized role",
+        "steps": "Open forgot password page; Attempt to enter email; Click back button",
+        "expectedResult": "User is redirected to previous page safely",
+        "testData": "Valid email: \"qa.user@example.com\"; Invalid email: \"qa.user@\"; Unregistered email: \"missing.user@example.com\"; Valid password: \"Reset@1234\"; Minimum-length password: \"Ab1!xyz8\"; Empty password: \"\"; Authorized user: \"admin.user\"; Unauthorized user: \"viewer.user\"",
+        "type": "Functional"
+      }
+    ],
+    "generationMode": "functional",
+    "coverageDepth": "standard",
+    "persona": "all",
+    "autosaveEnabled": true,
+    "createdAt": 1774093941079,
+    "updatedAt": 1774807651667,
+    "sourceArtifacts": [],
+    "reviewerName": "",
+    "reviewerNotes": "",
+    "signoffStatus": "draft",
+    "auditTrail": []
+  }
+]
