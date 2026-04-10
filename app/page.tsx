@@ -321,20 +321,20 @@ export default async function HomePage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
                   Recent Projects
                 </p>
-                <h2 className="mt-1 text-xl font-semibold">Continue actual work from project routes</h2>
+                <h2 className="mt-1 text-xl font-semibold">Pick up where you left off</h2>
               </div>
               <Link
                 href="/projects"
                 className="text-sm font-semibold text-emerald-700 transition hover:text-emerald-600 dark:text-emerald-300"
               >
-                View all
+                Open library
               </Link>
             </div>
 
             <div className="mt-5 grid gap-4">
               {featuredProjects.length === 0 ? (
                 <div className="rounded-[24px] border border-dashed border-zinc-200 px-5 py-8 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                  No saved projects yet. Start your first workspace from the new project route.
+                  No saved projects yet. Start with one requirement first, then save the draft as a project when it is useful.
                 </div>
               ) : (
                 featuredProjects.map((project) => (
@@ -370,15 +370,15 @@ export default async function HomePage() {
 
           <div className="rounded-[24px] border border-zinc-200/80 bg-white/96 p-6 shadow-[0_24px_55px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
-              Product Shape
+              Start Here
             </p>
-            <h2 className="mt-1 text-xl font-semibold">Where work lives now</h2>
+            <h2 className="mt-1 text-xl font-semibold">Fastest path to value</h2>
             <div className="mt-5 space-y-3">
               {[
-                "Homepage: dashboard and entry point",
-                "Project library: browse and open workspaces",
-                "Project route: real authoring and management",
-                "Board and sprint planning: next layer to split further",
+                "Paste one requirement into a new workspace.",
+                "Generate the first draft and tighten weak cases inline.",
+                "Save or open a project only after the draft is useful.",
+                "Use project routes for deeper management once the draft is real.",
               ].map((item) => (
                 <div
                   key={item}
@@ -391,7 +391,22 @@ export default async function HomePage() {
           </div>
           </section>
 
-          <section className="rounded-[24px] border border-zinc-200/80 bg-white/96 p-6 shadow-[0_24px_55px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94">
+          <details className="group rounded-[24px] border border-zinc-200/80 bg-white/96 p-6 shadow-[0_24px_55px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94">
+            <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
+                  Portfolio Signals
+                </p>
+                <h2 className="mt-1 text-xl font-semibold">Template activity across saved projects</h2>
+                <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
+                  Useful after the first draft. Keep this collapsed until you need portfolio-level template insight.
+                </p>
+              </div>
+              <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 transition group-open:-translate-y-0.5 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
+                Expand
+              </span>
+            </summary>
+            <div className="mt-5 border-t border-zinc-200/80 pt-5 dark:border-zinc-800">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
@@ -466,10 +481,26 @@ export default async function HomePage() {
                 No template import or export activity has been recorded yet.
               </p>
             )}
-          </section>
+            </div>
+          </details>
 
           {(prioritizedSourceCards.length > 0 || mutedSourceCards.length > 0) ? (
-            <section className="rounded-[24px] border border-zinc-200/80 bg-white/96 p-6 shadow-[0_24px_55px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94">
+            <details className="group rounded-[24px] border border-zinc-200/80 bg-white/96 p-6 shadow-[0_24px_55px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94">
+              <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
+                    Source Governance
+                  </p>
+                  <h2 className="mt-1 text-xl font-semibold">Top prioritized and muted template sources</h2>
+                  <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
+                    Advanced reviewer-governance signals for saved projects.
+                  </p>
+                </div>
+                <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 transition group-open:-translate-y-0.5 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
+                  Expand
+                </span>
+              </summary>
+              <div className="mt-5 border-t border-zinc-200/80 pt-5 dark:border-zinc-800">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
@@ -550,7 +581,8 @@ export default async function HomePage() {
                   </div>
                 </div>
               </div>
-            </section>
+              </div>
+            </details>
           ) : null}
         </div>
       </ResponsiveShell>

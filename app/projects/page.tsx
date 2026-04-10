@@ -908,12 +908,14 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                 Project Library
               </p>
               <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-                Open workspaces from project routes
+                Open a project and keep moving
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-zinc-600 dark:text-zinc-300">
-                This is now the main library for project-based QA work. Choose a saved project
-                to continue managing cases, planning sprints, and using the AI workspace inside
-                the project shell.
+                Open a saved project when you already know what you want to continue. If you are
+                starting from a fresh requirement, the faster path is still a new workspace first.
+              </p>
+              <p className="mt-2 text-xs leading-6 text-zinc-500 dark:text-zinc-400">
+                Primary action: open a project. Filters are optional and help only when the library gets crowded.
               </p>
             </div>
 
@@ -936,7 +938,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
 
         {projectsWithSignals.length === 0 ? (
           <section className="rounded-[30px] border border-dashed border-zinc-200 bg-white/90 px-8 py-10 text-sm text-zinc-500 shadow-sm dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-400">
-            No saved projects yet. Start a new workspace and save it to build out your project library.
+            No saved projects yet. Start with a new workspace, generate a useful draft, and save it once the project is worth keeping.
           </section>
         ) : (
           <>
@@ -944,7 +946,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                    Release Readiness Filters
+                    Release Filters
                   </p>
                   <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
                     Narrow the library by the latest recorded release decision.
@@ -990,7 +992,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                    Risk Signal Filters
+                    Focus Filters
                   </p>
                   <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
                     Focus the library on projects with execution failures or blocked issue load.
@@ -1063,7 +1065,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                    Sort Projects
+                    Sort Order
                   </p>
                   <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
                     Choose whether to scan the most recent work first or triage the riskiest releases first.
@@ -1598,7 +1600,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
 
             {sortedProjects.length === 0 ? (
               <section className="rounded-[30px] border border-dashed border-zinc-200 bg-white/90 px-8 py-10 text-sm text-zinc-500 shadow-sm dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-400">
-                No projects match the current release filter.
+                No projects match the current filters. Clear one or more filters to widen the library view.
               </section>
             ) : (
               <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1638,7 +1640,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                           href={projectRouteHref}
                           className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-700 transition hover:bg-sky-100 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20"
                         >
-                          Open Route
+                          Open Project
                         </Link>
                       </div>
 
