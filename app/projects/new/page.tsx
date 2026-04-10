@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import AppSidebar from "../../../components/AppSidebar";
 import ProjectWorkspace from "../../../components/ProjectWorkspace";
 import ResponsiveShell from "../../../components/ResponsiveShell";
@@ -12,7 +13,15 @@ export default function NewProjectWorkspacePage() {
         mobileSidebar={<AppSidebar />}
         storageKey="caseforge:drawer:new-workspace"
       >
-        <ProjectWorkspace />
+        <Suspense
+          fallback={
+            <div className="rounded-[24px] border border-dashed border-zinc-300 bg-white/80 px-6 py-10 text-sm text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-300">
+              Loading the requirement workspace...
+            </div>
+          }
+        >
+          <ProjectWorkspace />
+        </Suspense>
       </ResponsiveShell>
     </main>
   );
