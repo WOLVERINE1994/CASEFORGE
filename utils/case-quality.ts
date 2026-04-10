@@ -94,6 +94,12 @@ const normalizeText = (content: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+const omitScore = <T extends { score: number }>(value: T): Omit<T, "score"> => {
+  const clone = { ...value };
+  delete (clone as { score?: number }).score;
+  return clone;
+};
+
 const detectScenarioVariant = (row: TestCaseRow) => {
   const content = normalizeText(
     `${row.title} ${row.preconditions} ${row.steps} ${row.expectedResult}`
@@ -286,7 +292,8 @@ export const analyzeCaseQuality = (
 
   pairCandidates
     .sort((left, right) => right.score - left.score)
-    .forEach(({ score: _score, ...candidate }) => {
+    .forEach((candidateWithScore) => {
+      const candidate = omitScore(candidateWithScore);
       if (ignoredFindingIds.includes(candidate.id)) {
         return;
       }

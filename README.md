@@ -85,6 +85,28 @@ Recommended order after schema changes:
 2. run `npm run db:generate`
 3. restart `npm run dev`
 
+## CI Pipeline
+
+GitHub Actions CI is configured in:
+
+- [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)
+
+It runs automatically on every push to `main` and on pull requests, and checks:
+
+1. `npm ci`
+2. `npx prisma generate`
+3. `npm run lint:strict`
+4. `npm run typecheck`
+5. `npm run build`
+
+The workflow uses safe placeholder environment variables for:
+
+- `DATABASE_URL`
+- `DIRECT_URL`
+- `GROQ_API_KEY`
+
+That keeps CI focused on code health and build integrity without requiring live production secrets.
+
 If Prisma reports missing engines or download issues, rerun the command with an active network connection so Prisma can fetch its required binaries.
 
 ## Current Route Shape
