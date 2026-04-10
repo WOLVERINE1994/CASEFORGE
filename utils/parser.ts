@@ -36,7 +36,7 @@ const cleanListField = (
     .split(/\n|;/)
     .flatMap((segment) =>
       segment
-        .split(/(?<!\d)\s+-\s+|(?<!\d)\s+\u2022\s+|(?<!\d)\s+\*\s+|(?<!\d)\s+•\s+/)
+        .split(/(?<!\d)\s+-\s+|(?<!\d)\s+\u2022\s+|(?<!\d)\s+\*\s+|(?<!\d)\s+\u2022\s+/)
         .map((item) => item.trim())
     )
     .map((segment) =>

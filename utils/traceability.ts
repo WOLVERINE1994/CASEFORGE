@@ -223,7 +223,7 @@ export const analyzeTraceability = (
       generationMode:
         generationMode.charAt(0).toUpperCase() +
         generationMode.slice(1) +
-        (persona === "all" ? "" : ` · ${toPersonaLabel(persona)}`),
+        (persona === "all" ? "" : ` | ${toPersonaLabel(persona)}`),
     };
 
     const sentenceCoverage = sentenceCoverageMap.get(bestSentence);

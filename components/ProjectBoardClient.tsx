@@ -407,9 +407,9 @@ export default function ProjectBoardClient({
                 work starts behaving like a real Jira-style project board.
               </p>
               <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-                {(projectMeta?.projectKey || projectKey || "NO-KEY").trim()} ·{" "}
-                {(projectMeta?.sprintName || "No sprint").trim()} ·{" "}
-                {(projectMeta?.releaseName || "No release").trim()} ·{" "}
+                      {(projectMeta?.projectKey || projectKey || "NO-KEY").trim()} |{" "}
+                      {(projectMeta?.sprintName || "No sprint").trim()} |{" "}
+                      {(projectMeta?.releaseName || "No release").trim()} |{" "}
                 {(projectMeta?.teamName || "No team").trim()}
               </p>
             </div>

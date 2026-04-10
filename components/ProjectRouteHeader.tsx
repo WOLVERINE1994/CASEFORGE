@@ -227,7 +227,7 @@ export default function ProjectRouteHeader({
     sprintName.trim() || "No sprint",
     releaseName.trim() || "No release",
     teamName.trim() || "No team",
-  ].join(" · ");
+  ].join(" | ");
   const resolvedCaseCount = metrics?.caseCount ?? caseCount;
   const resolvedIssueCount = metrics?.issueCount ?? issueCount;
   const resolvedReleaseDecision =
@@ -262,18 +262,6 @@ export default function ProjectRouteHeader({
   ).length;
   const unreadTemplateOperationCount = activeReviewerNotifications.filter(
     (notification) => notification.type === "template-operation" && !notification.readAt
-  ).length;
-  const unreadTemplateImportCount = activeReviewerNotifications.filter(
-    (notification) =>
-      notification.type === "template-operation" &&
-      notification.operation === "import" &&
-      !notification.readAt
-  ).length;
-  const unreadTemplateExportCount = activeReviewerNotifications.filter(
-    (notification) =>
-      notification.type === "template-operation" &&
-      notification.operation === "export" &&
-      !notification.readAt
   ).length;
   const unreadHighSeverityTemplateCount = activeReviewerNotifications.filter(
     (notification) =>
@@ -319,6 +307,44 @@ export default function ProjectRouteHeader({
     templateNotificationPreferences.templateAlertHighPrioritySources.length > 0 ||
     templateNotificationPreferences.templateImportHighPrioritySources.length > 0 ||
     templateNotificationPreferences.templateExportHighPrioritySources.length > 0;
+  const reviewerSummaryChips = [
+    {
+      key: "mentions",
+      label: "Mentions",
+      count: unreadMentionCount,
+      href: `${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=case-mention&unread=1`,
+      className:
+        "inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20",
+    },
+    {
+      key: "watched",
+      label: "Watched updates",
+      count: unreadWatchCount,
+      href: `${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=case-watch&unread=1`,
+      className:
+        "inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20",
+    },
+    {
+      key: "template",
+      label: "Template alerts",
+      count: unreadTemplateOperationCount,
+      href: `${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=template-operation&unread=1`,
+      className:
+        "inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20",
+    },
+  ].filter((entry) => entry.count > 0);
+  const reviewerContextNotes = [
+    unreadHighSeverityTemplateCount > 0
+      ? `${unreadHighSeverityTemplateCount} high template alert${
+          unreadHighSeverityTemplateCount === 1 ? "" : "s"
+        }`
+      : null,
+    dominantTemplateSource ? `Top source ${dominantTemplateSource.source}` : null,
+    hasTemplateSourceRules ? "source rules active" : null,
+    affectedCaseCount > 0
+      ? `${affectedCaseCount} case${affectedCaseCount === 1 ? "" : "s"} need attention`
+      : null,
+  ].filter(Boolean) as string[];
 
   return (
     <section className="sticky top-4 z-20 flex flex-col gap-4 rounded-[24px] border border-zinc-200/80 bg-white/94 px-5 py-5 shadow-[0_24px_55px_-38px_rgba(15,23,42,0.26)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94">
@@ -378,7 +404,7 @@ export default function ProjectRouteHeader({
                 href={notificationsHref}
                 className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
               >
-                Reviewer Alerts:{" "}
+                Reviewer inbox:{" "}
                 <span className="ml-1 font-bold">
                   {unreadReviewerNotificationCount} unread
                 </span>
@@ -386,79 +412,43 @@ export default function ProjectRouteHeader({
             ) : null}
           </div>
           {activeReviewerSession.reviewer && activeReviewerNotifications.length > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Link
-                href={`${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}unread=1`}
-                className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
-              >
-                Unread alerts: <span className="ml-1 font-bold">{unreadReviewerNotificationCount}</span>
-              </Link>
-              <Link
-                href={`${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=case-mention&unread=1`}
-                className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
-              >
-                Mentions: <span className="ml-1 font-bold">{unreadMentionCount}</span>
-              </Link>
-              <Link
-                href={`${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=case-watch&unread=1`}
-                className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20"
-              >
-                Watched updates: <span className="ml-1 font-bold">{unreadWatchCount}</span>
-              </Link>
-              <Link
-                href={`${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=template-operation&unread=1`}
-                className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"
-              >
-                Template alerts: <span className="ml-1 font-bold">{unreadTemplateOperationCount}</span>
-              </Link>
-              {unreadTemplateImportCount > 0 ? (
-                <Link
-                  href={`${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=template-operation&unread=1`}
-                  className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-800 transition hover:bg-cyan-100 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-200 dark:hover:bg-cyan-500/20"
-                >
-                  Template imports: <span className="ml-1 font-bold">{unreadTemplateImportCount}</span>
-                </Link>
-              ) : null}
-              {unreadTemplateExportCount > 0 ? (
-                <Link
-                  href={`${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=template-operation&unread=1`}
-                  className="inline-flex items-center rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-1.5 text-xs font-semibold text-fuchsia-800 transition hover:bg-fuchsia-100 dark:border-fuchsia-500/30 dark:bg-fuchsia-500/10 dark:text-fuchsia-200 dark:hover:bg-fuchsia-500/20"
-                >
-                  Template exports: <span className="ml-1 font-bold">{unreadTemplateExportCount}</span>
-                </Link>
-              ) : null}
-              {unreadHighSeverityTemplateCount > 0 ? (
-                <Link
-                  href={`${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=template-operation&severity=high&unread=1`}
-                  className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/20"
-                >
-                  High template alerts: <span className="ml-1 font-bold">{unreadHighSeverityTemplateCount}</span>
-                </Link>
-              ) : null}
-              {dominantTemplateSource ? (
-                <Link
-                  href={`${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=template-operation&source=${encodeURIComponent(
-                    dominantTemplateSource.source
-                  )}&unread=1`}
-                  className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"
-                >
-                  Top source: <span className="ml-1 font-bold">{dominantTemplateSource.source}</span>
-                </Link>
-              ) : null}
-              {hasTemplateSourceRules ? (
-                <Link
-                  href={`${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=template-operation`}
-                  className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
-                >
-                  Source rules active
-                </Link>
-              ) : null}
-              <Link
-                href={`${casesHref}${casesHref.includes("?") ? "&" : "?"}collaboration=attention`}
-                className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"
-              >
-                Cases with attention: <span className="ml-1 font-bold">{affectedCaseCount}</span>
-              </Link>
+            <div className="mt-3 rounded-[18px] border border-zinc-200/80 bg-zinc-50/75 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950/55">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
+                    Reviewer Focus
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-200">
+                    Open the reviewer inbox for the full detail view. The header keeps only the signals you are most likely to check first.
+                  </p>
+                  {reviewerContextNotes.length > 0 ? (
+                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                      {reviewerContextNotes.join(" | ")}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href={`${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}unread=1`}
+                    className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
+                  >
+                    Unread alerts: <span className="ml-1 font-bold">{unreadReviewerNotificationCount}</span>
+                  </Link>
+                  {reviewerSummaryChips.map((entry) => (
+                    <Link key={entry.key} href={entry.href} className={entry.className}>
+                      {entry.label}: <span className="ml-1 font-bold">{entry.count}</span>
+                    </Link>
+                  ))}
+                  {affectedCaseCount > 0 ? (
+                    <Link
+                      href={`${casesHref}${casesHref.includes("?") ? "&" : "?"}collaboration=attention`}
+                      className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"
+                    >
+                      Cases with attention: <span className="ml-1 font-bold">{affectedCaseCount}</span>
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
             </div>
           ) : null}
         </div>
@@ -466,7 +456,7 @@ export default function ProjectRouteHeader({
         {showNavigation ? (
           <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/55">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
-              Route Navigation
+              Quick Links
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
             <Link href={overviewHref} className={linkClassName(pathname === overviewHref)}>

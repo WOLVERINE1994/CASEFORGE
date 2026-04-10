@@ -255,13 +255,13 @@ export default function ProjectManager({
                 </div>
 
                 <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                  {project.generationMode} mode · {project.coverageDepth} coverage ·{" "}
+                    {project.generationMode} mode | {project.coverageDepth} coverage |{" "}
                   {toPersonaLabel(project.persona ?? "all")}
                 </p>
 
                 <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                  {(project.projectKey || "NO-KEY").trim()} ·{" "}
-                  {(project.sprintName || "No sprint").trim()} ·{" "}
+                    {(project.projectKey || "NO-KEY").trim()} |{" "}
+                    {(project.sprintName || "No sprint").trim()} |{" "}
                   {(project.releaseName || "No release").trim()}
                 </p>
 

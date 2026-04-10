@@ -1517,7 +1517,7 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
             </p>
           </div>
           <div className="rounded-[24px] border border-zinc-200/80 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-            {selectedRowIds.length} selected · {visibleSelectedCount} visible
+            {selectedRowIds.length} selected | {visibleSelectedCount} visible
           </div>
         </div>
 

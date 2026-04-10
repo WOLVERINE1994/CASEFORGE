@@ -465,7 +465,7 @@ const buildDefaultRecord = (providerId: string): IntegrationConfigRecord => ({
   updatedAt: nowIso(),
 });
 
-const buildDefaultState = (): AdminIntegrationState => ({
+export const defaultAdminIntegrationState = (): AdminIntegrationState => ({
   integrations: Object.fromEntries(
     integrationProviderCatalog.map((provider) => [
       provider.id,
@@ -486,21 +486,21 @@ const isValidState = (value: unknown): value is AdminIntegrationState =>
 
 export const loadAdminIntegrationState = (): AdminIntegrationState => {
   if (typeof window === "undefined") {
-    return buildDefaultState();
+    return defaultAdminIntegrationState();
   }
 
   try {
     const rawValue = window.localStorage.getItem(STORAGE_KEY);
     if (!rawValue) {
-      return buildDefaultState();
+      return defaultAdminIntegrationState();
     }
 
     const parsed = JSON.parse(rawValue) as unknown;
     if (!isValidState(parsed)) {
-      return buildDefaultState();
+      return defaultAdminIntegrationState();
     }
 
-    const defaultState = buildDefaultState();
+    const defaultState = defaultAdminIntegrationState();
     return {
       integrations: {
         ...defaultState.integrations,
@@ -509,7 +509,7 @@ export const loadAdminIntegrationState = (): AdminIntegrationState => {
       audit: Array.isArray(parsed.audit) ? parsed.audit : [],
     };
   } catch {
-    return buildDefaultState();
+    return defaultAdminIntegrationState();
   }
 };
 
@@ -528,10 +528,10 @@ export const maskCredentialReference = (value?: string) => {
   }
 
   if (trimmed.length <= 6) {
-    return `${trimmed.slice(0, 2)}••`;
+    return `${trimmed.slice(0, 2)}**`;
   }
 
-  return `${trimmed.slice(0, 4)}••••${trimmed.slice(-2)}`;
+  return `${trimmed.slice(0, 4)}****${trimmed.slice(-2)}`;
 };
 
 export const getProviderById = (providerId: string) =>

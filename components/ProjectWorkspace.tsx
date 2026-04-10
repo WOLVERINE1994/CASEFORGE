@@ -4213,7 +4213,7 @@ export default function ProjectWorkspace({
       teamName.trim() || "No team",
     ];
 
-    return parts.join(" Â· ");
+    return parts.join(" | ");
   }, [projectKey, sprintName, releaseName, teamName]);
   const activeProjectRouteRef = useMemo(() => {
     const normalizedKey = projectKey.trim() || currentProjectId || initialProjectRef || "new";
@@ -6250,7 +6250,7 @@ export default function ProjectWorkspace({
               Project Route
             </p>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
-              {(projectName.trim() || "Unsaved workspace").trim()} Â· {planningSummaryText}
+              {(projectName.trim() || "Unsaved workspace").trim()} | {planningSummaryText}
             </p>
           </div>
 
@@ -9116,7 +9116,7 @@ export default function ProjectWorkspace({
                             </span>
                           </div>
                           <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-                            {entry.openNotes} open note{entry.openNotes === 1 ? "" : "s"} Â·{" "}
+                            {entry.openNotes} open note{entry.openNotes === 1 ? "" : "s"} |{" "}
                             {entry.approvedCases} approved
                           </p>
                         </button>
@@ -9627,30 +9627,7 @@ export default function ProjectWorkspace({
                       {selectedRowIds.length} selected
                     </span>
                     <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold dark:border-zinc-700 dark:bg-zinc-950">
-                      {visibleSelectedCount} visible
-                    </span>
-                    <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 transition group-open:-translate-y-0.5 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
-                      Batch Tools
-                    </span>
-                  </div>
-                </summary>
-                <div className="border-t border-zinc-200/80 px-5 py-4 dark:border-zinc-800">
-              <section className="rounded-[24px] border border-zinc-200/0 bg-transparent px-0 py-0 shadow-none">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                      Bulk Actions
-                    </p>
-                    <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                      Select filtered cases and update ownership, workflow, priority, or execution status in one move.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
-                    <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold dark:border-zinc-700 dark:bg-zinc-950">
-                      {selectedRowIds.length} selected
-                    </span>
-                    <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold dark:border-zinc-700 dark:bg-zinc-950">
-                      {visibleSelectedCount} in current filter
+                      {visibleSelectedCount} in current view
                     </span>
                     <button
                       type="button"
@@ -9658,7 +9635,7 @@ export default function ProjectWorkspace({
                       disabled={!hasFilteredRows}
                       className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
                     >
-                      Select Filtered
+                      Select Visible
                     </button>
                     <button
                       type="button"
@@ -9668,9 +9645,13 @@ export default function ProjectWorkspace({
                     >
                       Clear
                     </button>
+                    <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 transition group-open:-translate-y-0.5 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
+                      Batch Tools
+                    </span>
                   </div>
-                </div>
-
+                </summary>
+                <div className="border-t border-zinc-200/80 px-5 py-4 dark:border-zinc-800">
+              <section className="rounded-[24px] border border-zinc-200/0 bg-transparent px-0 py-0 shadow-none">
                 <div className="mt-4 grid gap-3 xl:grid-cols-[1.1fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr_auto]">
                   <input
                     type="text"

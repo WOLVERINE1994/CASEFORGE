@@ -7,6 +7,7 @@ import ResponsiveShell from "./ResponsiveShell";
 import type { UserRecord } from "../services/user-service";
 import {
   capabilityLabels,
+  defaultAdminAccessPolicyState,
   loadAdminAccessPolicyState,
   saveAdminAccessPolicyState,
   type AdminAccessCapability,
@@ -15,6 +16,7 @@ import {
 } from "../utils/admin-access";
 import {
   createAdminAuditEntry,
+  defaultAdminIntegrationState,
   evaluateIntegrationRecord,
   getProviderById,
   integrationProviderCatalog,
@@ -78,28 +80,47 @@ const roleTone: Record<AdminAccessRole, string> = {
 
 export default function AdminSettingsClient() {
   const [adminState, setAdminState] = useState<AdminIntegrationState>(() =>
-    loadAdminIntegrationState()
+    defaultAdminIntegrationState()
   );
-  const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>(() => {
-    const loadedState = loadAdminIntegrationState();
-    return Object.fromEntries(
+  const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>(() =>
+    Object.fromEntries(
       integrationProviderCatalog.map((provider) => [
         provider.id,
-        loadedState.integrations[provider.id]?.values ?? {},
+        {},
       ])
-    );
-  });
+    )
+  );
   const [notice, setNotice] = useState<{
     tone: "info" | "success" | "error";
     text: string;
   } | null>(null);
   const [accessPolicyState, setAccessPolicyState] = useState<AdminAccessPolicyState>(() =>
-    loadAdminAccessPolicyState()
+    defaultAdminAccessPolicyState()
   );
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [userDirectoryState, setUserDirectoryState] = useState<
     "loading" | "ready" | "unavailable"
   >("loading");
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const loadedAdminState = loadAdminIntegrationState();
+      setAdminState(loadedAdminState);
+      setDrafts(
+        Object.fromEntries(
+          integrationProviderCatalog.map((provider) => [
+            provider.id,
+            loadedAdminState.integrations[provider.id]?.values ?? {},
+          ])
+        )
+      );
+      setAccessPolicyState(loadAdminAccessPolicyState());
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

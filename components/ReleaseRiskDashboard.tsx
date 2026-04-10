@@ -169,7 +169,7 @@ function HotspotBar({
             {hotspot.area}
           </p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            {hotspot.totalCases} cases · {hotspot.openIssues} open issues · {hotspot.criticalOpenIssues} critical/high issues
+            {hotspot.totalCases} cases | {hotspot.openIssues} open issues | {hotspot.criticalOpenIssues} critical/high issues
           </p>
         </div>
         <div className="text-right">
@@ -1496,7 +1496,7 @@ export default function ReleaseRiskDashboard({
                     </option>
                     {reviewerOptions.map((user) => (
                       <option key={user.id} value={user.id}>
-                        {user.name} · {user.email}
+                        {user.name} | {user.email}
                       </option>
                     ))}
                   </select>

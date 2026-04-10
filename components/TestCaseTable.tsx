@@ -269,24 +269,54 @@ export default function TestCaseTable({
   return (
     <div className="overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/96 shadow-[0_26px_58px_-40px_rgba(15,23,42,0.24)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94">
       <div className="border-b border-zinc-200/80 bg-zinc-50/85 px-5 py-4 dark:border-zinc-800 dark:bg-zinc-950/72">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
-          Case Review Table
-        </p>
-        <p className="mt-1 text-base font-semibold text-zinc-800 dark:text-zinc-100">
-          Review and edit generated cases
-        </p>
-        <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-          Edit inline, improve weaker drafts, and drag rows using the grip beside the test case ID to set order.
-        </p>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+              Case Review Table
+            </p>
+            <p className="mt-1 text-base font-semibold text-zinc-800 dark:text-zinc-100">
+              Review and tighten the generated draft
+            </p>
+            <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+              Edit inline, improve weaker rows first, and drag rows using the grip beside the test case ID to set order.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+              {rows.length} case{rows.length === 1 ? "" : "s"}
+            </span>
+            {enableSelection ? (
+              <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+                {selectedRowIds.length} selected
+              </span>
+            ) : null}
+            {highlightedRowId ? (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                Focused row
+              </span>
+            ) : null}
+          </div>
+        </div>
         {input.trim() && rows.length > 0 ? (
           <div className="mt-3 rounded-[18px] border border-emerald-200/80 bg-emerald-50/80 px-4 py-3 text-xs text-emerald-900 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-100">
-            <p className="font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">
-              AI Draft Editing Guide
-            </p>
-            <p className="mt-1 leading-5 text-emerald-800/90 dark:text-emerald-100/80">
-              Keep titles scenario-based, keep setup in Preconditions, keep actions in Steps, keep outcomes in Expected Result,
-              and use Test Data for sample inputs that help execution.
-            </p>
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">
+                  Edit Fast
+                </p>
+                <p className="mt-1 leading-5 text-emerald-800/90 dark:text-emerald-100/80">
+                  Keep titles scenario-based, setup in Preconditions, actions in Steps, outcomes in Expected Result, and sample inputs in Test Data.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-[11px] font-semibold text-emerald-700 dark:border-emerald-500/20 dark:bg-zinc-900 dark:text-emerald-300">
+                  Fix weak rows first
+                </span>
+                <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-[11px] font-semibold text-emerald-700 dark:border-emerald-500/20 dark:bg-zinc-900 dark:text-emerald-300">
+                  Hand off when ready
+                </span>
+              </div>
+            </div>
           </div>
         ) : null}
       </div>
@@ -305,7 +335,7 @@ export default function TestCaseTable({
             <col className="w-[300px]" />
             <col className="w-[140px]" />
           </colgroup>
-          <thead className="bg-zinc-50/90 dark:bg-zinc-950/70">
+          <thead className="sticky top-0 z-10 bg-zinc-50/95 dark:bg-zinc-950/90">
             <tr>
               {enableSelection && (
                 <th className="border-b border-zinc-200 px-4 py-3.5 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">

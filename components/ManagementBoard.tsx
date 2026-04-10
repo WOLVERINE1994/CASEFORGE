@@ -102,8 +102,8 @@ export default function ManagementBoard({
               Track ownership, urgency, and progress across your manual cases.
             </p>
             <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-              {(projectKey || "NO-KEY").trim()} · {(sprintName || "No sprint").trim()} ·{" "}
-              {(releaseName || "No release").trim()} · {(teamName || "No team").trim()}
+                    {(projectKey || "NO-KEY").trim()} | {(sprintName || "No sprint").trim()} |{" "}
+              {(releaseName || "No release").trim()} | {(teamName || "No team").trim()}
             </p>
           </div>
 

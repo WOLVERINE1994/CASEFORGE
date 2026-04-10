@@ -22,8 +22,8 @@ const normalizeLines = (content: string) =>
 
 const extractBulletLines = (lines: string[]) =>
   lines
-    .filter((line) => /^[-*•]/.test(line) || /^\d+\./.test(line))
-    .map((line) => line.replace(/^([-*•]\s*|\d+\.\s*)+/, "").trim())
+    .filter((line) => /^[-*\u2022]/.test(line) || /^\d+\./.test(line))
+    .map((line) => line.replace(/^([-*\u2022]\s*|\d+\.\s*)+/, "").trim())
     .filter(Boolean);
 
 const buildNormalizedContent = (type: SourceArtifactType, title: string, content: string) => {

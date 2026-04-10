@@ -141,7 +141,7 @@ export default function TrendChart({
                   {primaryLabel}: {point.value}
                   {valueSuffix}
                   {typeof point.secondaryValue === "number" && secondaryLabel
-                    ? ` · ${secondaryLabel}: ${point.secondaryValue}${valueSuffix}`
+                    ? ` | ${secondaryLabel}: ${point.secondaryValue}${valueSuffix}`
                     : ""}
                 </p>
               </div>

@@ -349,7 +349,7 @@ export default async function HomePage() {
                           {project.name}
                         </p>
                         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                          {(project.projectKey || "NO-KEY").trim()} · {(project.sprintName || "No sprint").trim()} ·{" "}
+                          {(project.projectKey || "NO-KEY").trim()} | {(project.sprintName || "No sprint").trim()} |{" "}
                           {(project.releaseName || "No release").trim()}
                         </p>
                       </div>
@@ -359,7 +359,7 @@ export default async function HomePage() {
                     </div>
 
                     <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">
-                      {(project.teamName || "No team").trim()} ·{" "}
+                      {(project.teamName || "No team").trim()} |{" "}
                       {project.testCaseCount ?? project.rows.length} managed cases
                     </p>
                   </Link>
