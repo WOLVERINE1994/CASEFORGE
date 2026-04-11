@@ -10,6 +10,16 @@ import {
 
 import { prisma } from "./prisma";
 import {
+  AutomationArtifactType,
+  AutomationBinding,
+  AutomationExecution,
+  AutomationExecutionArtifact,
+  AutomationExecutionStatus,
+  AutomationProvider,
+  AutomationScript,
+  AutomationStep,
+  AutomationStepAction,
+  AutomationTargetType,
   normalizeAutomationProvider,
   CasesSavedView,
   CaseReviewHistoryEntry,
@@ -370,6 +380,322 @@ const getStoredRuns = (value: unknown): TestRunRecord[] => {
       } satisfies TestRunRecord;
     })
     .filter((item): item is TestRunRecord => Boolean(item?.id));
+};
+
+const getStoredAutomationScripts = (
+  value: unknown
+): Project["automationScripts"] => {
+  const planning = getProjectPlanning(value);
+  const scripts = planning?.automationScripts;
+
+  if (!Array.isArray(scripts)) {
+    return [];
+  }
+
+  const parsedScripts: AutomationScript[] = [];
+
+  scripts.forEach((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return;
+    }
+
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.id !== "string" ||
+      typeof record.projectId !== "string" ||
+      typeof record.name !== "string"
+    ) {
+      return;
+    }
+
+    const provider =
+      record.provider === "playwright" ||
+      record.provider === "cypress" ||
+      record.provider === "api" ||
+      record.provider === "mobile"
+        ? (record.provider as AutomationProvider)
+        : "playwright";
+
+    parsedScripts.push({
+      id: record.id,
+      projectId: record.projectId,
+      provider,
+      name: record.name,
+      description:
+        typeof record.description === "string" ? record.description : undefined,
+      createdBy:
+        typeof record.createdBy === "string" ? record.createdBy : undefined,
+      createdAt:
+        typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+      updatedAt:
+        typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+    });
+  });
+
+  return parsedScripts;
+};
+
+const getStoredAutomationSteps = (
+  value: unknown
+): Project["automationSteps"] => {
+  const planning = getProjectPlanning(value);
+  const steps = planning?.automationSteps;
+
+  if (!steps || typeof steps !== "object" || Array.isArray(steps)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(steps).map(([scriptId, entries]) => {
+      const parsedSteps: AutomationStep[] = [];
+
+      if (Array.isArray(entries)) {
+        entries.forEach((item) => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) {
+            return;
+          }
+
+          const record = item as Record<string, unknown>;
+          if (
+            typeof record.id !== "string" ||
+            typeof record.scriptId !== "string" ||
+            typeof record.order !== "number" ||
+            typeof record.action !== "string"
+          ) {
+            return;
+          }
+
+          const action = [
+            "goto",
+            "click",
+            "fill",
+            "press",
+            "wait-for",
+            "assert-text",
+            "assert-visible",
+            "assert-url",
+            "assert-value",
+          ].includes(record.action)
+            ? (record.action as AutomationStepAction)
+            : null;
+
+          if (!action) {
+            return;
+          }
+
+          const targetType = [
+            "selector",
+            "url",
+            "endpoint",
+            "text",
+            "value",
+            "key",
+          ].includes(String(record.targetType))
+            ? (record.targetType as AutomationTargetType)
+            : undefined;
+
+          parsedSteps.push({
+            id: record.id,
+            scriptId: record.scriptId,
+            order: record.order,
+            action,
+            targetType,
+            targetValue:
+              typeof record.targetValue === "string" ? record.targetValue : undefined,
+            inputValue:
+              typeof record.inputValue === "string" ? record.inputValue : undefined,
+            assertionType:
+              typeof record.assertionType === "string"
+                ? record.assertionType
+                : undefined,
+            expectedValue:
+              typeof record.expectedValue === "string"
+                ? record.expectedValue
+                : undefined,
+            timeoutMs:
+              typeof record.timeoutMs === "number" ? record.timeoutMs : undefined,
+            metaJson:
+              record.metaJson &&
+              typeof record.metaJson === "object" &&
+              !Array.isArray(record.metaJson)
+                ? (record.metaJson as Record<string, unknown>)
+                : undefined,
+          });
+        });
+      }
+
+      return [scriptId, parsedSteps];
+    })
+  );
+};
+
+const getStoredAutomationBindings = (
+  value: unknown
+): Project["automationBindings"] => {
+  const planning = getProjectPlanning(value);
+  const bindings = planning?.automationBindings;
+
+  if (!Array.isArray(bindings)) {
+    return [];
+  }
+
+  return bindings
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.id !== "string" ||
+        typeof record.testCaseId !== "string" ||
+        typeof record.scriptId !== "string"
+      ) {
+        return null;
+      }
+
+      const mode =
+        record.mode === "manual" ||
+        record.mode === "automated" ||
+        record.mode === "hybrid"
+          ? record.mode
+          : "manual";
+
+      return {
+        id: record.id,
+        testCaseId: record.testCaseId,
+        scriptId: record.scriptId,
+        mode,
+      } satisfies AutomationBinding;
+    })
+    .filter((item): item is AutomationBinding => Boolean(item));
+};
+
+const getStoredAutomationExecutions = (
+  value: unknown
+): Project["automationExecutions"] => {
+  const planning = getProjectPlanning(value);
+  const executions = planning?.automationExecutions;
+
+  if (!Array.isArray(executions)) {
+    return [];
+  }
+
+  const parsedExecutions: AutomationExecution[] = [];
+
+  executions.forEach((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return;
+    }
+
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.id !== "string" ||
+      typeof record.runId !== "string" ||
+      typeof record.caseId !== "string" ||
+      typeof record.scriptId !== "string" ||
+      typeof record.startedAt !== "number"
+    ) {
+      return;
+    }
+
+    const provider =
+      record.provider === "playwright" ||
+      record.provider === "cypress" ||
+      record.provider === "api" ||
+      record.provider === "mobile"
+        ? (record.provider as AutomationProvider)
+        : "playwright";
+
+    const status =
+      record.status === "not-run" ||
+      record.status === "passed" ||
+      record.status === "failed" ||
+      record.status === "blocked"
+        ? (record.status as AutomationExecutionStatus)
+        : "not-run";
+
+    parsedExecutions.push({
+      id: record.id,
+      runId: record.runId,
+      caseId: record.caseId,
+      scriptId: record.scriptId,
+      provider,
+      status,
+      startedAt: record.startedAt,
+      finishedAt:
+        typeof record.finishedAt === "number" ? record.finishedAt : undefined,
+      logSummary:
+        typeof record.logSummary === "string" ? record.logSummary : undefined,
+      failureMessage:
+        typeof record.failureMessage === "string"
+          ? record.failureMessage
+          : undefined,
+      artifactIds: Array.isArray(record.artifactIds)
+        ? record.artifactIds.filter(
+            (artifactId): artifactId is string =>
+              typeof artifactId === "string" && artifactId.trim().length > 0
+          )
+        : [],
+      linkedIssueId:
+        typeof record.linkedIssueId === "string" ? record.linkedIssueId : undefined,
+      linkedIssueKey:
+        typeof record.linkedIssueKey === "string"
+          ? record.linkedIssueKey
+          : undefined,
+    });
+  });
+
+  return parsedExecutions;
+};
+
+const getStoredAutomationArtifacts = (
+  value: unknown
+): Project["automationArtifacts"] => {
+  const planning = getProjectPlanning(value);
+  const artifacts = planning?.automationArtifacts;
+
+  if (!Array.isArray(artifacts)) {
+    return [];
+  }
+
+  const parsedArtifacts: AutomationExecutionArtifact[] = [];
+
+  artifacts.forEach((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return;
+    }
+
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.id !== "string" ||
+      typeof record.executionId !== "string" ||
+      typeof record.path !== "string"
+    ) {
+      return;
+    }
+
+    const type = ["log", "screenshot", "video", "trace"].includes(
+      String(record.type)
+    )
+      ? (record.type as AutomationArtifactType)
+      : "log";
+
+    parsedArtifacts.push({
+      id: record.id,
+      executionId: record.executionId,
+      type,
+      path: record.path,
+      metadataJson:
+        record.metadataJson &&
+        typeof record.metadataJson === "object" &&
+        !Array.isArray(record.metadataJson)
+          ? (record.metadataJson as Record<string, unknown>)
+          : undefined,
+    });
+  });
+
+  return parsedArtifacts;
 };
 
 const getStoredTestDataSets = (value: unknown): Project["testDataSets"] => {
@@ -1316,6 +1642,16 @@ const toWorkspaceRows = (project: ProjectRecord): Project["rows"] => {
         typeof metadata.automationReference === "string"
           ? metadata.automationReference
           : undefined,
+      automationScriptId:
+        typeof metadata.automationScriptId === "string"
+          ? metadata.automationScriptId
+          : undefined,
+      automationBindingMode:
+        metadata.automationBindingMode === "manual" ||
+        metadata.automationBindingMode === "automated" ||
+        metadata.automationBindingMode === "hybrid"
+          ? metadata.automationBindingMode
+          : undefined,
       archived:
         typeof metadata.archived === "boolean" ? metadata.archived : undefined,
       assignee:
@@ -1445,6 +1781,11 @@ const toWorkspaceProject = (project: ProjectRecord): Project => {
     savedViews: getSavedViews(project.rows),
     releaseReview: getReleaseReviewState(project.rows),
     runs: getStoredRuns(project.rows),
+    automationScripts: getStoredAutomationScripts(project.rows),
+    automationSteps: getStoredAutomationSteps(project.rows),
+    automationBindings: getStoredAutomationBindings(project.rows),
+    automationExecutions: getStoredAutomationExecutions(project.rows),
+    automationArtifacts: getStoredAutomationArtifacts(project.rows),
     activeRunId: getActiveRunId(project.rows),
     lastGeneratedChangeImpactSignature: latestChangeComparison?.signature ?? null,
     latestChangeEntries: Array.isArray(latestChangeComparison?.changes)
@@ -1500,6 +1841,22 @@ const normalizeProject = (project: Project): Project => ({
     snapshots: [],
   },
   runs: Array.isArray(project.runs) ? project.runs : [],
+  automationScripts: Array.isArray(project.automationScripts)
+    ? project.automationScripts
+    : [],
+  automationSteps:
+    project.automationSteps && typeof project.automationSteps === "object"
+      ? project.automationSteps
+      : {},
+  automationBindings: Array.isArray(project.automationBindings)
+    ? project.automationBindings
+    : [],
+  automationExecutions: Array.isArray(project.automationExecutions)
+    ? project.automationExecutions
+    : [],
+  automationArtifacts: Array.isArray(project.automationArtifacts)
+    ? project.automationArtifacts
+    : [],
   activeRunId: project.activeRunId ?? "",
   lastGeneratedChangeImpactSignature:
     project.lastGeneratedChangeImpactSignature ?? null,
@@ -1593,6 +1950,8 @@ export const writeProjects = async (projects: Project[]) => {
         automationStatus: row.automationStatus,
         automationProvider: row.automationProvider,
         automationReference: row.automationReference,
+        automationScriptId: row.automationScriptId,
+        automationBindingMode: row.automationBindingMode,
         archived: row.archived,
         assignee: row.assignee,
         labels: row.labels,
@@ -1698,6 +2057,11 @@ export const writeProjects = async (projects: Project[]) => {
                     snapshots: [],
                   },
                   runs: project.runs ?? [],
+                  automationScripts: project.automationScripts ?? [],
+                  automationSteps: project.automationSteps ?? {},
+                  automationBindings: project.automationBindings ?? [],
+                  automationExecutions: project.automationExecutions ?? [],
+                  automationArtifacts: project.automationArtifacts ?? [],
                   activeRunId: project.activeRunId ?? "",
                 },
               }),
@@ -1738,6 +2102,11 @@ export const writeProjects = async (projects: Project[]) => {
                     snapshots: [],
                   },
                   runs: project.runs ?? [],
+                  automationScripts: project.automationScripts ?? [],
+                  automationSteps: project.automationSteps ?? {},
+                  automationBindings: project.automationBindings ?? [],
+                  automationExecutions: project.automationExecutions ?? [],
+                  automationArtifacts: project.automationArtifacts ?? [],
                   activeRunId: project.activeRunId ?? "",
                 },
               }),

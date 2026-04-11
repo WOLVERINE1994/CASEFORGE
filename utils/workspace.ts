@@ -28,6 +28,45 @@ export type TestCaseAutomationStatus =
   | "candidate"
   | "automated";
 
+export type AutomationProvider =
+  | "playwright"
+  | "cypress"
+  | "api"
+  | "mobile";
+
+export type AutomationBindingMode = "manual" | "automated" | "hybrid";
+
+export type AutomationStepAction =
+  | "goto"
+  | "click"
+  | "fill"
+  | "press"
+  | "wait-for"
+  | "assert-text"
+  | "assert-visible"
+  | "assert-url"
+  | "assert-value";
+
+export type AutomationTargetType =
+  | "selector"
+  | "url"
+  | "endpoint"
+  | "text"
+  | "value"
+  | "key";
+
+export type AutomationExecutionStatus =
+  | "not-run"
+  | "passed"
+  | "failed"
+  | "blocked";
+
+export type AutomationArtifactType =
+  | "log"
+  | "screenshot"
+  | "video"
+  | "trace";
+
 export type SourceArtifactType =
   | "jira"
   | "prd"
@@ -259,6 +298,62 @@ export type ReleaseReviewState = {
   }>;
 };
 
+export type AutomationScript = {
+  id: string;
+  projectId: string;
+  provider: AutomationProvider;
+  name: string;
+  description?: string;
+  createdBy?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AutomationStep = {
+  id: string;
+  scriptId: string;
+  order: number;
+  action: AutomationStepAction;
+  targetType?: AutomationTargetType;
+  targetValue?: string;
+  inputValue?: string;
+  assertionType?: string;
+  expectedValue?: string;
+  timeoutMs?: number;
+  metaJson?: Record<string, unknown>;
+};
+
+export type AutomationBinding = {
+  id: string;
+  testCaseId: string;
+  scriptId: string;
+  mode: AutomationBindingMode;
+};
+
+export type AutomationExecutionArtifact = {
+  id: string;
+  executionId: string;
+  type: AutomationArtifactType;
+  path: string;
+  metadataJson?: Record<string, unknown>;
+};
+
+export type AutomationExecution = {
+  id: string;
+  runId: string;
+  caseId: string;
+  scriptId: string;
+  provider: AutomationProvider;
+  status: AutomationExecutionStatus;
+  startedAt: number;
+  finishedAt?: number;
+  logSummary?: string;
+  failureMessage?: string;
+  artifactIds: string[];
+  linkedIssueId?: string;
+  linkedIssueKey?: string;
+};
+
 export type TestRunRecord = {
   id: string;
   name: string;
@@ -296,6 +391,8 @@ export type TestCaseRow = {
   automationStatus?: TestCaseAutomationStatus;
   automationProvider?: string;
   automationReference?: string;
+  automationScriptId?: string;
+  automationBindingMode?: AutomationBindingMode;
   archived?: boolean;
   assignee?: string;
   labels?: string[];
@@ -463,6 +560,11 @@ export type Project = {
   };
   releaseReview?: ReleaseReviewState;
   runs?: TestRunRecord[];
+  automationScripts?: AutomationScript[];
+  automationSteps?: Record<string, AutomationStep[]>;
+  automationBindings?: AutomationBinding[];
+  automationExecutions?: AutomationExecution[];
+  automationArtifacts?: AutomationExecutionArtifact[];
   activeRunId?: string;
   lastGeneratedChangeImpactSignature?: string | null;
   latestChangeEntries?: Array<{
@@ -549,6 +651,13 @@ export const normalizeRows = (rows: TestCaseRow[], mode: GenerationMode) =>
     automationStatus: row.automationStatus ?? "manual",
     automationProvider: normalizeAutomationProvider(row.automationProvider),
     automationReference: row.automationReference?.trim() || "",
+    automationScriptId: row.automationScriptId?.trim() || undefined,
+    automationBindingMode:
+      row.automationBindingMode === "automated" ||
+      row.automationBindingMode === "hybrid" ||
+      row.automationBindingMode === "manual"
+        ? row.automationBindingMode
+        : undefined,
     archived: row.archived ?? false,
     assignee: row.assignee?.trim() || "",
     labels: parseLabels(row.labels),

@@ -47,6 +47,10 @@ import { importSourceArtifact } from "../utils/source-imports";
 import { suggestTestData } from "../utils/test-data";
 import { buildTrustCenterAnalysis } from "../utils/trust-center";
 import {
+  getAutomationBindingForCase,
+  getAutomationScriptById,
+} from "../utils/automation";
+import {
   analyzeCoverageGaps,
   createManualGapDraft,
   getCoverageGapTitle,
@@ -64,6 +68,11 @@ import {
   reviewStatusLabels,
   resolveTypeForMode,
   type AuditEntry,
+  type AutomationBinding,
+  type AutomationExecution,
+  type AutomationExecutionArtifact,
+  type AutomationScript,
+  type AutomationStep,
   type CaseTemplate,
   type CasesSavedView,
   type CoverageDepth,
@@ -338,6 +347,11 @@ const hydrateProject = (project: Project): Project => ({
   caseReviewHistory: project.caseReviewHistory ?? {},
   testDataSets: project.testDataSets ?? [],
   caseTemplates: project.caseTemplates ?? [],
+  automationScripts: project.automationScripts ?? [],
+  automationSteps: project.automationSteps ?? {},
+  automationBindings: project.automationBindings ?? [],
+  automationExecutions: project.automationExecutions ?? [],
+  automationArtifacts: project.automationArtifacts ?? [],
   viewPreferences: project.viewPreferences ?? {},
   savedViews: project.savedViews ?? { cases: [], runs: [] },
   lastGeneratedChangeImpactSignature:
@@ -556,6 +570,19 @@ export default function ProjectWorkspace({
   >({});
   const [testDataSets, setTestDataSets] = useState<TestDataSet[]>([]);
   const [caseTemplates, setCaseTemplates] = useState<CaseTemplate[]>([]);
+  const [automationScripts, setAutomationScripts] = useState<AutomationScript[]>([]);
+  const [automationSteps, setAutomationSteps] = useState<
+    Record<string, AutomationStep[]>
+  >({});
+  const [automationBindings, setAutomationBindings] = useState<AutomationBinding[]>(
+    []
+  );
+  const [automationExecutions, setAutomationExecutions] = useState<
+    AutomationExecution[]
+  >([]);
+  const [automationArtifacts, setAutomationArtifacts] = useState<
+    AutomationExecutionArtifact[]
+  >([]);
   const [casesDefaultPreset, setCasesDefaultPreset] = useState<
     "default" | "review-queue" | "failed-linked"
   >("default");
@@ -2662,6 +2689,11 @@ export default function ProjectWorkspace({
         caseReviewHistory,
         testDataSets,
         caseTemplates,
+        automationScripts,
+        automationSteps,
+        automationBindings,
+        automationExecutions,
+        automationArtifacts,
         viewPreferences: {
           ...(existingProject?.viewPreferences ?? {}),
           casesDefaultPreset,
@@ -2694,6 +2726,11 @@ export default function ProjectWorkspace({
       caseVersionHistory,
       testDataSets,
       caseTemplates,
+      automationScripts,
+      automationSteps,
+      automationBindings,
+      automationExecutions,
+      automationArtifacts,
       coverageDepth,
       generationMode,
       input,
@@ -2910,6 +2947,11 @@ export default function ProjectWorkspace({
       setCaseReviewHistory(project.caseReviewHistory ?? {});
       setTestDataSets(project.testDataSets ?? []);
       setCaseTemplates(project.caseTemplates ?? []);
+      setAutomationScripts(project.automationScripts ?? []);
+      setAutomationSteps(project.automationSteps ?? {});
+      setAutomationBindings(project.automationBindings ?? []);
+      setAutomationExecutions(project.automationExecutions ?? []);
+      setAutomationArtifacts(project.automationArtifacts ?? []);
       setCasesSavedViews(project.savedViews?.cases ?? []);
       setCasesDefaultPreset(project.viewPreferences?.casesDefaultPreset ?? "default");
       setCasesDefaultSavedViewId(project.viewPreferences?.casesDefaultSavedViewId ?? null);
@@ -3004,6 +3046,11 @@ export default function ProjectWorkspace({
     setCaseReviewHistory({});
     setTestDataSets([]);
     setCaseTemplates([]);
+    setAutomationScripts([]);
+    setAutomationSteps({});
+    setAutomationBindings([]);
+    setAutomationExecutions([]);
+    setAutomationArtifacts([]);
     setCasesSavedViews([]);
     setCasesDefaultPreset("default");
     setCaseCommentDrafts({});
@@ -3546,6 +3593,284 @@ export default function ProjectWorkspace({
       );
     }
   };
+
+  const saveAutomationForRow = ({
+    rowId,
+    mode,
+    provider,
+    name,
+    description,
+    steps,
+  }: {
+    rowId: string;
+    mode: "manual" | "automated" | "hybrid";
+    provider: "playwright" | "cypress" | "api" | "mobile";
+    name: string;
+    description?: string;
+    steps: AutomationStep[];
+  }) => {
+    const now = Date.now();
+    const trimmedName = name.trim() || `Automation for ${rowId}`;
+    const existingBinding = getAutomationBindingForCase(automationBindings, rowId);
+    const existingScript = existingBinding
+      ? getAutomationScriptById(automationScripts, existingBinding.scriptId)
+      : null;
+    const scriptId = existingScript?.id ?? crypto.randomUUID();
+
+    const nextScript: AutomationScript = {
+      id: scriptId,
+      projectId: currentProjectIdRef.current ?? currentProjectId ?? "draft-project",
+      provider,
+      name: trimmedName,
+      description: description?.trim() || undefined,
+      createdBy: reviewerName?.trim() || undefined,
+      createdAt: existingScript?.createdAt ?? now,
+      updatedAt: now,
+    };
+
+    setAutomationScripts((currentScripts) => {
+      const otherScripts = currentScripts.filter((script) => script.id !== scriptId);
+      return [...otherScripts, nextScript];
+    });
+    setAutomationSteps((currentSteps) => ({
+      ...currentSteps,
+      [scriptId]: steps.map((step, index) => ({
+        ...step,
+        id: step.id || crypto.randomUUID(),
+        scriptId,
+        order: index,
+      })),
+    }));
+    setAutomationBindings((currentBindings) => {
+      const nextBinding: AutomationBinding = {
+        id: existingBinding?.id ?? crypto.randomUUID(),
+        testCaseId: rowId,
+        scriptId,
+        mode,
+      };
+      return [
+        ...currentBindings.filter((binding) => binding.testCaseId !== rowId),
+        nextBinding,
+      ];
+    });
+
+    const rowIndex = rows.findIndex((row) => row.id === rowId);
+    if (rowIndex >= 0) {
+      const providerLabel =
+        provider === "playwright"
+          ? "Playwright"
+          : provider === "cypress"
+            ? "Cypress"
+            : provider === "api"
+              ? "API Automation"
+              : "UI Automation";
+      updateCell(rowIndex, "automationProvider", providerLabel);
+      updateCell(rowIndex, "automationStatus", mode === "manual" ? "manual" : "automated");
+      updateCell(rowIndex, "automationReference", scriptId);
+      updateCell(rowIndex, "automationScriptId", scriptId);
+      updateCell(rowIndex, "automationBindingMode", mode);
+    }
+
+    showWorkspaceNotice("success", `Saved automation steps for ${rowId}.`);
+  };
+
+  const runAutomationForRow = useCallback(
+    async (rowId: string) => {
+      const activeProjectRef = currentProjectIdRef.current ?? currentProjectId;
+      if (!activeProjectRef) {
+        showWorkspaceNotice(
+          "error",
+          "Save the workspace as a project before running automation."
+        );
+        return;
+      }
+
+      const activeProject =
+        projects.find((project) => project.id === activeProjectRef) ?? null;
+      const activeRun =
+        activeProject?.runs?.find((run) => run.id === activeProject.activeRunId) ?? null;
+
+      if (!activeRun) {
+        showWorkspaceNotice(
+          "error",
+          "Open or create an active run before executing automation."
+        );
+        return;
+      }
+
+      const response = await fetch("/api/automation/execute", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          projectId: activeProjectRef,
+          runId: activeRun.id,
+          caseId: rowId,
+        }),
+      });
+
+      const data = (await response.json()) as {
+        error?: string;
+        execution?: AutomationExecution;
+        artifacts?: AutomationExecutionArtifact[];
+      };
+
+      if (!response.ok || !data.execution) {
+        showWorkspaceNotice(
+          "error",
+          data.error || "Failed to execute automation."
+        );
+        return;
+      }
+
+      setAutomationExecutions((currentExecutions) => [
+        ...currentExecutions.filter((execution) => execution.id !== data.execution?.id),
+        data.execution as AutomationExecution,
+      ]);
+      setAutomationArtifacts((currentArtifacts) => [
+        ...currentArtifacts,
+        ...((data.artifacts ?? []) as AutomationExecutionArtifact[]),
+      ]);
+      setRows((currentRows) =>
+        currentRows.map((row) =>
+          row.id === rowId
+            ? {
+                ...row,
+                executionResult: data.execution?.status ?? row.executionResult,
+              }
+            : row
+        )
+      );
+
+      showWorkspaceNotice(
+        data.execution.status === "passed" ? "success" : "error",
+        data.execution.status === "passed"
+          ? `Automation passed for ${rowId}.`
+          : `Automation ${data.execution.status} for ${rowId}.`
+      );
+    },
+    [currentProjectId, projects]
+  );
+
+  const createAutomationIssueForRow = useCallback(
+    async (rowId: string) => {
+      const activeProjectRef = currentProjectIdRef.current ?? currentProjectId;
+      if (!activeProjectRef) {
+        showWorkspaceNotice("error", "Save the workspace as a project first.");
+        return;
+      }
+
+      const row = rows.find((entry) => entry.id === rowId);
+      const latestExecution = [...automationExecutions]
+        .filter((execution) => execution.caseId === rowId)
+        .sort((left, right) => right.startedAt - left.startedAt)[0];
+      const relatedArtifacts = latestExecution
+        ? automationArtifacts.filter((artifact) => artifact.executionId === latestExecution.id)
+        : [];
+
+      if (!row || !latestExecution || (latestExecution.status !== "failed" && latestExecution.status !== "blocked")) {
+        showWorkspaceNotice(
+          "error",
+          "Run a failed or blocked automation execution before creating an issue."
+        );
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/projects/${encodeURIComponent(projectKey.trim() || activeProjectRef)}/issues`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              type: "bug",
+              summary: `[Automation] ${row.title || row.id} failed in ${latestExecution.provider}`,
+              description: [
+                `Case: ${row.id}`,
+                `Provider: ${latestExecution.provider}`,
+                `Status: ${latestExecution.status}`,
+                latestExecution.failureMessage
+                  ? `Failure: ${latestExecution.failureMessage}`
+                  : "",
+                latestExecution.logSummary ? `Logs:\n${latestExecution.logSummary}` : "",
+                relatedArtifacts.length > 0
+                  ? `Artifacts:\n${relatedArtifacts
+                      .map((artifact) => `- ${artifact.type}: ${artifact.path}`)
+                      .join("\n")}`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join("\n\n"),
+              priority: "high",
+              status: "backlog",
+            }),
+          }
+        );
+
+        const payload = (await response.json()) as {
+          issue?: { id: string; issueKey: string; summary: string };
+          error?: string;
+        };
+
+        if (!response.ok || !payload.issue) {
+          throw new Error(payload.error || "Failed to create issue.");
+        }
+        const createdIssue = payload.issue;
+
+        setRows((currentRows) =>
+          currentRows.map((entry) =>
+            entry.id === rowId
+              ? {
+                  ...entry,
+                  issueId: createdIssue.id,
+                  issueKey: createdIssue.issueKey,
+                }
+              : entry
+          )
+        );
+        setAutomationExecutions((currentExecutions) =>
+          currentExecutions.map((execution) =>
+            execution.id === latestExecution.id
+              ? {
+                  ...execution,
+                  linkedIssueId: createdIssue.id,
+                  linkedIssueKey: createdIssue.issueKey,
+                }
+              : execution
+          )
+        );
+        setProjectIssues((currentIssues) => [
+          {
+            id: createdIssue.id,
+            issueKey: createdIssue.issueKey,
+            summary: createdIssue.summary,
+          },
+          ...currentIssues,
+        ]);
+        showWorkspaceNotice(
+          "success",
+          `Created issue ${createdIssue.issueKey} from automation failure on ${rowId}.`
+        );
+      } catch (error) {
+        showWorkspaceNotice(
+          "error",
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : "Failed to create issue."
+        );
+      }
+    },
+    [
+      automationArtifacts,
+      automationExecutions,
+      currentProjectId,
+      projectKey,
+      rows,
+    ]
+  );
 
   const deleteRow = (index: number) => {
     const rowToDelete = rows[index];
@@ -9817,6 +10142,11 @@ export default function ProjectWorkspace({
                 reviewerAttentionByRowId={reviewerAttentionByRowId}
                 testDataSets={testDataSets}
               caseTemplates={caseTemplates}
+              automationScripts={automationScripts}
+              automationSteps={automationSteps}
+              automationBindings={automationBindings}
+              automationExecutions={automationExecutions}
+              automationArtifacts={automationArtifacts}
               userOptions={userOptions}
               updateCell={updateFilteredCell}
               onCaseCommentDraftChange={updateCaseCommentDraft}
@@ -9827,6 +10157,9 @@ export default function ProjectWorkspace({
                 onCloneRow={cloneRowById}
                 onSaveTemplateFromRow={saveTemplateFromRow}
                 onRestoreCaseVersion={restoreCaseVersion}
+                onSaveAutomation={saveAutomationForRow}
+                onRunAutomation={runAutomationForRow}
+                onCreateAutomationIssue={createAutomationIssueForRow}
                 deleteRow={deleteFilteredRow}
               regenerateRow={regenerateFilteredRow}
               regeneratingIndex={

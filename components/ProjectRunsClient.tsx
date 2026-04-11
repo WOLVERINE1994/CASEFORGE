@@ -9,6 +9,8 @@ import { useProjectRouteMetrics } from "./ProjectRouteMetricsContext";
 import { buildBugDraftFromRunCase, type BugDraft } from "../utils/bug-draft";
 import { splitCaseSteps } from "../utils/parser";
 import type {
+  AutomationExecution,
+  AutomationExecutionArtifact,
   RunsSavedView,
   Project,
   TestCaseExecutionResult,
@@ -328,6 +330,30 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
   const focusedRow = useMemo(
     () => rowsForRun.find((row) => row.id === focusedRowId) ?? null,
     [focusedRowId, rowsForRun]
+  );
+  const latestAutomationExecutionByRowId = useMemo(() => {
+    const executions = [...(project?.automationExecutions ?? [])].sort(
+      (left, right) => right.startedAt - left.startedAt
+    );
+    return executions.reduce<Record<string, AutomationExecution>>((accumulator, execution) => {
+      if (!accumulator[execution.caseId]) {
+        accumulator[execution.caseId] = execution;
+      }
+      return accumulator;
+    }, {});
+  }, [project?.automationExecutions]);
+  const focusedAutomationExecution = focusedRow
+    ? latestAutomationExecutionByRowId[focusedRow.id] ?? null
+    : null;
+  const focusedAutomationArtifacts = useMemo(
+    () =>
+      focusedAutomationExecution
+        ? (project?.automationArtifacts ?? []).filter(
+            (artifact: AutomationExecutionArtifact) =>
+              artifact.executionId === focusedAutomationExecution.id
+          )
+        : [],
+    [focusedAutomationExecution, project?.automationArtifacts]
   );
   const focusedRowSteps = useMemo(
     () => (focusedRow ? splitCaseSteps(focusedRow.steps) : []),
@@ -1083,15 +1109,44 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
       return;
     }
 
-    setBugDraft(
-      buildBugDraftFromRunCase({
-        project,
-        run: activeRun,
-        caseRow: focusedRow,
-        actualResult: actualResultDraft,
-        executionNotes: executionNotesDraft,
-      })
-    );
+    const nextDraft = buildBugDraftFromRunCase({
+      project,
+      run: activeRun,
+      caseRow: focusedRow,
+      actualResult: actualResultDraft,
+      executionNotes: executionNotesDraft,
+    });
+    const automationDetails = focusedAutomationExecution
+      ? [
+          "",
+          "Automation Failure Context",
+          `Provider: ${focusedAutomationExecution.provider}`,
+          `Automation status: ${focusedAutomationExecution.status}`,
+          focusedAutomationExecution.failureMessage
+            ? `Failure message: ${focusedAutomationExecution.failureMessage}`
+            : "",
+          focusedAutomationArtifacts.length > 0
+            ? `Artifacts: ${focusedAutomationArtifacts
+                .map((artifact) => `${artifact.type} -> ${artifact.path}`)
+                .join(" | ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : "";
+
+    setBugDraft({
+      ...nextDraft,
+      description: `${nextDraft.description}${automationDetails}`.trim(),
+      labels: Array.from(
+        new Set([
+          ...nextDraft.labels,
+          ...(focusedAutomationExecution
+            ? ["automation-failure", focusedAutomationExecution.provider]
+            : []),
+        ])
+      ),
+    });
     setNotice({
       tone: "info",
       text: `Generated a bug draft for ${focusedRow.id}. Review it and create the issue when you're ready.`,
@@ -1186,6 +1241,15 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
                   issueKey: createdIssue.issueKey,
                 }
               : row
+          ),
+          automationExecutions: (project.automationExecutions ?? []).map((execution) =>
+            execution.id === focusedAutomationExecution?.id
+              ? {
+                  ...execution,
+                  linkedIssueId: createdIssue.id,
+                  linkedIssueKey: createdIssue.issueKey,
+                }
+              : execution
           ),
         },
         nextRuns,
@@ -1433,6 +1497,126 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
             ? error.message
             : "Failed to save execution details.",
       });
+    }
+  };
+
+  const createIssueFromAutomationFailure = async () => {
+    if (!project || !activeRun || !focusedRow || !focusedAutomationExecution) {
+      setNotice({
+        tone: "error",
+        text: "Select a case with a failed automation execution first.",
+      });
+      return;
+    }
+
+    const summary = `[Automation] ${focusedRow.title || focusedRow.id} failed in ${focusedAutomationExecution.provider}`;
+    const description = [
+      `Case: ${focusedRow.id}`,
+      `Run: ${activeRun.name}`,
+      `Provider: ${focusedAutomationExecution.provider}`,
+      `Status: ${focusedAutomationExecution.status}`,
+      focusedAutomationExecution.failureMessage
+        ? `Failure: ${focusedAutomationExecution.failureMessage}`
+        : "",
+      focusedAutomationExecution.logSummary
+        ? `Logs:\n${focusedAutomationExecution.logSummary}`
+        : "",
+      focusedAutomationArtifacts.length > 0
+        ? `Artifacts:\n${focusedAutomationArtifacts
+            .map((artifact) => `- ${artifact.type}: ${artifact.path}`)
+            .join("\n")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    try {
+      setIsCreatingBug(true);
+      const response = await fetch(
+        `/api/projects/${encodeURIComponent(project.projectKey?.trim() || project.id)}/issues`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            type: "bug",
+            summary,
+            description,
+            priority: "high",
+            status: "backlog",
+          }),
+        }
+      );
+
+      const payload = (await response.json()) as {
+        issue?: { id: string; issueKey: string };
+        error?: string;
+      };
+
+      if (!response.ok || !payload.issue) {
+        throw new Error(payload.error || "Failed to create automation issue.");
+      }
+
+      const updatedRun: TestRunRecord = {
+        ...activeRun,
+        linkedDefectIds: {
+          ...activeRun.linkedDefectIds,
+          [focusedRow.id]: Array.from(
+            new Set([
+              ...(activeRun.linkedDefectIds[focusedRow.id] ?? []),
+              payload.issue.id,
+            ])
+          ),
+        },
+        updatedAt: Date.now(),
+      };
+      const nextRuns = runs.map((run) => (run.id === updatedRun.id ? updatedRun : run));
+      const nextProject = syncProjectWithRun(
+        {
+          ...project,
+          rows: project.rows.map((row) =>
+            row.id === focusedRow.id
+              ? {
+                  ...row,
+                  issueId: payload.issue?.id,
+                  issueKey: payload.issue?.issueKey,
+                }
+              : row
+          ),
+          automationExecutions: (project.automationExecutions ?? []).map((execution) =>
+            execution.id === focusedAutomationExecution.id
+              ? {
+                  ...execution,
+                  linkedIssueId: payload.issue?.id,
+                  linkedIssueKey: payload.issue?.issueKey,
+                }
+              : execution
+          ),
+        },
+        nextRuns,
+        updatedRun.id
+      );
+      const savedProject = await persistProject(nextProject);
+      setProject(savedProject);
+      setCreatedBug({
+        id: payload.issue.id,
+        issueKey: payload.issue.issueKey,
+      });
+      setNotice({
+        tone: "success",
+        text: `Created bug ${payload.issue.issueKey} from automation failure on ${focusedRow.id}.`,
+      });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        text:
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : "Failed to create automation issue.",
+      });
+    } finally {
+      setIsCreatingBug(false);
     }
   };
 
@@ -2207,6 +2391,28 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
                         <p className="mt-1 font-semibold text-zinc-950 dark:text-zinc-50">
                         {row.title.trim() || "Untitled test case"}
                         </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {row.automationScriptId ? (
+                            <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                              Automated
+                            </span>
+                          ) : null}
+                          {latestAutomationExecutionByRowId[row.id] ? (
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                latestAutomationExecutionByRowId[row.id].status === "passed"
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                  : latestAutomationExecutionByRowId[row.id].status === "failed"
+                                    ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300"
+                                    : latestAutomationExecutionByRowId[row.id].status === "blocked"
+                                      ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+                                      : "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                              }`}
+                            >
+                              Automation {latestAutomationExecutionByRowId[row.id].status}
+                            </span>
+                          ) : null}
+                        </div>
                         {(rowStepSignals[row.id]?.failedSteps > 0 ||
                           rowStepSignals[row.id]?.blockedSteps > 0 ||
                           rowStepSignals[row.id]?.passedSteps > 0) && (
@@ -2439,6 +2645,54 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
               </div>
             </div>
             <div className="space-y-3">
+              {focusedAutomationExecution ? (
+                <div className="rounded-[20px] border border-sky-200 bg-sky-50/90 px-4 py-4 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-700 dark:text-sky-300">
+                        Latest Automation Execution
+                      </p>
+                      <p className="mt-1 text-sm">
+                        {focusedAutomationExecution.provider} reported{" "}
+                        <span className="font-semibold">
+                          {focusedAutomationExecution.status}
+                        </span>
+                        .
+                      </p>
+                    </div>
+                    {focusedAutomationExecution.linkedIssueKey ? (
+                      <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-emerald-300">
+                        Linked {focusedAutomationExecution.linkedIssueKey}
+                      </span>
+                    ) : null}
+                  </div>
+                  {focusedAutomationExecution.failureMessage ? (
+                    <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                      {focusedAutomationExecution.failureMessage}
+                    </p>
+                  ) : null}
+                  {focusedAutomationExecution.logSummary ? (
+                    <pre className="mt-3 overflow-x-auto rounded-2xl bg-zinc-950 px-3 py-3 text-[11px] leading-5 text-zinc-100">
+                      {focusedAutomationExecution.logSummary}
+                    </pre>
+                  ) : null}
+                  {focusedAutomationArtifacts.length > 0 ? (
+                    <div className="mt-3 space-y-2">
+                      {focusedAutomationArtifacts.map((artifact) => (
+                        <div
+                          key={artifact.id}
+                          className="rounded-2xl border border-sky-200/60 bg-white px-3 py-2 text-xs text-sky-900 dark:border-sky-500/20 dark:bg-zinc-950 dark:text-sky-100"
+                        >
+                          <p className="font-semibold capitalize">{artifact.type}</p>
+                          <p className="mt-1 break-all text-sky-700/80 dark:text-sky-200/80">
+                            {artifact.path}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <textarea
                 value={executionNotesDraft}
                 onChange={(event) => setExecutionNotesDraft(event.target.value)}
@@ -2473,6 +2727,19 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
                   {activeRun.linkedDefectIds[focusedRow.id].length} defect
                   {activeRun.linkedDefectIds[focusedRow.id].length === 1 ? "" : "s"} linked to this run case already.
                 </div>
+              ) : null}
+              {focusedAutomationExecution &&
+              (focusedAutomationExecution.status === "failed" ||
+                focusedAutomationExecution.status === "blocked") &&
+              !focusedAutomationExecution.linkedIssueId ? (
+                <button
+                  type="button"
+                  onClick={() => void createIssueFromAutomationFailure()}
+                  disabled={isSaving || isCreatingBug}
+                  className="rounded-2xl bg-[linear-gradient(135deg,_#991b1b_0%,_#dc2626_100%)] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_35px_-20px_rgba(220,38,38,0.65)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isCreatingBug ? "Creating Issue..." : "Create Issue From Automation Failure"}
+                </button>
               ) : null}
             </div>
           </div>

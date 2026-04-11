@@ -55,6 +55,9 @@ export interface ReleaseRiskSummary {
   openHighPriorityIssues: number;
   openCriticalIssues: number;
   blockerIssues: number;
+  automationExecutedCases?: number;
+  automationFailedCases?: number;
+  automationBlockedCases?: number;
   reasons: ReleaseRiskReason[];
   actions: ReleaseActionItem[];
   hotspots: ReleaseHotspot[];
@@ -79,6 +82,11 @@ export type ReleaseRiskContext = {
     provider: string;
     manualReadyCases: number;
   }>;
+  automationExecutionSummary?: {
+    executedCases: number;
+    failedCases: number;
+    blockedCases: number;
+  };
 };
 
 type ReleaseRiskComputationResult = {
@@ -217,6 +225,9 @@ export const buildReleaseRiskSummary = (
         openHighPriorityIssues: 0,
         openCriticalIssues: 0,
         blockerIssues: 0,
+        automationExecutedCases: 0,
+        automationFailedCases: 0,
+        automationBlockedCases: 0,
         reasons: [
           {
             id: "project-missing",
@@ -246,6 +257,11 @@ export const buildReleaseRiskSummary = (
         lowCoverageAreas: [],
         automationRiskAreas: [],
         automationProviderGaps: [],
+        automationExecutionSummary: {
+          executedCases: 0,
+          failedCases: 0,
+          blockedCases: 0,
+        },
       },
     };
   }
@@ -311,6 +327,26 @@ export const buildReleaseRiskSummary = (
     totalCases
   );
   const automationInsights = buildAutomationCandidateInsights(project.rows ?? []);
+  const latestAutomationExecutionByCase = [...(project.automationExecutions ?? [])]
+    .sort((left, right) => right.startedAt - left.startedAt)
+    .reduce<Map<string, NonNullable<Project["automationExecutions"]>[number]>>(
+      (accumulator, execution) => {
+        if (!accumulator.has(execution.caseId)) {
+          accumulator.set(execution.caseId, execution);
+        }
+        return accumulator;
+      },
+      new Map()
+    );
+  const automationExecutedCases = Array.from(latestAutomationExecutionByCase.values()).filter(
+    (execution) => execution.status !== "not-run"
+  ).length;
+  const automationFailedCases = Array.from(latestAutomationExecutionByCase.values()).filter(
+    (execution) => execution.status === "failed"
+  ).length;
+  const automationBlockedCases = Array.from(latestAutomationExecutionByCase.values()).filter(
+    (execution) => execution.status === "blocked"
+  ).length;
 
   const openIssues = issues.filter((issue) => issue.status !== "done").length;
   const openHighPriorityIssues = issues.filter(
@@ -517,6 +553,8 @@ export const buildReleaseRiskSummary = (
     (entry) => entry.automationStatus !== "automated" && entry.isStrongCandidate
   ).length;
   score -= strongAutomationReadyCount >= 3 ? Math.min(8, strongAutomationReadyCount * 2) : 0;
+  score -= automationFailedCases > 0 ? Math.min(14, automationFailedCases * 5) : 0;
+  score -= automationBlockedCases > 0 ? Math.min(8, automationBlockedCases * 3) : 0;
   score = Math.max(0, Math.min(100, score));
 
   let level: ReleaseRiskLevel =
@@ -529,6 +567,9 @@ export const buildReleaseRiskSummary = (
   } else if (criticalAreas.length > 0 && criticalAreasUntestedPercent >= 50) {
     level = "blocked";
   } else if (openHighPriorityIssues > 0 || failedCases > 0 || blockedCases > 0) {
+    level = level === "safe" ? "caution" : level;
+  }
+  if (automationFailedCases > 0) {
     level = level === "safe" ? "caution" : level;
   }
 
@@ -562,6 +603,23 @@ export const buildReleaseRiskSummary = (
       metric: failedCases,
       actionHint: "Review failing cases in the active run and convert unresolved failures into tracked defects.",
       linkedCaseIds: failedCaseIds,
+    });
+  }
+
+  if (automationFailedCases > 0) {
+    reasons.push({
+      id: "automation-failures",
+      title: "Automation failures are affecting release confidence",
+      description: `${automationFailedCases} automated case${automationFailedCases === 1 ? "" : "s"} most recently failed, and ${automationBlockedCases} are blocked.`,
+      severity: automationFailedCases >= 2 ? "high" : "medium",
+      metric: automationFailedCases,
+      actionHint: "Review the latest automation failures, capture defects where needed, and rerun before release.",
+      linkedCaseIds: Array.from(latestAutomationExecutionByCase.values())
+        .filter((execution) => execution.status === "failed")
+        .map((execution) => execution.caseId),
+      linkedIssueIds: Array.from(latestAutomationExecutionByCase.values())
+        .filter((execution) => execution.status === "failed" && execution.linkedIssueId)
+        .map((execution) => execution.linkedIssueId as string),
     });
   }
 
@@ -693,6 +751,28 @@ export const buildReleaseRiskSummary = (
     });
   }
 
+  if (automationFailedCases > 0 || automationBlockedCases > 0) {
+    actions.push({
+      id: "stabilize-automation-failures",
+      title: "Stabilize recent automation failures",
+      description: "Review failed and blocked automated cases, fix flaky coverage, and link unresolved failures to defects.",
+      priority: automationFailedCases >= 2 ? "high" : "medium",
+      linkedCaseIds: Array.from(latestAutomationExecutionByCase.values())
+        .filter(
+          (execution) =>
+            execution.status === "failed" || execution.status === "blocked"
+        )
+        .map((execution) => execution.caseId),
+      linkedIssueIds: Array.from(latestAutomationExecutionByCase.values())
+        .filter(
+          (execution) =>
+            (execution.status === "failed" || execution.status === "blocked") &&
+            execution.linkedIssueId
+        )
+        .map((execution) => execution.linkedIssueId as string),
+    });
+  }
+
   if (untestedCriticalAreas.length > 0) {
     actions.push({
       id: "cover-critical-areas",
@@ -818,6 +898,9 @@ export const buildReleaseRiskSummary = (
       openHighPriorityIssues,
       openCriticalIssues,
       blockerIssues,
+      automationExecutedCases,
+      automationFailedCases,
+      automationBlockedCases,
       reasons: reasons.slice(0, 5),
       actions: actions.slice(0, 6),
       hotspots: hotspots.slice(0, 6),
@@ -832,6 +915,11 @@ export const buildReleaseRiskSummary = (
       lowCoverageAreas,
       automationRiskAreas,
       automationProviderGaps,
+      automationExecutionSummary: {
+        executedCases: automationExecutedCases,
+        failedCases: automationFailedCases,
+        blockedCases: automationBlockedCases,
+      },
     },
   };
 };

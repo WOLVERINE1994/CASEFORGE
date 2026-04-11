@@ -1138,6 +1138,9 @@ export default function ReleaseRiskDashboard({
             <span className={chipClassName}>
               Open critical/high {summary.openHighPriorityIssues}
             </span>
+            <span className={chipClassName}>
+              Automation failed/blocked {(summary.automationFailedCases ?? 0) + (summary.automationBlockedCases ?? 0)}
+            </span>
             <span className={`${chipClassName} ${releaseDeltaTone[latestSnapshotDeltaDirection]}`}>
               {latestSnapshotDelta === null
                 ? "Release delta n/a"
@@ -1201,10 +1204,10 @@ export default function ReleaseRiskDashboard({
                 Automation
               </p>
               <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
-                {automationRiskCaseCount}
+                {summary.automationFailedCases ?? 0}
               </p>
               <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                high-priority cases still manual
+                latest automated failures
               </p>
             </div>
           </div>

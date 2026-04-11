@@ -3,6 +3,18 @@
 import Link from "next/link";
 import { useState, type DragEvent } from "react";
 import {
+  getAutomationBindingForCase,
+  getAutomationExecutionsForCase,
+  getAutomationScriptById,
+  getAutomationStepsForScript,
+} from "../utils/automation";
+import CaseAutomationPanel from "./CaseAutomationPanel";
+import {
+  type AutomationBinding,
+  type AutomationExecution,
+  type AutomationExecutionArtifact,
+  type AutomationScript,
+  type AutomationStep,
   automationProviderOptions,
   automationStatusLabels,
   executionResultLabels,
@@ -138,6 +150,11 @@ type Props = {
   >;
   testDataSets: TestDataSet[];
   caseTemplates: CaseTemplate[];
+  automationScripts: AutomationScript[];
+  automationSteps: Record<string, AutomationStep[]>;
+  automationBindings: AutomationBinding[];
+  automationExecutions: AutomationExecution[];
+  automationArtifacts: AutomationExecutionArtifact[];
   userOptions: UserOption[];
   updateCell: (
     index: number,
@@ -152,6 +169,16 @@ type Props = {
   onCloneRow: (rowId: string) => void;
   onSaveTemplateFromRow: (row: TestCaseRow) => void;
   onRestoreCaseVersion: (rowId: string, versionId: string) => void;
+  onSaveAutomation: (payload: {
+    rowId: string;
+    mode: "manual" | "automated" | "hybrid";
+    provider: "playwright" | "cypress" | "api" | "mobile";
+    name: string;
+    description?: string;
+    steps: AutomationStep[];
+  }) => void;
+  onRunAutomation: (rowId: string) => Promise<void>;
+  onCreateAutomationIssue?: (rowId: string) => Promise<void>;
   deleteRow: (index: number) => void;
   regenerateRow: (index: number) => void;
   regeneratingIndex: number | null;
@@ -188,6 +215,11 @@ export default function TestCaseTable({
   reviewerAttentionByRowId,
   testDataSets,
   caseTemplates,
+  automationScripts,
+  automationSteps,
+  automationBindings,
+  automationExecutions,
+  automationArtifacts,
   userOptions,
   updateCell,
   onCaseCommentDraftChange,
@@ -198,6 +230,9 @@ export default function TestCaseTable({
   onCloneRow,
   onSaveTemplateFromRow,
   onRestoreCaseVersion,
+  onSaveAutomation,
+  onRunAutomation,
+  onCreateAutomationIssue,
   deleteRow,
   regenerateRow,
   regeneratingIndex,
@@ -395,6 +430,26 @@ export default function TestCaseTable({
                 const rowVersionHistory = caseVersionHistoryByRowId[row.id] ?? [];
                 const rowReviewHistory = caseReviewHistoryByRowId[row.id] ?? [];
                 const reviewerAttention = reviewerAttentionByRowId[row.id];
+                const automationBinding = getAutomationBindingForCase(
+                  automationBindings,
+                  row.id
+                );
+                const automationScript = getAutomationScriptById(
+                  automationScripts,
+                  automationBinding?.scriptId ?? row.automationScriptId
+                );
+                const automationScriptSteps = getAutomationStepsForScript(
+                  automationSteps,
+                  automationScript?.id
+                );
+                const automationExecution =
+                  getAutomationExecutionsForCase(automationExecutions, row.id)[0] ??
+                  null;
+                const automationExecutionArtifacts = automationExecution
+                  ? automationArtifacts.filter(
+                      (artifact) => artifact.executionId === automationExecution.id
+                    )
+                  : [];
                 const draftStepCount = row.steps
                   .split(";")
                   .map((step) => step.trim())
@@ -1306,6 +1361,17 @@ export default function TestCaseTable({
                           </p>
                         ) : null}
                       </div>
+
+                      <CaseAutomationPanel
+                        row={row}
+                        script={automationScript}
+                        steps={automationScriptSteps}
+                        latestExecution={automationExecution}
+                        latestArtifacts={automationExecutionArtifacts}
+                        onSave={onSaveAutomation}
+                        onRun={onRunAutomation}
+                        onCreateIssueFromFailure={onCreateAutomationIssue}
+                      />
 
                       <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
                         <div className="flex items-center justify-between gap-3">
