@@ -1165,7 +1165,7 @@ export default function ReleaseRiskDashboard({
               The decision and risk sections stay primary, while review governance and history are grouped more intentionally below.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
             <div className="rounded-[22px] border border-zinc-200/80 bg-white/85 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-950/70">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
                 Score
@@ -1593,7 +1593,7 @@ export default function ReleaseRiskDashboard({
           </p>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
           <SignalCard
             label="Total Cases"
             value={summary.totalCases}
@@ -1644,22 +1644,22 @@ export default function ReleaseRiskDashboard({
           )}
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
           {releaseCoverageSegments.map((entry) => (
             <div
               key={entry.key}
               className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/80 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950/70"
             >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex min-w-0 items-start gap-2">
                   <span
-                    className={`h-2.5 w-2.5 rounded-full ${releaseCoverageTone[entry.key]}`}
+                    className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${releaseCoverageTone[entry.key]}`}
                   />
-                  <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                  <span className="min-w-0 text-sm font-semibold leading-5 text-zinc-900 dark:text-zinc-100">
                     {entry.label}
                   </span>
                 </div>
-                <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">
+                <span className="shrink-0 text-sm font-semibold text-zinc-600 dark:text-zinc-300 sm:text-right">
                   {entry.percent}%
                 </span>
               </div>

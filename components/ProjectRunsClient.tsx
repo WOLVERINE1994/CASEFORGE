@@ -1705,7 +1705,7 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
           {[
             ["Total Cases", totalCases, "border-zinc-200 bg-white/80"],
             ["Not Run", executionCounts["not-run"] ?? totalCases, "border-zinc-200 bg-zinc-50/90"],
@@ -1759,7 +1759,7 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
           </div>
 
           <div className="mt-5">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700 dark:text-sky-300">
                 Run Result Distribution
               </p>
@@ -1778,22 +1778,22 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
                 ) : null
               )}
             </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 2xl:grid-cols-4">
               {executionDistribution.map((entry) => (
                 <div
                   key={entry.key}
                   className="rounded-[18px] border border-white/70 bg-white/70 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-950/60"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-2">
                       <span
-                        className={`h-2.5 w-2.5 rounded-full ${executionBarTone[entry.key]}`}
+                        className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${executionBarTone[entry.key]}`}
                       />
-                      <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                      <span className="min-w-0 text-sm font-semibold leading-5 text-zinc-900 dark:text-zinc-100">
                         {entry.label}
                       </span>
                     </div>
-                    <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">
+                    <span className="shrink-0 text-sm font-semibold text-zinc-600 dark:text-zinc-300 sm:text-right">
                       {entry.percent}%
                     </span>
                   </div>

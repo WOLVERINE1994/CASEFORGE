@@ -530,7 +530,7 @@ export default function AdminSettingsClient() {
             </div>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
             {[
               ["Providers", overview.total],
               ["Enabled", overview.enabled],
@@ -618,7 +618,7 @@ export default function AdminSettingsClient() {
                         </button>
                       </div>
 
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
                         <div className="rounded-[18px] border border-zinc-200/80 bg-white/90 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-950/80">
                           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
                             Credential Status

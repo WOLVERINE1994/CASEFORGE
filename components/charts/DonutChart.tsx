@@ -102,17 +102,17 @@ export default function DonutChart({
                 key={item.key}
                 className="rounded-[18px] border border-zinc-200/80 bg-zinc-50/80 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950/70"
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-2">
                     <span
-                      className="h-2.5 w-2.5 rounded-full"
+                      className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ backgroundColor: item.color }}
                     />
-                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    <span className="min-w-0 text-sm font-semibold leading-5 text-zinc-900 dark:text-zinc-100">
                       {item.label}
                     </span>
                   </div>
-                  <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">
+                  <span className="shrink-0 text-sm font-semibold text-zinc-600 dark:text-zinc-300 sm:text-right">
                     {percent}%
                   </span>
                 </div>

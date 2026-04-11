@@ -103,6 +103,30 @@ export type ProjectReportsSummary = {
   failedCases: number;
   blockedCases: number;
   notRunCases: number;
+  executionSummary: {
+    total: number;
+    passed: number;
+    failed: number;
+    blocked: number;
+    notRun: number;
+  };
+  failureInsights: Array<{
+    rowId: string;
+    title: string;
+    executionResult: TestCaseExecutionResult;
+    failedSteps: number;
+    blockedSteps: number;
+    latestAutomationStatus?: "not-run" | "passed" | "failed" | "blocked";
+    latestAutomationFailureMessage?: string;
+    linkedIssueId?: string;
+    linkedIssueKey?: string;
+    runId?: string;
+    runName?: string;
+  }>;
+  releaseSignal: {
+    level: "low" | "medium" | "high";
+    summary: string;
+  };
   executionDistribution: DistributionSlice[];
   issuePriorityDistribution: DistributionSlice[];
   issueStatusDistribution: DistributionSlice[];
@@ -154,6 +178,54 @@ export type ProjectReportsSummary = {
       count: number;
     }>;
   };
+};
+
+const csvEscape = (value: string | number | undefined | null) => {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+};
+
+export const buildExecutionReportCsv = (
+  summary: ProjectReportsSummary,
+  projectName: string
+) => {
+  const lines = [
+    ["Project", projectName],
+    ["Total Tests", summary.executionSummary.total],
+    ["Passed", summary.executionSummary.passed],
+    ["Failed", summary.executionSummary.failed],
+    ["Blocked", summary.executionSummary.blocked],
+    ["Not Run", summary.executionSummary.notRun],
+    ["Release Signal", summary.releaseSignal.level],
+    ["Release Summary", summary.releaseSignal.summary],
+    [],
+    [
+      "Case ID",
+      "Title",
+      "Execution",
+      "Failed Steps",
+      "Blocked Steps",
+      "Automation Status",
+      "Automation Failure",
+      "Issue Key",
+      "Run",
+    ],
+    ...summary.failureInsights.map((entry) => [
+      entry.rowId,
+      entry.title,
+      entry.executionResult,
+      entry.failedSteps,
+      entry.blockedSteps,
+      entry.latestAutomationStatus ?? "",
+      entry.latestAutomationFailureMessage ?? "",
+      entry.linkedIssueKey ?? "",
+      entry.runName ?? "",
+    ]),
+  ];
+
+  return lines
+    .map((row) => row.map((cell) => csvEscape(cell)).join(","))
+    .join("\n");
 };
 
 const toPercent = (value: number, total: number) =>
@@ -585,6 +657,93 @@ export const buildProjectReportsSummary = (
         passPercent: toPercent(counts.passed, totalRunCases),
       };
     });
+  const activeRun =
+    project?.runs?.find((run) => run.id === project.activeRunId) ??
+    project?.runs?.[0] ??
+    null;
+  const latestAutomationExecutionByCase = [...(project?.automationExecutions ?? [])]
+    .sort((left, right) => right.startedAt - left.startedAt)
+    .reduce<Map<string, NonNullable<Project["automationExecutions"]>[number]>>(
+      (accumulator, execution) => {
+        if (!accumulator.has(execution.caseId)) {
+          accumulator.set(execution.caseId, execution);
+        }
+        return accumulator;
+      },
+      new Map()
+    );
+  const failureInsights = rows
+    .map((row) => {
+      const stepResults = activeRun?.rowStepResults[row.id] ?? {};
+      const failedSteps = Object.values(stepResults).filter(
+        (value) => value === "failed"
+      ).length;
+      const blockedSteps = Object.values(stepResults).filter(
+        (value) => value === "blocked"
+      ).length;
+      const latestAutomation = latestAutomationExecutionByCase.get(row.id);
+      const executionResult =
+        activeRun?.rowResults[row.id] ?? row.executionResult ?? "not-run";
+
+      return {
+        rowId: row.id,
+        title: row.title.trim() || "Untitled test case",
+        executionResult,
+        failedSteps,
+        blockedSteps,
+        latestAutomationStatus: latestAutomation?.status,
+        latestAutomationFailureMessage: latestAutomation?.failureMessage,
+        linkedIssueId: row.issueId,
+        linkedIssueKey: row.issueKey,
+        runId: activeRun?.id,
+        runName: activeRun?.name,
+      };
+    })
+    .filter(
+      (entry) =>
+        entry.executionResult === "failed" ||
+        entry.executionResult === "blocked" ||
+        entry.failedSteps > 0 ||
+        entry.blockedSteps > 0 ||
+        entry.latestAutomationStatus === "failed" ||
+        entry.latestAutomationStatus === "blocked"
+    )
+    .sort(
+      (left, right) =>
+        (right.executionResult === "failed"
+          ? 3
+          : right.executionResult === "blocked"
+            ? 2
+            : 1) -
+          (left.executionResult === "failed"
+            ? 3
+            : left.executionResult === "blocked"
+              ? 2
+              : 1) ||
+        right.failedSteps - left.failedSteps ||
+        right.blockedSteps - left.blockedSteps
+    )
+    .slice(0, 12);
+  const highRiskFailureCount = failureInsights.filter(
+    (entry) =>
+      entry.executionResult === "failed" ||
+      entry.latestAutomationStatus === "failed"
+  ).length;
+  const releaseSignal =
+    highRiskFailureCount >= 3
+      ? {
+          level: "high" as const,
+          summary: `${highRiskFailureCount} high-risk failures are pulling release confidence down.`,
+        }
+      : highRiskFailureCount > 0 || executionCounts.blocked > 0
+        ? {
+            level: "medium" as const,
+            summary: "Failures or blocked cases need review before release sign-off.",
+          }
+        : {
+            level: "low" as const,
+            summary: "No active failure cluster is currently dragging release readiness.",
+          };
   const automationTrend = runTrend.map((run) => {
     const automatedCoverage = toPercent(automatedCases, totalCases);
     const candidateCoverage = toPercent(candidateCases + automationReadyCases, totalCases);
@@ -735,6 +894,15 @@ export const buildProjectReportsSummary = (
     failedCases: executionCounts.failed,
     blockedCases: executionCounts.blocked,
     notRunCases: executionCounts["not-run"],
+    executionSummary: {
+      total: totalCases,
+      passed: executionCounts.passed,
+      failed: executionCounts.failed,
+      blocked: executionCounts.blocked,
+      notRun: executionCounts["not-run"],
+    },
+    failureInsights,
+    releaseSignal,
     executionDistribution: buildExecutionDistribution(executionCounts, totalCases),
     issuePriorityDistribution,
     issueStatusDistribution,

@@ -6900,7 +6900,8 @@ export default function ProjectWorkspace({
               </div>
             ) : null}
 
-            <div className="mt-5 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+            <div className="mt-5 flex flex-col gap-4">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div className="grid gap-3 md:grid-cols-3 xl:flex-1">
                 <label className="rounded-[18px] border border-zinc-200/80 bg-zinc-50/75 px-4 py-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
@@ -6958,25 +6959,26 @@ export default function ProjectWorkspace({
                 </label>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 xl:justify-end">
-                <button
-                  onClick={generate}
-                  disabled={loading}
-                  className="inline-flex items-center rounded-xl bg-[linear-gradient(135deg,_#0f766e_0%,_#14532d_100%)] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_35px_-18px_rgba(5,150,105,0.52)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {loading ? "Generating..." : "Generate Test Cases"}
-                </button>
+                <div className="flex flex-wrap items-center gap-3 xl:max-w-[34rem] xl:justify-end">
+                  <button
+                    onClick={generate}
+                    disabled={loading}
+                    className="inline-flex min-h-[48px] items-center justify-center rounded-xl bg-[linear-gradient(135deg,_#0f766e_0%,_#14532d_100%)] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_35px_-18px_rgba(5,150,105,0.52)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {loading ? "Generating..." : "Generate Test Cases"}
+                  </button>
 
-                <button
-                  onClick={addNewRow}
-                  className="inline-flex items-center rounded-xl border border-zinc-200 bg-white px-5 py-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
-                >
-                  Create Manually
-                </button>
-
-                <div className="hidden rounded-[18px] border border-zinc-200/80 bg-zinc-50/80 px-4 py-3 text-xs leading-5 text-zinc-500 shadow-sm xl:block dark:border-zinc-800 dark:bg-zinc-950/70 dark:text-zinc-400">
-                  Advanced QA tools stay below so the first pass stays focused.
+                  <button
+                    onClick={addNewRow}
+                    className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-zinc-200 bg-white px-5 py-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
+                  >
+                    Create Manually
+                  </button>
                 </div>
+              </div>
+
+              <div className="rounded-[18px] border border-zinc-200/80 bg-zinc-50/80 px-4 py-3 text-xs leading-5 text-zinc-500 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70 dark:text-zinc-400 xl:ml-auto xl:max-w-[34rem]">
+                Advanced QA tools stay below so the first pass stays focused.
               </div>
             </div>
           </div>
@@ -7613,7 +7615,7 @@ export default function ProjectWorkspace({
             )}
 
             {isCasesSection && (
-              <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+              <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-6">
                 {[
                   {
                     label: "Linked Coverage",
@@ -9607,7 +9609,7 @@ export default function ProjectWorkspace({
                       {traceabilityAnalysis.uncoveredSentences.length} uncovered sentence{traceabilityAnalysis.uncoveredSentences.length === 1 ? "" : "s"}
                     </span>
                   </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                     {[
                       {
                         label: "Sentence Coverage",

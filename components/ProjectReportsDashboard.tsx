@@ -1,12 +1,16 @@
-﻿"use client";
+"use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import BarChart from "./charts/BarChart";
 import DonutChart from "./charts/DonutChart";
 import StackedExecutionChart from "./charts/StackedExecutionChart";
 import TrendChart from "./charts/TrendChart";
-import type { ProjectReportsSummary } from "../utils/project-reports";
+import {
+  buildExecutionReportCsv,
+  type ProjectReportsSummary,
+} from "../utils/project-reports";
 import {
   buildReleaseReviewHistoryCsv,
   buildReleaseReviewHistoryMarkdown,
@@ -379,6 +383,10 @@ export default function ProjectReportsDashboard({ summary }: Props) {
       summary,
     ]
   );
+  const executionCsvExport = useMemo(
+    () => buildExecutionReportCsv(summary, projectName),
+    [projectName, summary]
+  );
   const latestReleaseDeltaLabel =
     summary.latestReleaseDelta === null
       ? "First recorded review"
@@ -451,18 +459,14 @@ export default function ProjectReportsDashboard({ summary }: Props) {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 2xl:grid-cols-6">
           {[
             ["Cases", summary.totalCases],
             ["Issues", summary.totalIssues],
             ["Open Issues", summary.openIssues],
             ["Blockers", summary.blockerIssues],
             ["Linked Coverage", `${summary.linkedCoveragePercent}%`],
-            [
-              "Template Ops",
-              summary.templateOperations.importedPacks +
-                summary.templateOperations.exportedPacks,
-            ],
+            ["Failures", summary.executionSummary.failed + summary.executionSummary.blocked],
           ].map(([label, value]) => (
             <article
               key={label}
@@ -476,6 +480,27 @@ export default function ProjectReportsDashboard({ summary }: Props) {
               </p>
             </article>
           ))}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              downloadTextFile(
+                `${safeProjectSlug}-execution-report.csv`,
+                executionCsvExport,
+                "text/csv;charset=utf-8"
+              )
+            }
+            className={exportButtonClassName}
+          >
+            Export Execution CSV
+          </button>
+          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+            Release signal: {summary.releaseSignal.level}
+          </span>
+          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+            {summary.executionSummary.passed} passed | {summary.executionSummary.failed} failed | {summary.executionSummary.blocked} blocked
+          </span>
         </div>
       </section>
 
@@ -492,7 +517,7 @@ export default function ProjectReportsDashboard({ summary }: Props) {
               The visual analytics stay visible, while the export and history layers are grouped more deliberately below.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-5">
             <div className="rounded-[22px] border border-zinc-200/80 bg-white/85 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-950/70">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
                 Execution
@@ -638,6 +663,147 @@ export default function ProjectReportsDashboard({ summary }: Props) {
         </div>
 
         <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <article className="rounded-[28px] border border-zinc-200/80 bg-zinc-50/80 p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70 xl:col-span-2">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
+                  Failure Insights
+                </p>
+                <h3 className="mt-1 text-xl font-semibold text-zinc-950 dark:text-zinc-50">
+                  Understand failures fast and move directly to action
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                  The summary stays lightweight: what failed, whether automation was involved, and where to jump next for issue creation or release review.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+                  Release signal: {summary.releaseSignal.level}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadTextFile(
+                      `${safeProjectSlug}-execution-report.csv`,
+                      executionCsvExport,
+                      "text/csv;charset=utf-8"
+                    )
+                  }
+                  className={exportButtonClassName}
+                >
+                  Export Execution CSV
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+              {[
+                ["Total Tests", summary.executionSummary.total],
+                ["Passed", summary.executionSummary.passed],
+                ["Failed", summary.executionSummary.failed],
+                ["Blocked", summary.executionSummary.blocked],
+              ].map(([label, value]) => (
+                <article
+                  key={label}
+                  className="rounded-[22px] border border-zinc-200/80 bg-white/85 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900/70"
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                    {label}
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+                    {value}
+                  </p>
+                </article>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-[22px] border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              {summary.releaseSignal.summary}
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {summary.failureInsights.length === 0 ? (
+                <div className="rounded-[22px] border border-dashed border-zinc-200 px-4 py-4 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+                  No active failures are recorded right now.
+                </div>
+              ) : (
+                summary.failureInsights.map((entry) => (
+                  <article
+                    key={entry.rowId}
+                    className="rounded-[22px] border border-zinc-200/80 bg-white/85 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900/70"
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                          {entry.rowId}
+                        </p>
+                        <h4 className="mt-1 text-base font-semibold text-zinc-950 dark:text-zinc-50">
+                          {entry.title}
+                        </h4>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                            {entry.executionResult}
+                          </span>
+                          {entry.failedSteps > 0 ? (
+                            <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                              {entry.failedSteps} failed step{entry.failedSteps === 1 ? "" : "s"}
+                            </span>
+                          ) : null}
+                          {entry.blockedSteps > 0 ? (
+                            <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                              {entry.blockedSteps} blocked step{entry.blockedSteps === 1 ? "" : "s"}
+                            </span>
+                          ) : null}
+                          {entry.latestAutomationStatus ? (
+                            <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                              Automation {entry.latestAutomationStatus}
+                            </span>
+                          ) : null}
+                          {entry.linkedIssueKey ? (
+                            <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">
+                              {entry.linkedIssueKey}
+                            </span>
+                          ) : null}
+                        </div>
+                        {entry.latestAutomationFailureMessage ? (
+                          <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                            {entry.latestAutomationFailureMessage}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Link
+                          href={`/projects/${encodeURIComponent(projectKey)}/runs?${new URLSearchParams({
+                            ...(entry.runId ? { runId: entry.runId } : {}),
+                            rowId: entry.rowId,
+                          }).toString()}`}
+                          className="inline-flex items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                        >
+                          Open In Runs
+                        </Link>
+                        <Link
+                          href={`/projects/${encodeURIComponent(projectKey)}/runs?${new URLSearchParams({
+                            ...(entry.runId ? { runId: entry.runId } : {}),
+                            rowId: entry.rowId,
+                          }).toString()}`}
+                          className="inline-flex items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+                        >
+                          {entry.linkedIssueId ? "Review Linked Issue" : "Create Issue"}
+                        </Link>
+                        <Link
+                          href={`/projects/${encodeURIComponent(projectKey)}/release`}
+                          className="inline-flex items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 shadow-sm transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
+                        >
+                          Release Impact
+                        </Link>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </article>
+
           <BarChart
             title="Bar Chart: Issue Priority Mix"
             description="Volume by issue priority across the project."
@@ -667,7 +833,7 @@ export default function ProjectReportsDashboard({ summary }: Props) {
           />
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           <article className="rounded-[24px] border border-zinc-200/80 bg-white/85 px-5 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
               Automated Cases
@@ -1395,4 +1561,6 @@ export default function ProjectReportsDashboard({ summary }: Props) {
     </div>
   );
 }
+
+
 

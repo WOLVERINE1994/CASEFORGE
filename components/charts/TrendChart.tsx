@@ -128,13 +128,13 @@ export default function TrendChart({
             ) : null}
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
             {points.map((point) => (
               <div
                 key={point.key}
                 className="rounded-[18px] border border-zinc-200/80 bg-zinc-50/80 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950/70"
               >
-                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                <p className="text-sm font-semibold leading-5 text-zinc-900 dark:text-zinc-100">
                   {point.label}
                 </p>
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
