@@ -3676,26 +3676,76 @@ export default function ProjectWorkspace({
 
   const runAutomationForRow = useCallback(
     async (rowId: string) => {
-      const activeProjectRef = currentProjectIdRef.current ?? currentProjectId;
-      if (!activeProjectRef) {
-        showWorkspaceNotice(
-          "error",
-          "Save the workspace as a project before running automation."
+      let activeProjectRef = currentProjectIdRef.current ?? currentProjectId;
+      let activeProject =
+        projectsRef.current.find((project) => project.id === activeProjectRef) ?? null;
+
+      if (!activeProject) {
+        const trimmedName = projectName.trim();
+        if (!trimmedName) {
+          showWorkspaceNotice(
+            "error",
+            "Name and save the workspace before running automation."
+          );
+          return;
+        }
+
+        const { updatedProject, updatedProjects } = upsertProject(
+          projectsRef.current,
+          trimmedName
         );
-        return;
+        const savedProjects = await persistProjects(updatedProjects);
+        activeProject =
+          savedProjects.find((project) => project.id === updatedProject.id) ??
+          updatedProject;
+        activeProjectRef = activeProject.id;
+        setResolvedProjectId(activeProject.id);
       }
 
-      const activeProject =
-        projects.find((project) => project.id === activeProjectRef) ?? null;
-      const activeRun =
-        activeProject?.runs?.find((run) => run.id === activeProject.activeRunId) ?? null;
+      let activeRun =
+        activeProject.runs?.find((run) => run.id === activeProject?.activeRunId) ?? null;
 
       if (!activeRun) {
-        showWorkspaceNotice(
-          "error",
-          "Open or create an active run before executing automation."
+        const now = Date.now();
+        const defaultRun = {
+          id: crypto.randomUUID(),
+          name: "Automation Run",
+          status: "active" as const,
+          rowResults: {},
+          rowActualResults: {},
+          rowNotes: {},
+          rowStepResults: {},
+          rowStepNotes: {},
+          rowStepActualResults: {},
+          rowStepEvidence: {},
+          linkedDefectIds: {},
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        const nextProject: Project = {
+          ...activeProject,
+          runs: [...(activeProject.runs ?? []), defaultRun],
+          activeRunId: defaultRun.id,
+          updatedAt: now,
+        };
+        const currentActiveProjectId = activeProject.id;
+        const nextProjects = projectsRef.current.map((project) =>
+          project.id === currentActiveProjectId ? nextProject : project
         );
-        return;
+        const savedProjects = await persistProjects(nextProjects);
+        const ensuredProject =
+          savedProjects.find((project) => project.id === nextProject.id) ?? nextProject;
+        activeProject = ensuredProject;
+        activeRun =
+          ensuredProject.runs?.find((run) => run.id === ensuredProject.activeRunId) ??
+          defaultRun;
+        activeProjectRef = ensuredProject.id;
+        setResolvedProjectId(ensuredProject.id);
+        showWorkspaceNotice(
+          "info",
+          'Created an "Automation Run" so this script can execute right away.'
+        );
       }
 
       const response = await fetch("/api/automation/execute", {
@@ -3750,7 +3800,7 @@ export default function ProjectWorkspace({
           : `Automation ${data.execution.status} for ${rowId}.`
       );
     },
-    [currentProjectId, projects]
+    [currentProjectId, persistProjects, projectName, upsertProject]
   );
 
   const createAutomationIssueForRow = useCallback(
