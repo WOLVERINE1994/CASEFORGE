@@ -612,6 +612,10 @@ export default function ProjectWorkspace({
   const [workspaceNotice, setWorkspaceNotice] = useState<{
     tone: "info" | "success" | "error";
     text: string;
+    actions?: Array<{
+      label: string;
+      href: string;
+    }>;
   } | null>(null);
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
   const [bulkAssigneeValue, setBulkAssigneeValue] = useState("");
@@ -1371,9 +1375,13 @@ export default function ProjectWorkspace({
 
   const showWorkspaceNotice = (
     tone: "info" | "success" | "error",
-    text: string
+    text: string,
+    actions?: Array<{
+      label: string;
+      href: string;
+    }>
   ) => {
-    setWorkspaceNotice({ tone, text });
+    setWorkspaceNotice({ tone, text, actions });
 
     if (noticeTimeoutRef.current) {
       clearTimeout(noticeTimeoutRef.current);
@@ -3797,10 +3805,29 @@ export default function ProjectWorkspace({
         data.execution.status === "passed" ? "success" : "error",
         data.execution.status === "passed"
           ? `Automation passed for ${rowId}. Open Runs for case detail or Reports for the project summary.`
-          : `Automation ${data.execution.status} for ${rowId}. Open Runs for details or Reports for the summary.`
+          : `Automation ${data.execution.status} for ${rowId}. Open Runs for details or Reports for the summary.`,
+        activeProjectRef
+          ? [
+              {
+                label: "View Run",
+                href: `/projects/${encodeURIComponent(
+                  (activeProject.projectKey?.trim() || projectKey.trim() || activeProjectRef)
+                )}/runs?${new URLSearchParams({
+                  runId: activeRun.id,
+                  rowId,
+                }).toString()}`,
+              },
+              {
+                label: "View Report",
+                href: `/projects/${encodeURIComponent(
+                  (activeProject.projectKey?.trim() || projectKey.trim() || activeProjectRef)
+                )}/reports`,
+              },
+            ]
+          : undefined
       );
     },
-    [currentProjectId, persistProjects, projectName, upsertProject]
+    [currentProjectId, persistProjects, projectKey, projectName, upsertProject]
   );
 
   const createAutomationIssueForRow = useCallback(
@@ -7390,7 +7417,22 @@ export default function ProjectWorkspace({
                 : "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
             }`}
           >
-            {workspaceNotice.text}
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <span>{workspaceNotice.text}</span>
+              {workspaceNotice.actions && workspaceNotice.actions.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {workspaceNotice.actions.map((action) => (
+                    <Link
+                      key={`${action.label}-${action.href}`}
+                      href={action.href}
+                      className="inline-flex items-center justify-center rounded-2xl border border-white/70 bg-white/90 px-3 py-2 text-xs font-semibold text-current shadow-sm transition hover:bg-white dark:border-zinc-700 dark:bg-zinc-950/80 dark:hover:bg-zinc-900"
+                    >
+                      {action.label}
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </section>
         )}
 
