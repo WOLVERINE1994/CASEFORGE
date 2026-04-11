@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import AutomationArtifactViewer from "./AutomationArtifactViewer";
 import AutomationStepEditor from "./AutomationStepEditor";
@@ -19,6 +20,7 @@ type Props = {
   steps: AutomationStep[];
   latestExecution: AutomationExecution | null;
   latestArtifacts: AutomationExecutionArtifact[];
+  projectRouteRef: string | null;
   onSave: (payload: {
     rowId: string;
     mode: AutomationBindingMode;
@@ -37,6 +39,7 @@ export default function CaseAutomationPanel({
   steps,
   latestExecution,
   latestArtifacts,
+  projectRouteRef,
   onSave,
   onRun,
   onCreateIssueFromFailure,
@@ -67,6 +70,26 @@ export default function CaseAutomationPanel({
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isValidating, setIsValidating] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const runHref = useMemo(() => {
+    if (!projectRouteRef || !latestExecution) {
+      return null;
+    }
+
+    const params = new URLSearchParams({
+      runId: latestExecution.runId,
+      rowId: row.id,
+    });
+
+    return `/projects/${encodeURIComponent(projectRouteRef)}/runs?${params.toString()}`;
+  }, [latestExecution, projectRouteRef, row.id]);
+
+  const reportHref = useMemo(() => {
+    if (!projectRouteRef) {
+      return null;
+    }
+
+    return `/projects/${encodeURIComponent(projectRouteRef)}/reports`;
+  }, [projectRouteRef]);
 
   const headerChips = useMemo(
     () => [
@@ -231,6 +254,48 @@ export default function CaseAutomationPanel({
           artifacts={latestArtifacts}
         />
       </div>
+
+      {latestExecution ? (
+        <div className="mt-4 rounded-[20px] border border-sky-200 bg-sky-50/90 px-4 py-3 dark:border-sky-500/30 dark:bg-sky-500/10">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-700 dark:text-sky-300">
+                Latest Automation Result
+              </p>
+              <p className="mt-1 text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                {latestExecution.status === "passed"
+                  ? "Execution completed successfully."
+                  : latestExecution.status === "failed"
+                  ? "Execution failed and is ready for triage."
+                  : latestExecution.status === "blocked"
+                  ? "Execution was blocked and needs follow-up."
+                  : "Execution result is available."}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-zinc-600 dark:text-zinc-300">
+                Use Runs for the case-level execution detail and Reports for the project summary.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {runHref ? (
+                <Link
+                  href={runHref}
+                  className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                >
+                  Open Run Result
+                </Link>
+              ) : null}
+              {reportHref ? (
+                <Link
+                  href={reportHref}
+                  className="rounded-2xl border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-800 transition hover:bg-sky-50 dark:border-sky-500/30 dark:bg-zinc-900 dark:text-sky-200 dark:hover:bg-zinc-800"
+                >
+                  Open Report
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

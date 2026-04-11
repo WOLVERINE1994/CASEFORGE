@@ -3796,8 +3796,8 @@ export default function ProjectWorkspace({
       showWorkspaceNotice(
         data.execution.status === "passed" ? "success" : "error",
         data.execution.status === "passed"
-          ? `Automation passed for ${rowId}.`
-          : `Automation ${data.execution.status} for ${rowId}.`
+          ? `Automation passed for ${rowId}. Open Runs for case detail or Reports for the project summary.`
+          : `Automation ${data.execution.status} for ${rowId}. Open Runs for details or Reports for the summary.`
       );
     },
     [currentProjectId, persistProjects, projectName, upsertProject]

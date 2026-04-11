@@ -1368,6 +1368,7 @@ export default function TestCaseTable({
                         steps={automationScriptSteps}
                         latestExecution={automationExecution}
                         latestArtifacts={automationExecutionArtifacts}
+                        projectRouteRef={projectRouteRef}
                         onSave={onSaveAutomation}
                         onRun={onRunAutomation}
                         onCreateIssueFromFailure={onCreateAutomationIssue}
