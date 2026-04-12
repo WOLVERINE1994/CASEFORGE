@@ -8,6 +8,7 @@ import type {
   AutomationBindingMode,
   AutomationExecution,
   AutomationExecutionArtifact,
+  AutomationExecutionMode,
   AutomationProvider,
   AutomationScript,
   AutomationStep,
@@ -25,11 +26,32 @@ type Props = {
     rowId: string;
     mode: AutomationBindingMode;
     provider: AutomationProvider;
+    executionMode: AutomationExecutionMode;
     name: string;
     description?: string;
     steps: AutomationStep[];
   }) => void;
-  onRun: (rowId: string) => Promise<void>;
+  onRun: (rowId: string) => Promise<{
+    tone: "info" | "success" | "error";
+    text: string;
+  } | void>;
+  onRunWithOptions?: (payload: {
+    rowId: string;
+    scriptId?: string;
+    executionMode: AutomationExecutionMode;
+  }) => Promise<{
+    tone: "info" | "success" | "error";
+    text: string;
+  } | void>;
+  onDebugInBrowser?: (payload: {
+    rowId: string;
+    provider: AutomationProvider;
+    scriptName: string;
+    steps: AutomationStep[];
+  }) => Promise<{
+    tone: "info" | "success" | "error";
+    text: string;
+  } | void>;
   onCreateIssueFromFailure?: (rowId: string) => Promise<void>;
 };
 
@@ -42,12 +64,17 @@ export default function CaseAutomationPanel({
   projectRouteRef,
   onSave,
   onRun,
+  onRunWithOptions,
+  onDebugInBrowser,
   onCreateIssueFromFailure,
 }: Props) {
   const [draftName, setDraftName] = useState(script?.name ?? `${row.id} flow`);
   const [draftDescription, setDraftDescription] = useState(script?.description ?? "");
   const [draftProvider, setDraftProvider] = useState<AutomationProvider>(
     script?.provider ?? "playwright"
+  );
+  const [draftExecutionMode, setDraftExecutionMode] = useState<AutomationExecutionMode>(
+    script?.executionMode ?? "headless"
   );
   const [draftMode, setDraftMode] = useState<AutomationBindingMode>(
     row.automationBindingMode ?? "automated"
@@ -70,6 +97,11 @@ export default function CaseAutomationPanel({
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isValidating, setIsValidating] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [isDebugging, setIsDebugging] = useState(false);
+  const [runNotice, setRunNotice] = useState<{
+    tone: "info" | "success" | "error";
+    text: string;
+  } | null>(null);
   const runHref = useMemo(() => {
     if (!projectRouteRef || !latestExecution) {
       return null;
@@ -95,10 +127,11 @@ export default function CaseAutomationPanel({
     () => [
       draftMode,
       draftProvider,
+      draftExecutionMode === "headed" ? "visible browser" : "headless",
       script ? "bound" : "not saved",
       latestExecution?.status ?? "not-run",
     ],
-    [draftMode, draftProvider, latestExecution?.status, script]
+    [draftExecutionMode, draftMode, draftProvider, latestExecution?.status, script]
   );
 
   const validate = async () => {
@@ -124,6 +157,7 @@ export default function CaseAutomationPanel({
       rowId: row.id,
       mode: draftMode,
       provider: draftProvider,
+      executionMode: draftExecutionMode,
       name: draftName,
       description: draftDescription,
       steps: draftSteps,
@@ -132,10 +166,65 @@ export default function CaseAutomationPanel({
 
   const run = async () => {
     setIsRunning(true);
+    setRunNotice({
+      tone: "info",
+      text: "Running automation now. This can take a few seconds.",
+    });
     try {
-      await onRun(row.id);
+      const result = onRunWithOptions
+        ? await onRunWithOptions({
+            rowId: row.id,
+            scriptId: script?.id,
+            executionMode: draftExecutionMode,
+          })
+        : await onRun(row.id);
+      if (result) {
+        setRunNotice(result);
+      }
+    } catch (error) {
+      setRunNotice({
+        tone: "error",
+        text:
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : "Automation did not complete. Try again.",
+      });
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  const debugInBrowser = async () => {
+    if (!onDebugInBrowser) {
+      return;
+    }
+
+    setIsDebugging(true);
+    setRunNotice({
+      tone: "info",
+      text: "Starting visible browser debug now.",
+    });
+
+    try {
+      const result = await onDebugInBrowser({
+        rowId: row.id,
+        provider: draftProvider,
+        scriptName: draftName.trim() || `${row.id} flow`,
+        steps: draftSteps,
+      });
+      if (result) {
+        setRunNotice(result);
+      }
+    } catch (error) {
+      setRunNotice({
+        tone: "error",
+        text:
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : "Visible browser debug did not start.",
+      });
+    } finally {
+      setIsDebugging(false);
     }
   };
 
@@ -180,6 +269,16 @@ export default function CaseAutomationPanel({
           <option value="api">API (planned)</option>
           <option value="mobile">Mobile (planned)</option>
         </select>
+        <select
+          value={draftExecutionMode}
+          onChange={(event) =>
+            setDraftExecutionMode(event.target.value as AutomationExecutionMode)
+          }
+          className="min-h-[42px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+        >
+          <option value="headless">Headless Run</option>
+          <option value="headed">Visible Browser</option>
+        </select>
         <input
           type="text"
           value={draftDescription}
@@ -198,6 +297,10 @@ export default function CaseAutomationPanel({
         </select>
       </div>
 
+      <p className="mt-3 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+        Use <span className="font-semibold">Visible Browser</span> for local debugging. Headless remains the default for repeatable automation runs.
+      </p>
+
       <div className="mt-4">
         <AutomationStepEditor steps={draftSteps} onChange={setDraftSteps} />
       </div>
@@ -207,6 +310,20 @@ export default function CaseAutomationPanel({
           {validationErrors.map((error) => (
             <p key={error}>{error}</p>
           ))}
+        </div>
+      ) : null}
+
+      {runNotice ? (
+        <div
+          className={`mt-3 rounded-2xl border px-3 py-3 text-xs ${
+            runNotice.tone === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+              : runNotice.tone === "error"
+              ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300"
+              : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300"
+          }`}
+        >
+          {runNotice.text}
         </div>
       ) : null}
 
@@ -233,6 +350,14 @@ export default function CaseAutomationPanel({
           className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-60 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
         >
           {isRunning ? "Running..." : "Run Automation"}
+        </button>
+        <button
+          type="button"
+          onClick={debugInBrowser}
+          disabled={isDebugging}
+          className="rounded-2xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-60 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"
+        >
+          {isDebugging ? "Opening Browser..." : "Debug In Browser"}
         </button>
         {latestExecution &&
         (latestExecution.status === "failed" || latestExecution.status === "blocked") &&

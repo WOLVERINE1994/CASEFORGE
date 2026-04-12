@@ -58,6 +58,7 @@ import {
 import {
   automationProviderOptions,
   formatTestCaseId,
+  generationModeLabels,
   mergeRows,
   modePrimaryType,
   normalizeAutomationProvider,
@@ -90,6 +91,7 @@ import {
   type TestCaseVersionEntry,
   type TestCaseRow,
 } from "../utils/workspace";
+import { enrichGeneratedRowsWithDomainMetadata } from "../utils/security-accessibility-metadata";
 import {
   buildCaseManagementSummary,
   buildCoverageHotspots,
@@ -583,6 +585,15 @@ export default function ProjectWorkspace({
   const [automationArtifacts, setAutomationArtifacts] = useState<
     AutomationExecutionArtifact[]
   >([]);
+  const generationModeHelperText = useMemo(() => {
+    if (generationMode === "security") {
+      return "Generate defensive manual validation for authentication, authorization, sessions, input validation, data protection, abuse resistance, and safe failure handling.";
+    }
+    if (generationMode === "accessibility") {
+      return "Generate manual WCAG-oriented validation for keyboard flow, focus behavior, semantics, forms, screen readers, contrast, zoom and reflow, and status messaging.";
+    }
+    return "Advanced QA tools stay below so the first pass stays focused.";
+  }, [generationMode]);
   const [casesDefaultPreset, setCasesDefaultPreset] = useState<
     "default" | "review-queue" | "failed-linked"
   >("default");
@@ -3238,7 +3249,10 @@ export default function ProjectWorkspace({
 
   const parseGeneratedResult = (result: string) => {
     const parsedRows = parseResultToRows(result || "");
-    const preparedRows = prepareGeneratedRows(parsedRows, generationMode);
+    const preparedRows = enrichGeneratedRowsWithDomainMetadata(
+      prepareGeneratedRows(parsedRows, generationMode),
+      generationMode
+    );
 
     return {
       parsedRows,
@@ -3606,6 +3620,7 @@ export default function ProjectWorkspace({
     rowId,
     mode,
     provider,
+    executionMode,
     name,
     description,
     steps,
@@ -3613,6 +3628,7 @@ export default function ProjectWorkspace({
     rowId: string;
     mode: "manual" | "automated" | "hybrid";
     provider: "playwright" | "cypress" | "api" | "mobile";
+    executionMode: "headless" | "headed";
     name: string;
     description?: string;
     steps: AutomationStep[];
@@ -3629,6 +3645,7 @@ export default function ProjectWorkspace({
       id: scriptId,
       projectId: currentProjectIdRef.current ?? currentProjectId ?? "draft-project",
       provider,
+      executionMode,
       name: trimmedName,
       description: description?.trim() || undefined,
       createdBy: reviewerName?.trim() || undefined,
@@ -3683,7 +3700,13 @@ export default function ProjectWorkspace({
   };
 
   const runAutomationForRow = useCallback(
-    async (rowId: string) => {
+    async (
+      rowId: string,
+      options?: {
+        scriptId?: string;
+        executionMode?: "headless" | "headed";
+      }
+    ) => {
       let activeProjectRef = currentProjectIdRef.current ?? currentProjectId;
       let activeProject =
         projectsRef.current.find((project) => project.id === activeProjectRef) ?? null;
@@ -3691,11 +3714,9 @@ export default function ProjectWorkspace({
       if (!activeProject) {
         const trimmedName = projectName.trim();
         if (!trimmedName) {
-          showWorkspaceNotice(
-            "error",
-            "Name and save the workspace before running automation."
-          );
-          return;
+          const text = "Name and save the workspace before running automation.";
+          showWorkspaceNotice("error", text);
+          return { tone: "error" as const, text };
         }
 
         const { updatedProject, updatedProjects } = upsertProject(
@@ -3765,6 +3786,8 @@ export default function ProjectWorkspace({
           projectId: activeProjectRef,
           runId: activeRun.id,
           caseId: rowId,
+          scriptId: options?.scriptId,
+          executionMode: options?.executionMode,
         }),
       });
 
@@ -3775,11 +3798,9 @@ export default function ProjectWorkspace({
       };
 
       if (!response.ok || !data.execution) {
-        showWorkspaceNotice(
-          "error",
-          data.error || "Failed to execute automation."
-        );
-        return;
+        const text = data.error || "Failed to execute automation.";
+        showWorkspaceNotice("error", text);
+        return { tone: "error" as const, text };
       }
 
       setAutomationExecutions((currentExecutions) => [
@@ -3801,11 +3822,16 @@ export default function ProjectWorkspace({
         )
       );
 
-      showWorkspaceNotice(
-        data.execution.status === "passed" ? "success" : "error",
+      const tone: "success" | "error" =
+        data.execution.status === "passed" ? "success" : "error";
+      const text =
         data.execution.status === "passed"
           ? `Automation passed for ${rowId}. Open Runs for case detail or Reports for the project summary.`
-          : `Automation ${data.execution.status} for ${rowId}. Open Runs for details or Reports for the summary.`,
+          : `Automation ${data.execution.status} for ${rowId}. Open Runs for details or Reports for the summary.`;
+
+      showWorkspaceNotice(
+        tone,
+        text,
         activeProjectRef
           ? [
               {
@@ -3826,8 +3852,57 @@ export default function ProjectWorkspace({
             ]
           : undefined
       );
+
+      return { tone, text };
     },
     [currentProjectId, persistProjects, projectKey, projectName, upsertProject]
+  );
+
+  const runAutomationForRowWithOptions = useCallback(
+    async (payload: {
+      rowId: string;
+      scriptId?: string;
+      executionMode: "headless" | "headed";
+    }) =>
+      runAutomationForRow(payload.rowId, {
+        scriptId: payload.scriptId,
+        executionMode: payload.executionMode,
+      }),
+    [runAutomationForRow]
+  );
+
+  const debugAutomationInBrowser = useCallback(
+    async (payload: {
+      rowId: string;
+      provider: "playwright" | "cypress" | "api" | "mobile";
+      scriptName: string;
+      steps: AutomationStep[];
+    }) => {
+      const response = await fetch("/api/automation/debug", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = (await response.json()) as {
+        error?: string;
+        message?: string;
+      };
+
+      if (!response.ok) {
+        const text = data.error || "Failed to start visible browser debug.";
+        showWorkspaceNotice("error", text);
+        return { tone: "error" as const, text };
+      }
+
+      const text =
+        data.message || "Visible browser debug started. Close the browser when done.";
+      showWorkspaceNotice("info", text);
+      return { tone: "info" as const, text };
+    },
+    []
   );
 
   const createAutomationIssueForRow = useCallback(
@@ -6947,6 +7022,8 @@ export default function ProjectWorkspace({
                     <option value="ui">UI Cases</option>
                     <option value="negative">Negative Cases</option>
                     <option value="edge">Edge Cases</option>
+                    <option value="security">Security Cases</option>
+                    <option value="accessibility">Accessibility / WCAG Cases</option>
                   </select>
                 </label>
 
@@ -7005,7 +7082,10 @@ export default function ProjectWorkspace({
               </div>
 
               <div className="rounded-[18px] border border-zinc-200/80 bg-zinc-50/80 px-4 py-3 text-xs leading-5 text-zinc-500 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70 dark:text-zinc-400 xl:ml-auto xl:max-w-[34rem]">
-                Advanced QA tools stay below so the first pass stays focused.
+                <span className="font-semibold text-zinc-700 dark:text-zinc-200">
+                  {generationModeLabels[generationMode]}:
+                </span>{" "}
+                {generationModeHelperText}
               </div>
             </div>
           </div>
@@ -10251,9 +10331,11 @@ export default function ProjectWorkspace({
                 onCloneRow={cloneRowById}
                 onSaveTemplateFromRow={saveTemplateFromRow}
                 onRestoreCaseVersion={restoreCaseVersion}
-                onSaveAutomation={saveAutomationForRow}
-                onRunAutomation={runAutomationForRow}
-                onCreateAutomationIssue={createAutomationIssueForRow}
+              onSaveAutomation={saveAutomationForRow}
+              onRunAutomation={runAutomationForRow}
+              onRunAutomationWithOptions={runAutomationForRowWithOptions}
+              onDebugAutomationInBrowser={debugAutomationInBrowser}
+              onCreateAutomationIssue={createAutomationIssueForRow}
                 deleteRow={deleteFilteredRow}
               regenerateRow={regenerateFilteredRow}
               regeneratingIndex={

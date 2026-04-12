@@ -298,10 +298,13 @@ export type ReleaseReviewState = {
   }>;
 };
 
+export type AutomationExecutionMode = "headless" | "headed";
+
 export type AutomationScript = {
   id: string;
   projectId: string;
   provider: AutomationProvider;
+  executionMode?: AutomationExecutionMode;
   name: string;
   description?: string;
   createdBy?: string;
@@ -375,6 +378,38 @@ export type TestCaseRow = {
   issueId?: string;
   issueKey?: string;
   type: string;
+  testDomain?:
+    | "functional"
+    | "regression"
+    | "api"
+    | "ui"
+    | "negative"
+    | "edge"
+    | "security"
+    | "accessibility";
+  securityCategory?:
+    | "auth"
+    | "authorization"
+    | "session"
+    | "validation"
+    | "data-protection"
+    | "api-security"
+    | "upload-safety"
+    | "business-logic"
+    | "abuse-resistance";
+  accessibilityCategory?:
+    | "keyboard-navigation"
+    | "focus-management"
+    | "screen-reader"
+    | "forms"
+    | "semantics"
+    | "contrast"
+    | "zoom-reflow"
+    | "error-handling"
+    | "media-content";
+  complianceReference?: string;
+  riskLevel?: "low" | "medium" | "high";
+  automationPotential?: "low" | "medium" | "high";
   title: string;
   preconditions: string;
   steps: string;
@@ -415,7 +450,9 @@ export type GenerationMode =
   | "edge"
   | "ui"
   | "api"
-  | "regression";
+  | "regression"
+  | "security"
+  | "accessibility";
 
 export type CoverageDepth = "basic" | "standard" | "thorough";
 
@@ -434,6 +471,17 @@ export const personaLabels: Record<Persona, string> = {
   "first-time-user": "First-Time User",
   "returning-user": "Returning User",
   "blocked-user": "Blocked User",
+};
+
+export const generationModeLabels: Record<GenerationMode, string> = {
+  functional: "Functional Cases",
+  regression: "Regression Cases",
+  api: "API Cases",
+  ui: "UI Cases",
+  negative: "Negative Cases",
+  edge: "Edge Cases",
+  security: "Security Cases",
+  accessibility: "Accessibility / WCAG Cases",
 };
 
 export const sourceArtifactLabels: Record<SourceArtifactType, string> = {
@@ -592,6 +640,8 @@ export const modePrimaryType: Record<GenerationMode, TestCaseRow["type"]> = {
   ui: "UI",
   api: "API",
   regression: "Regression",
+  security: "Security",
+  accessibility: "UI",
 };
 
 const allowedTypesByMode: Record<GenerationMode, TestCaseRow["type"][]> = {
@@ -601,6 +651,8 @@ const allowedTypesByMode: Record<GenerationMode, TestCaseRow["type"][]> = {
   ui: ["UI", "Negative", "Edge"],
   api: ["API", "Negative", "Edge"],
   regression: ["Regression", "Functional"],
+  security: ["Security", "API", "Negative", "Edge", "Functional", "UI"],
+  accessibility: ["UI", "Functional", "Negative", "Edge"],
 };
 
 export const resolveTypeForMode = (
@@ -628,6 +680,12 @@ export const normalizeRows = (rows: TestCaseRow[], mode: GenerationMode) =>
     issueId: row.issueId?.trim() || undefined,
     issueKey: row.issueKey?.trim() || undefined,
     title: row.title || "",
+    testDomain: row.testDomain,
+    securityCategory: row.securityCategory,
+    accessibilityCategory: row.accessibilityCategory,
+    complianceReference: row.complianceReference?.trim() || undefined,
+    riskLevel: row.riskLevel,
+    automationPotential: row.automationPotential,
     preconditions: row.preconditions || "",
     steps: row.steps || "",
     expectedResult: row.expectedResult || "",
@@ -831,3 +889,4 @@ export const toDisplayLabel = (value: string) =>
   value.charAt(0).toUpperCase() + value.slice(1);
 
 export const toPersonaLabel = (persona: Persona) => personaLabels[persona];
+

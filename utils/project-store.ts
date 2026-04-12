@@ -420,6 +420,7 @@ const getStoredAutomationScripts = (
       id: record.id,
       projectId: record.projectId,
       provider,
+      executionMode: record.executionMode === "headed" ? "headed" : "headless",
       name: record.name,
       description:
         typeof record.description === "string" ? record.description : undefined,

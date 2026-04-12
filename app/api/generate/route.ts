@@ -14,6 +14,10 @@ const getModeInstructions = (mode: string) => {
       return "Focus on UI behavior, field validation, labels, button states, visibility, usability, layout-related validation, and user interaction flows.";
     case "api":
       return "Focus on API request and response validation, required fields, status codes, invalid payloads, authentication, authorization, and schema checks.";
+    case "security":
+      return "Focus on defensive security validation for systems the user owns or is authorized to test. Cover authentication, authorization, session handling, input validation, sensitive data protection, secure error handling, upload safety, API boundary validation, abuse resistance, and business-logic misuse prevention. Do not produce exploit instructions, payload libraries, or offensive hacking content.";
+    case "accessibility":
+      return "Focus on manual accessibility and WCAG-oriented validation. Cover keyboard navigation, visible focus order, focus management, semantic labels, form labels and error associations, alt text expectations, heading structure, color contrast review points, screen reader behavior, zoom and reflow, status announcements, clear link/button labels, and motion/accessibility considerations where relevant.";
     case "regression":
       return "Focus on core workflows that should remain stable after changes, including key business flows and previously working behaviors.";
     case "functional":
@@ -129,6 +133,8 @@ IMPORTANT RULES:
 - In the Test Data field, separate concrete inputs or environment details using semicolons
 - Avoid adding extra commentary before or after the test cases
 - Every test case must be grounded in the requirement text. Do not invent unrelated modules, screens, roles, or system behavior.
+- This is manual QA generation only. Do not output automation code, exploit tooling, or offensive penetration steps.
+- Any security coverage must stay defensive, authorized, and release-readiness focused.
 - Make titles clear, specific, and easy to edit later
 - Titles should describe the scenario and outcome, not start with words like "Verify", "Test", or "Check"
 - Keep titles between 6 and 12 words when possible
@@ -149,6 +155,8 @@ IMPORTANT RULES:
 - If the requirement is ambiguous, make the smallest safe assumption and reflect it in Preconditions or Test Data instead of inventing new product behavior
 - Prefer one strong case over multiple shallow duplicates
 - If a negative or edge scenario is not supported by the requirement or selected mode, do not force it
+- For security mode, prefer realistic validation scenarios around access, protection, misuse resistance, and safe failure handling instead of attack walkthroughs
+- For accessibility mode, prefer practical WCAG-oriented manual checks with observable expected outcomes
 
 Format exactly like this:
 TC001 | Functional | Title | Preconditions item 1; Preconditions item 2 | Step 1; Step 2; Step 3 | Expected Result | Test Data item 1; Test Data item 2

@@ -8,7 +8,7 @@ import {
   getAutomationStepsForScript,
 } from "../../../../utils/automation";
 import { readProjects, writeProjects } from "../../../../utils/project-store";
-import type { Project } from "../../../../utils/workspace";
+import type { AutomationExecutionMode, Project } from "../../../../utils/workspace";
 
 export async function POST(req: Request) {
   try {
@@ -23,6 +23,10 @@ export async function POST(req: Request) {
     const caseId = typeof body?.caseId === "string" ? body.caseId : "";
     const scriptId =
       typeof body?.scriptId === "string" ? body.scriptId : undefined;
+    const executionMode =
+      body?.executionMode === "headed" || body?.executionMode === "headless"
+        ? (body.executionMode as AutomationExecutionMode)
+        : undefined;
 
     if (!projectRef || !runId || !caseId) {
       return Response.json(
@@ -55,17 +59,24 @@ export async function POST(req: Request) {
     const binding =
       getAutomationBindingForCase(project.automationBindings, caseId) ?? null;
     const resolvedScriptId = scriptId ?? binding?.scriptId ?? row.automationScriptId;
-    const script = getAutomationScriptById(
+    const storedScript = getAutomationScriptById(
       project.automationScripts,
       resolvedScriptId
     );
 
-    if (!script) {
+    if (!storedScript) {
       return Response.json(
         { error: "No automation script is attached to this test case." },
         { status: 400 }
       );
     }
+
+    const script = executionMode
+      ? {
+          ...storedScript,
+          executionMode,
+        }
+      : storedScript;
 
     const steps = getAutomationStepsForScript(project.automationSteps, script.id);
     const validation = validateAutomationScript(script.provider, steps);

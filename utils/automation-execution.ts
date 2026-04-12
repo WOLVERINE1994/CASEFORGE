@@ -58,6 +58,7 @@ export const executeAutomationScript = async ({
     caseId,
     executionId,
     outputDir,
+    executionMode: script.executionMode ?? "headless",
   };
 
   const adapter = getAutomationAdapter(script.provider);

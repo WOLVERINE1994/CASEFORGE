@@ -8,7 +8,7 @@ import DonutChart from "./charts/DonutChart";
 import StackedExecutionChart from "./charts/StackedExecutionChart";
 import TrendChart from "./charts/TrendChart";
 import {
-  buildExecutionReportCsv,
+  buildExecutionReportHtml,
   type ProjectReportsSummary,
 } from "../utils/project-reports";
 import {
@@ -89,6 +89,15 @@ function downloadTextFile(filename: string, content: string, mimeType: string) {
   URL.revokeObjectURL(objectUrl);
 }
 
+function downloadBlob(filename: string, blob: Blob) {
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export default function ProjectReportsDashboard({ summary }: Props) {
   const searchParams = useSearchParams();
   const initialTemplateHistoryProviderFilter = searchParams.get("provider")?.trim() || null;
@@ -99,6 +108,7 @@ export default function ProjectReportsDashboard({ summary }: Props) {
   const [templateHistorySourceFilter, setTemplateHistorySourceFilter] = useState<
     string | null
   >(initialTemplateHistorySourceFilter);
+  const [isExportingExecutionPdf, setIsExportingExecutionPdf] = useState(false);
   const projectDataState = useProjectDataState();
   const activeReviewerSession = useActiveReviewerSession();
   const projectName = projectDataState?.project?.name?.trim() || "Project";
@@ -383,10 +393,6 @@ export default function ProjectReportsDashboard({ summary }: Props) {
       summary,
     ]
   );
-  const executionCsvExport = useMemo(
-    () => buildExecutionReportCsv(summary, projectName),
-    [projectName, summary]
-  );
   const latestReleaseDeltaLabel =
     summary.latestReleaseDelta === null
       ? "First recorded review"
@@ -415,6 +421,46 @@ export default function ProjectReportsDashboard({ summary }: Props) {
       color: "#22c55e",
     },
   ];
+
+  const exportExecutionPdf = async () => {
+    try {
+      setIsExportingExecutionPdf(true);
+
+      const html = buildExecutionReportHtml(summary, projectName, {
+        appBaseUrl:
+          typeof window !== "undefined" ? window.location.origin : undefined,
+      });
+
+      const response = await fetch("/api/reports/pdf" as string, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          html,
+          filename: `${safeProjectSlug}-execution-report.pdf`,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error || "Failed to export PDF report.");
+      }
+
+      const blob = await response.blob();
+      downloadBlob(`${safeProjectSlug}-execution-report.pdf`, blob);
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "Failed to export PDF report.";
+      window.alert(message);
+    } finally {
+      setIsExportingExecutionPdf(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -484,16 +530,27 @@ export default function ProjectReportsDashboard({ summary }: Props) {
         <div className="mt-4 flex flex-wrap gap-3">
           <button
             type="button"
+            onClick={exportExecutionPdf}
+            className={exportButtonClassName}
+            disabled={isExportingExecutionPdf}
+          >
+            {isExportingExecutionPdf ? "Preparing PDF..." : "Export Execution PDF"}
+          </button>
+          <button
+            type="button"
             onClick={() =>
               downloadTextFile(
-                `${safeProjectSlug}-execution-report.csv`,
-                executionCsvExport,
-                "text/csv;charset=utf-8"
+                `${safeProjectSlug}-execution-report.html`,
+                buildExecutionReportHtml(summary, projectName, {
+                  appBaseUrl:
+                    typeof window !== "undefined" ? window.location.origin : undefined,
+                }),
+                "text/html;charset=utf-8"
               )
             }
             className={exportButtonClassName}
           >
-            Export Execution CSV
+            Export Execution HTML
           </button>
           <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
             Release signal: {summary.releaseSignal.level}
@@ -682,16 +739,11 @@ export default function ProjectReportsDashboard({ summary }: Props) {
                 </span>
                 <button
                   type="button"
-                  onClick={() =>
-                    downloadTextFile(
-                      `${safeProjectSlug}-execution-report.csv`,
-                      executionCsvExport,
-                      "text/csv;charset=utf-8"
-                    )
-                  }
+                  onClick={exportExecutionPdf}
                   className={exportButtonClassName}
+                  disabled={isExportingExecutionPdf}
                 >
-                  Export Execution CSV
+                  {isExportingExecutionPdf ? "Preparing PDF..." : "Export Execution PDF"}
                 </button>
               </div>
             </div>

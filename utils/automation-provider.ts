@@ -1,4 +1,5 @@
 import type {
+  AutomationExecutionMode,
   AutomationExecutionArtifact,
   AutomationExecutionStatus,
   AutomationProvider,
@@ -12,6 +13,7 @@ export type AutomationExecutionContext = {
   caseId: string;
   executionId: string;
   outputDir: string;
+  executionMode: AutomationExecutionMode;
 };
 
 export type AutomationValidationResult = {

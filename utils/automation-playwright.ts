@@ -84,7 +84,9 @@ export class PlaywrightAdapter implements AutomationProviderAdapter {
     }
 
     const { chromium } = await import("playwright");
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+      headless: context.executionMode !== "headed",
+    });
     const pageLogs: string[] = [];
     const page = await browser.newPage();
     const executableSteps = this.transformStepsToExecutable(steps) as AutomationStep[];

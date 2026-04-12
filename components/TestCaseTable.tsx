@@ -173,11 +173,32 @@ type Props = {
     rowId: string;
     mode: "manual" | "automated" | "hybrid";
     provider: "playwright" | "cypress" | "api" | "mobile";
+    executionMode: "headless" | "headed";
     name: string;
     description?: string;
     steps: AutomationStep[];
   }) => void;
-  onRunAutomation: (rowId: string) => Promise<void>;
+  onRunAutomation: (rowId: string) => Promise<{
+    tone: "info" | "success" | "error";
+    text: string;
+  } | void>;
+  onRunAutomationWithOptions?: (payload: {
+    rowId: string;
+    scriptId?: string;
+    executionMode: "headless" | "headed";
+  }) => Promise<{
+    tone: "info" | "success" | "error";
+    text: string;
+  } | void>;
+  onDebugAutomationInBrowser?: (payload: {
+    rowId: string;
+    provider: "playwright" | "cypress" | "api" | "mobile";
+    scriptName: string;
+    steps: AutomationStep[];
+  }) => Promise<{
+    tone: "info" | "success" | "error";
+    text: string;
+  } | void>;
   onCreateAutomationIssue?: (rowId: string) => Promise<void>;
   deleteRow: (index: number) => void;
   regenerateRow: (index: number) => void;
@@ -232,6 +253,8 @@ export default function TestCaseTable({
   onRestoreCaseVersion,
   onSaveAutomation,
   onRunAutomation,
+  onRunAutomationWithOptions,
+  onDebugAutomationInBrowser,
   onCreateAutomationIssue,
   deleteRow,
   regenerateRow,
@@ -362,7 +385,7 @@ export default function TestCaseTable({
             {enableSelection && <col className="w-[72px]" />}
             <col className="w-[280px]" />
             <col className="w-[190px]" />
-            <col className="w-[320px]" />
+            <col className="w-[240px]" />
             <col className="w-[280px]" />
             <col className="w-[230px]" />
             <col className="w-[280px]" />
@@ -828,143 +851,38 @@ export default function TestCaseTable({
                       </div>
 
                       <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
-                            Draft Readiness
+                        <p className="font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                          Summary
+                        </p>
+                        <div className="mt-2 space-y-1.5 text-zinc-600 dark:text-zinc-300">
+                          <p>
+                            <span className="font-semibold text-zinc-700 dark:text-zinc-100">
+                              Review owner:
+                            </span>{" "}
+                            {row.reviewOwner?.trim() || "Not assigned"}
                           </p>
-                          <span className="font-medium text-zinc-500 dark:text-zinc-400">
-                            Approval needs an owner and no open notes
-                          </span>
+                          <p>
+                            <span className="font-semibold text-zinc-700 dark:text-zinc-100">
+                              Linked issue:
+                            </span>{" "}
+                            {row.issueKey?.trim() || "Not linked"}
+                          </p>
+                          {traceability ? (
+                            <p>
+                              <span className="font-semibold text-zinc-700 dark:text-zinc-100">
+                                Risk area:
+                              </span>{" "}
+                              {traceability.riskArea}
+                            </p>
+                          ) : null}
+                          <p>
+                            <span className="font-semibold text-zinc-700 dark:text-zinc-100">
+                              Open notes:
+                            </span>{" "}
+                            {openReviewNotesCount}
+                          </p>
                         </div>
-                        {draftReadinessSignals.length > 0 ? (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {draftReadinessSignals.map((signal) => (
-                              <span
-                                key={`${row.id}-${signal}`}
-                                className="inline-flex rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800 dark:border-amber-500/30 dark:bg-zinc-900 dark:text-amber-200"
-                              >
-                                {signal}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="mt-3 text-sm leading-6 text-emerald-700 dark:text-emerald-300">
-                            This draft is structured enough to move into review or approval.
-                          </p>
-                        )}
-                        {draftReadinessSignals.length > 0 && (
-                          <p className="mt-3 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                            {draftRewriteTargets.length > 0
-                              ? `Use Improve Draft to tighten the ${draftRewriteTargets.join(", ")} automatically, then make any final edits inline.`
-                              : "Use Improve Draft to sharpen the wording if needed. Approval still needs an owner and resolved notes."}
-                          </p>
-                        )}
                       </div>
-
-                      <select
-                        value={row.issueId ?? ""}
-                        onChange={(e) => updateCell(index, "issueId", e.target.value)}
-                        className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                      >
-                        <option value="">
-                          {loadingIssueOptions ? "Loading issues..." : "No linked issue"}
-                        </option>
-                        {issueOptions.map((issue) => (
-                          <option key={issue.id} value={issue.id}>
-                            {issue.issueKey} - {issue.summary}
-                          </option>
-                        ))}
-                      </select>
-
-                      <select
-                        value={row.workflowStatus ?? "backlog"}
-                        onChange={(e) =>
-                          updateCell(index, "workflowStatus", e.target.value)
-                        }
-                        className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                      >
-                        <option value="backlog">Backlog</option>
-                        <option value="todo">To Do</option>
-                        <option value="in-progress">In Progress</option>
-                        <option value="blocked">Blocked</option>
-                        <option value="done">Done</option>
-                      </select>
-
-                      <select
-                        value={row.priority ?? "medium"}
-                        onChange={(e) =>
-                          updateCell(index, "priority", e.target.value)
-                        }
-                        className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                      >
-                        <option value="highest">Highest Priority</option>
-                        <option value="high">High Priority</option>
-                        <option value="medium">Medium Priority</option>
-                        <option value="low">Low Priority</option>
-                      </select>
-
-                      <select
-                        value={row.executionResult ?? "not-run"}
-                        onChange={(e) =>
-                          updateCell(index, "executionResult", e.target.value)
-                        }
-                        className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                      >
-                        <option value="not-run">Not Run</option>
-                        <option value="passed">Passed</option>
-                        <option value="failed">Failed</option>
-                        <option value="blocked">Blocked</option>
-                      </select>
-
-                      <select
-                        value={row.reviewStatus ?? "draft"}
-                        onChange={(e) =>
-                          updateCell(index, "reviewStatus", e.target.value)
-                        }
-                        className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                      >
-                        <option value="draft">Draft</option>
-                        <option value="in-review">In Review</option>
-                        <option value="approved">Approved</option>
-                        <option value="changes-requested">Changes Requested</option>
-                      </select>
-
-                      <input
-                        type="text"
-                        value={row.assignee ?? ""}
-                        onChange={(e) =>
-                          updateCell(index, "assignee", e.target.value)
-                        }
-                        placeholder="Assignee"
-                        className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                      />
-
-                      {userOptions.length > 0 ? (
-                        <select
-                          value={row.reviewOwner ?? ""}
-                          onChange={(e) =>
-                            updateCell(index, "reviewOwner", e.target.value)
-                          }
-                          className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                        >
-                          <option value="">No review owner</option>
-                          {userOptions.map((user) => (
-                            <option key={user.id} value={user.name || user.email}>
-                              {user.name} ({user.email})
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type="text"
-                          value={row.reviewOwner ?? ""}
-                          onChange={(e) =>
-                            updateCell(index, "reviewOwner", e.target.value)
-                          }
-                          placeholder="Review owner"
-                          className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                        />
-                      )}
 
                       <input
                         type="text"
@@ -1057,6 +975,279 @@ export default function TestCaseTable({
                         placeholder="Labels: smoke, auth, checkout"
                         className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
                       />
+
+                      <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70 md:col-span-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                              Domain & Risk
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                              Keep manual domain metadata visible for review, filtering, and release context.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {row.testDomain ? (
+                              <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                                {row.testDomain}
+                              </span>
+                            ) : null}
+                            {row.riskLevel ? (
+                              <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                                {row.riskLevel} risk
+                              </span>
+                            ) : null}
+                            {row.complianceReference?.trim() ? (
+                              <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">
+                                {row.complianceReference}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          <select
+                            value={row.testDomain ?? ""}
+                            onChange={(e) => updateCell(index, "testDomain", e.target.value)}
+                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                          >
+                            <option value="">No domain tag</option>
+                            <option value="functional">Functional</option>
+                            <option value="regression">Regression</option>
+                            <option value="api">API</option>
+                            <option value="ui">UI</option>
+                            <option value="negative">Negative</option>
+                            <option value="edge">Edge</option>
+                            <option value="security">Security</option>
+                            <option value="accessibility">Accessibility</option>
+                          </select>
+
+                          <select
+                            value={row.riskLevel ?? ""}
+                            onChange={(e) => updateCell(index, "riskLevel", e.target.value)}
+                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                          >
+                            <option value="">No risk level</option>
+                            <option value="low">Low risk</option>
+                            <option value="medium">Medium risk</option>
+                            <option value="high">High risk</option>
+                          </select>
+
+                          <select
+                            value={row.automationPotential ?? ""}
+                            onChange={(e) => updateCell(index, "automationPotential", e.target.value)}
+                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                          >
+                            <option value="">Automation potential</option>
+                            <option value="low">Low automation potential</option>
+                            <option value="medium">Medium automation potential</option>
+                            <option value="high">High automation potential</option>
+                          </select>
+
+                          <select
+                            value={row.securityCategory ?? ""}
+                            onChange={(e) => updateCell(index, "securityCategory", e.target.value)}
+                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                          >
+                            <option value="">Security category</option>
+                            <option value="auth">Auth</option>
+                            <option value="authorization">Authorization</option>
+                            <option value="session">Session</option>
+                            <option value="validation">Validation</option>
+                            <option value="data-protection">Data protection</option>
+                            <option value="api-security">API security</option>
+                            <option value="upload-safety">Upload safety</option>
+                            <option value="business-logic">Business logic</option>
+                            <option value="abuse-resistance">Abuse resistance</option>
+                          </select>
+
+                          <select
+                            value={row.accessibilityCategory ?? ""}
+                            onChange={(e) =>
+                              updateCell(index, "accessibilityCategory", e.target.value)
+                            }
+                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                          >
+                            <option value="">Accessibility category</option>
+                            <option value="keyboard-navigation">Keyboard navigation</option>
+                            <option value="focus-management">Focus management</option>
+                            <option value="screen-reader">Screen reader</option>
+                            <option value="forms">Forms</option>
+                            <option value="semantics">Semantics</option>
+                            <option value="contrast">Contrast</option>
+                            <option value="zoom-reflow">Zoom / reflow</option>
+                            <option value="error-handling">Error handling</option>
+                            <option value="media-content">Media / content</option>
+                          </select>
+
+                          <input
+                            type="text"
+                            value={row.complianceReference ?? ""}
+                            onChange={(e) =>
+                              updateCell(index, "complianceReference", e.target.value)
+                            }
+                            placeholder="Compliance reference e.g. WCAG 2.2 AA"
+                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                              Review & Linking
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                              Edit linkage, ownership, execution, and review readiness here.
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                            {readyForApproval ? "Ready" : "Needs follow-up"}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 rounded-[22px] border border-zinc-200/80 bg-white/90 p-3 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-950/80">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                              Draft Readiness
+                            </p>
+                            <span className="font-medium text-zinc-500 dark:text-zinc-400">
+                              Approval needs an owner and no open notes
+                            </span>
+                          </div>
+                          {draftReadinessSignals.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {draftReadinessSignals.map((signal) => (
+                                <span
+                                  key={`${row.id}-${signal}`}
+                                  className="inline-flex rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800 dark:border-amber-500/30 dark:bg-zinc-900 dark:text-amber-200"
+                                >
+                                  {signal}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-3 text-sm leading-6 text-emerald-700 dark:text-emerald-300">
+                              This draft is structured enough to move into review or approval.
+                            </p>
+                          )}
+                          {draftReadinessSignals.length > 0 && (
+                            <p className="mt-3 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+                              {draftRewriteTargets.length > 0
+                                ? `Use Improve Draft to tighten the ${draftRewriteTargets.join(", ")} automatically, then make any final edits inline.`
+                                : "Use Improve Draft to sharpen the wording if needed. Approval still needs an owner and resolved notes."}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <select
+                            value={row.issueId ?? ""}
+                            onChange={(e) => updateCell(index, "issueId", e.target.value)}
+                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                          >
+                            <option value="">
+                              {loadingIssueOptions ? "Loading issues..." : "No linked issue"}
+                            </option>
+                            {issueOptions.map((issue) => (
+                              <option key={issue.id} value={issue.id}>
+                                {issue.issueKey} - {issue.summary}
+                              </option>
+                            ))}
+                          </select>
+
+                          <select
+                            value={row.workflowStatus ?? "backlog"}
+                            onChange={(e) =>
+                              updateCell(index, "workflowStatus", e.target.value)
+                            }
+                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                          >
+                            <option value="backlog">Backlog</option>
+                            <option value="todo">To Do</option>
+                            <option value="in-progress">In Progress</option>
+                            <option value="blocked">Blocked</option>
+                            <option value="done">Done</option>
+                          </select>
+
+                          <select
+                            value={row.priority ?? "medium"}
+                            onChange={(e) =>
+                              updateCell(index, "priority", e.target.value)
+                            }
+                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                          >
+                            <option value="highest">Highest Priority</option>
+                            <option value="high">High Priority</option>
+                            <option value="medium">Medium Priority</option>
+                            <option value="low">Low Priority</option>
+                          </select>
+
+                          <select
+                            value={row.executionResult ?? "not-run"}
+                            onChange={(e) =>
+                              updateCell(index, "executionResult", e.target.value)
+                            }
+                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                          >
+                            <option value="not-run">Not Run</option>
+                            <option value="passed">Passed</option>
+                            <option value="failed">Failed</option>
+                            <option value="blocked">Blocked</option>
+                          </select>
+
+                          <select
+                            value={row.reviewStatus ?? "draft"}
+                            onChange={(e) =>
+                              updateCell(index, "reviewStatus", e.target.value)
+                            }
+                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                          >
+                            <option value="draft">Draft</option>
+                            <option value="in-review">In Review</option>
+                            <option value="approved">Approved</option>
+                            <option value="changes-requested">Changes Requested</option>
+                          </select>
+
+                          <input
+                            type="text"
+                            value={row.assignee ?? ""}
+                            onChange={(e) =>
+                              updateCell(index, "assignee", e.target.value)
+                            }
+                            placeholder="Assignee"
+                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                          />
+
+                          {userOptions.length > 0 ? (
+                            <select
+                              value={row.reviewOwner ?? ""}
+                              onChange={(e) =>
+                                updateCell(index, "reviewOwner", e.target.value)
+                              }
+                              className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                            >
+                              <option value="">No review owner</option>
+                              {userOptions.map((user) => (
+                                <option key={user.id} value={user.name || user.email}>
+                                  {user.name} ({user.email})
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={row.reviewOwner ?? ""}
+                              onChange={(e) =>
+                                updateCell(index, "reviewOwner", e.target.value)
+                              }
+                              placeholder="Review owner"
+                              className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                            />
+                          )}
+                        </div>
+                      </div>
 
                       <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
                         <div className="flex items-center justify-between gap-3">
@@ -1371,6 +1562,8 @@ export default function TestCaseTable({
                         projectRouteRef={projectRouteRef}
                         onSave={onSaveAutomation}
                         onRun={onRunAutomation}
+                        onRunWithOptions={onRunAutomationWithOptions}
+                        onDebugInBrowser={onDebugAutomationInBrowser}
                         onCreateIssueFromFailure={onCreateAutomationIssue}
                       />
 
