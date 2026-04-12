@@ -68,6 +68,13 @@ export type ProjectReportsSummary = {
     activeRunId?: string;
     generatedAt: number;
   };
+  domainInsights: {
+    securityCases: number;
+    accessibilityCases: number;
+    highRiskSecurityCases: number;
+    failedHighRiskSecurityCases: number;
+    wcagTaggedCases: number;
+  };
   totalCases: number;
   totalIssues: number;
   linkedCases: number;
@@ -257,6 +264,14 @@ export const buildExecutionReportCsv = (
 ) => {
   const lines = [
     ["Project", projectName],
+    ["Security Cases", summary.domainInsights.securityCases],
+    ["Accessibility Cases", summary.domainInsights.accessibilityCases],
+    ["High Risk Security Cases", summary.domainInsights.highRiskSecurityCases],
+    [
+      "Failed High Risk Security Cases",
+      summary.domainInsights.failedHighRiskSecurityCases,
+    ],
+    ["WCAG Tagged Cases", summary.domainInsights.wcagTaggedCases],
     ["Total Tests", summary.executionSummary.total],
     ["Passed", summary.executionSummary.passed],
     ["Failed", summary.executionSummary.failed],
@@ -592,6 +607,10 @@ export const buildExecutionReportHtml = (
           }</p>
         </div>
         <div class="stats">
+          <div class="stat"><span>Security Cases</span><strong>${summary.domainInsights.securityCases}</strong></div>
+          <div class="stat"><span>Accessibility Cases</span><strong>${summary.domainInsights.accessibilityCases}</strong></div>
+          <div class="stat"><span>High-Risk Security</span><strong>${summary.domainInsights.highRiskSecurityCases}</strong></div>
+          <div class="stat"><span>Failed High-Risk Security</span><strong>${summary.domainInsights.failedHighRiskSecurityCases}</strong></div>
           <div class="stat"><span>Total Tests</span><strong>${summary.executionSummary.total}</strong></div>
           <div class="stat"><span>Passed</span><strong>${summary.executionSummary.passed}</strong></div>
           <div class="stat"><span>Failed</span><strong>${summary.executionSummary.failed}</strong></div>
@@ -604,6 +623,7 @@ export const buildExecutionReportHtml = (
           <span class="chip">Automation Coverage: ${summary.automationCoveragePercent}%</span>
           <span class="chip">Open Issues: ${summary.openIssues}</span>
           <span class="chip">Blockers: ${summary.blockerIssues}</span>
+          <span class="chip">WCAG Tagged: ${summary.domainInsights.wcagTaggedCases}</span>
         </div>
       </section>
 
@@ -703,6 +723,18 @@ export const buildProjectReportsSummary = (
 ): ProjectReportsSummary => {
   const totalCases = project?.testCaseCount ?? project?.rows.length ?? 0;
   const rows = project?.rows ?? [];
+  const securityCases = rows.filter((row) => row.testDomain === "security").length;
+  const accessibilityCases = rows.filter(
+    (row) => row.testDomain === "accessibility"
+  ).length;
+  const highRiskSecurityCaseIds = rows
+    .filter(
+      (row) => row.testDomain === "security" && (row.riskLevel ?? "medium") === "high"
+    )
+    .map((row) => row.id);
+  const wcagTaggedCases = rows.filter((row) =>
+    (row.complianceReference ?? "").toLowerCase().includes("wcag")
+  ).length;
   const executionCounts = rows.reduce<Record<TestCaseExecutionResult, number>>(
     (accumulator, row) => {
       const key = row.executionResult ?? "not-run";
@@ -1112,6 +1144,19 @@ export const buildProjectReportsSummary = (
       },
       new Map()
     );
+  const failedHighRiskSecurityCases = rows.filter((row) => {
+    if (
+      row.testDomain !== "security" ||
+      (row.riskLevel ?? "medium") !== "high"
+    ) {
+      return false;
+    }
+
+    const executionResult =
+      activeRun?.rowResults[row.id] ?? row.executionResult ?? "not-run";
+    const latestAutomation = latestAutomationExecutionByCase.get(row.id);
+    return executionResult === "failed" || latestAutomation?.status === "failed";
+  }).length;
   const executionDetails = rows
     .map((row) => {
       const stepResults = activeRun?.rowStepResults[row.id] ?? {};
@@ -1390,6 +1435,13 @@ export const buildProjectReportsSummary = (
       activeRunName: activeRun?.name,
       activeRunId: activeRun?.id,
       generatedAt: Date.now(),
+    },
+    domainInsights: {
+      securityCases,
+      accessibilityCases,
+      highRiskSecurityCases: highRiskSecurityCaseIds.length,
+      failedHighRiskSecurityCases,
+      wcagTaggedCases,
     },
     totalCases,
     totalIssues: issues.length,

@@ -653,6 +653,7 @@ export default function ReleaseRiskDashboard({
       .slice(0, 8)
       .map((row) => row.id);
   }, [automationInsights, context.automationRiskAreas, project?.rows]);
+  const topSecurityRiskArea = context.securityRiskAreas[0] ?? null;
 
   const exportReleasePacket = () => {
     const packetHtml = buildReleaseReviewPacketHtml({
@@ -1141,6 +1142,9 @@ export default function ReleaseRiskDashboard({
             <span className={chipClassName}>
               Automation failed/blocked {(summary.automationFailedCases ?? 0) + (summary.automationBlockedCases ?? 0)}
             </span>
+            <span className={chipClassName}>
+              Security high risk {summary.highRiskSecurityCases ?? 0}
+            </span>
             <span className={`${chipClassName} ${releaseDeltaTone[latestSnapshotDeltaDirection]}`}>
               {latestSnapshotDelta === null
                 ? "Release delta n/a"
@@ -1276,6 +1280,51 @@ export default function ReleaseRiskDashboard({
                     : "Open Top Automation Hotspot"}
                 </Link>
               ) : null}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {(summary.highRiskSecurityCases ?? 0) > 0 && (
+        <section className="rounded-[24px] border border-red-200 bg-red-50/90 px-5 py-4 text-sm text-red-900 shadow-sm dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="font-semibold">High-risk security signal</p>
+              <p className="mt-1 text-red-800/80 dark:text-red-200/80">
+                {(summary.failedHighRiskSecurityCases ?? 0) > 0
+                  ? `${summary.failedHighRiskSecurityCases} high-risk security cases are failed or blocked. Review the defensive validation slice before release sign-off.`
+                  : `${summary.highRiskSecurityCases} high-risk security cases are in scope. Keep them visible during the release call even if they are currently passing.`}
+              </p>
+              {topSecurityRiskArea ? (
+                <p className="mt-1 text-red-800/80 dark:text-red-200/80">
+                  Biggest concentration: {topSecurityRiskArea.area} ({topSecurityRiskArea.failedCount} affected of {topSecurityRiskArea.caseCount})
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={buildCasesFilterHref(projectKey, {
+                  testDomain: "security",
+                  riskLevel: "high",
+                  ...(topSecurityRiskArea?.rowIds?.[0]
+                    ? { rowId: topSecurityRiskArea.rowIds[0] }
+                    : {}),
+                })}
+                className={sharedActionLinkClassName}
+              >
+                Open Security Cases
+              </Link>
+              <Link
+                href={buildRunFilterHref(projectKey, {
+                  testDomain: "security",
+                  riskLevel: "high",
+                  execution:
+                    (summary.failedHighRiskSecurityCases ?? 0) > 0 ? "failed" : undefined,
+                })}
+                className={sharedActionLinkClassName}
+              >
+                Open Security Runs
+              </Link>
             </div>
           </div>
         </section>

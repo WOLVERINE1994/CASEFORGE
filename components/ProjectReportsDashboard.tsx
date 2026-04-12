@@ -558,6 +558,12 @@ export default function ProjectReportsDashboard({ summary }: Props) {
           <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
             {summary.executionSummary.passed} passed | {summary.executionSummary.failed} failed | {summary.executionSummary.blocked} blocked
           </span>
+          <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+            Security high risk: {summary.domainInsights.highRiskSecurityCases}
+          </span>
+          <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+            Accessibility: {summary.domainInsights.accessibilityCases}
+          </span>
         </div>
       </section>
 
@@ -621,18 +627,93 @@ export default function ProjectReportsDashboard({ summary }: Props) {
             </div>
             <div className="rounded-[22px] border border-zinc-200/80 bg-white/85 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-950/70">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                Template Ops
+                Security
               </p>
               <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
-                {summary.templateOperations.importedPacks}
-                <span className="mx-1 text-zinc-400">/</span>
-                {summary.templateOperations.exportedPacks}
+                {summary.domainInsights.highRiskSecurityCases}
               </p>
               <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                imports / exports recorded
+                {summary.domainInsights.failedHighRiskSecurityCases} failed or blocked high-risk cases
               </p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-[24px] border border-zinc-200/80 bg-zinc-50/85 px-5 py-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/72">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+              Domain Mix
+            </p>
+            <h3 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+              Keep security and accessibility review visible in the same reporting rhythm.
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+              This shows how much of the project is leaning into defensive security review versus accessibility and WCAG-oriented validation.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/projects/${encodeURIComponent(projectKey)}/cases?testDomain=security`}
+              className={exportButtonClassName}
+            >
+              Open Security Cases
+            </Link>
+            <Link
+              href={`/projects/${encodeURIComponent(projectKey)}/cases?testDomain=accessibility`}
+              className={exportButtonClassName}
+            >
+              Open Accessibility Cases
+            </Link>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+          <article className="rounded-[22px] border border-red-200/80 bg-red-50/90 px-4 py-4 dark:border-red-500/30 dark:bg-red-500/10">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-red-700 dark:text-red-300">
+              Security Cases
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+              {summary.domainInsights.securityCases}
+            </p>
+            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+              {summary.domainInsights.highRiskSecurityCases} tagged high risk
+            </p>
+          </article>
+          <article className="rounded-[22px] border border-red-200/80 bg-white/90 px-4 py-4 dark:border-red-500/30 dark:bg-zinc-950/70">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-red-700 dark:text-red-300">
+              Security Pressure
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+              {summary.domainInsights.failedHighRiskSecurityCases}
+            </p>
+            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+              failed high-risk security cases
+            </p>
+          </article>
+          <article className="rounded-[22px] border border-sky-200/80 bg-sky-50/90 px-4 py-4 dark:border-sky-500/30 dark:bg-sky-500/10">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-700 dark:text-sky-300">
+              Accessibility Cases
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+              {summary.domainInsights.accessibilityCases}
+            </p>
+            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+              manual accessibility validation coverage
+            </p>
+          </article>
+          <article className="rounded-[22px] border border-sky-200/80 bg-white/90 px-4 py-4 dark:border-sky-500/30 dark:bg-zinc-950/70">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-700 dark:text-sky-300">
+              WCAG Tagged
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+              {summary.domainInsights.wcagTaggedCases}
+            </p>
+            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+              cases carrying compliance review references
+            </p>
+          </article>
         </div>
       </section>
 

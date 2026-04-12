@@ -58,6 +58,8 @@ export interface ReleaseRiskSummary {
   automationExecutedCases?: number;
   automationFailedCases?: number;
   automationBlockedCases?: number;
+  highRiskSecurityCases?: number;
+  failedHighRiskSecurityCases?: number;
   reasons: ReleaseRiskReason[];
   actions: ReleaseActionItem[];
   hotspots: ReleaseHotspot[];
@@ -87,6 +89,12 @@ export type ReleaseRiskContext = {
     failedCases: number;
     blockedCases: number;
   };
+  securityRiskAreas: Array<{
+    area: string;
+    caseCount: number;
+    failedCount: number;
+    rowIds: string[];
+  }>;
 };
 
 type ReleaseRiskComputationResult = {
@@ -262,6 +270,7 @@ export const buildReleaseRiskSummary = (
           failedCases: 0,
           blockedCases: 0,
         },
+        securityRiskAreas: [],
       },
     };
   }
@@ -347,6 +356,18 @@ export const buildReleaseRiskSummary = (
   const automationBlockedCases = Array.from(latestAutomationExecutionByCase.values()).filter(
     (execution) => execution.status === "blocked"
   ).length;
+  const highRiskSecurityCases = effectiveCases.filter(
+    (row) => row.testDomain === "security" && (row.riskLevel ?? "medium") === "high"
+  );
+  const failedHighRiskSecurityCases = highRiskSecurityCases.filter((row) => {
+    const latestAutomation = latestAutomationExecutionByCase.get(row.id);
+    return (
+      row.executionResult === "failed" ||
+      row.executionResult === "blocked" ||
+      latestAutomation?.status === "failed" ||
+      latestAutomation?.status === "blocked"
+    );
+  });
 
   const openIssues = issues.filter((issue) => issue.status !== "done").length;
   const openHighPriorityIssues = issues.filter(
@@ -537,6 +558,33 @@ export const buildReleaseRiskSummary = (
     .map(([provider, manualReadyCases]) => ({ provider, manualReadyCases }))
     .sort((left, right) => right.manualReadyCases - left.manualReadyCases)
     .slice(0, 4);
+  const securityRiskAreas = Array.from(
+    highRiskSecurityCases.reduce((accumulator, row) => {
+      const current = accumulator.get(row.area) ?? {
+        area: row.area,
+        caseCount: 0,
+        failedCount: 0,
+        rowIds: [] as string[],
+      };
+      current.caseCount += 1;
+      if (
+        row.executionResult === "failed" ||
+        row.executionResult === "blocked" ||
+        latestAutomationExecutionByCase.get(row.id)?.status === "failed" ||
+        latestAutomationExecutionByCase.get(row.id)?.status === "blocked"
+      ) {
+        current.failedCount += 1;
+      }
+      if (current.rowIds.length < 8) {
+        current.rowIds.push(row.id);
+      }
+      accumulator.set(row.area, current);
+      return accumulator;
+    }, new Map<string, { area: string; caseCount: number; failedCount: number; rowIds: string[] }>())
+  )
+    .map(([, value]) => value)
+    .sort((left, right) => right.failedCount - left.failedCount || right.caseCount - left.caseCount)
+    .slice(0, 5);
 
   let score = 100;
   score -= Math.min(35, failedCases * 9);
@@ -555,6 +603,10 @@ export const buildReleaseRiskSummary = (
   score -= strongAutomationReadyCount >= 3 ? Math.min(8, strongAutomationReadyCount * 2) : 0;
   score -= automationFailedCases > 0 ? Math.min(14, automationFailedCases * 5) : 0;
   score -= automationBlockedCases > 0 ? Math.min(8, automationBlockedCases * 3) : 0;
+  score -=
+    failedHighRiskSecurityCases.length > 0
+      ? Math.min(12, failedHighRiskSecurityCases.length * 4)
+      : 0;
   score = Math.max(0, Math.min(100, score));
 
   let level: ReleaseRiskLevel =
@@ -570,6 +622,9 @@ export const buildReleaseRiskSummary = (
     level = level === "safe" ? "caution" : level;
   }
   if (automationFailedCases > 0) {
+    level = level === "safe" ? "caution" : level;
+  }
+  if (failedHighRiskSecurityCases.length > 0) {
     level = level === "safe" ? "caution" : level;
   }
 
@@ -620,6 +675,24 @@ export const buildReleaseRiskSummary = (
       linkedIssueIds: Array.from(latestAutomationExecutionByCase.values())
         .filter((execution) => execution.status === "failed" && execution.linkedIssueId)
         .map((execution) => execution.linkedIssueId as string),
+    });
+  }
+
+  if (failedHighRiskSecurityCases.length > 0) {
+    reasons.push({
+      id: "high-risk-security-failures",
+      title: "High-risk security cases still need release attention",
+      description: `${failedHighRiskSecurityCases.length} high-risk security case${
+        failedHighRiskSecurityCases.length === 1 ? "" : "s"
+      } failed or remain blocked in the current release view.`,
+      severity: failedHighRiskSecurityCases.length >= 2 ? "critical" : "high",
+      metric: failedHighRiskSecurityCases.length,
+      actionHint:
+        "Review auth, authorization, session, input validation, and abuse-resistance coverage before sign-off.",
+      linkedCaseIds: failedHighRiskSecurityCases.map((row) => row.id),
+      linkedIssueIds: failedHighRiskSecurityCases
+        .map((row) => row.issueId)
+        .filter((value): value is string => Boolean(value)),
     });
   }
 
@@ -773,6 +846,20 @@ export const buildReleaseRiskSummary = (
     });
   }
 
+  if (failedHighRiskSecurityCases.length > 0) {
+    actions.push({
+      id: "review-high-risk-security-cases",
+      title: "Review high-risk security cases before release",
+      description:
+        "Check failing or blocked defensive security validation cases and confirm mitigations or tracked defects before sign-off.",
+      priority: failedHighRiskSecurityCases.length >= 2 ? "high" : "medium",
+      linkedCaseIds: failedHighRiskSecurityCases.map((row) => row.id),
+      linkedIssueIds: failedHighRiskSecurityCases
+        .map((row) => row.issueId)
+        .filter((value): value is string => Boolean(value)),
+    });
+  }
+
   if (untestedCriticalAreas.length > 0) {
     actions.push({
       id: "cover-critical-areas",
@@ -901,6 +988,8 @@ export const buildReleaseRiskSummary = (
       automationExecutedCases,
       automationFailedCases,
       automationBlockedCases,
+      highRiskSecurityCases: highRiskSecurityCases.length,
+      failedHighRiskSecurityCases: failedHighRiskSecurityCases.length,
       reasons: reasons.slice(0, 5),
       actions: actions.slice(0, 6),
       hotspots: hotspots.slice(0, 6),
@@ -920,6 +1009,7 @@ export const buildReleaseRiskSummary = (
         failedCases: automationFailedCases,
         blockedCases: automationBlockedCases,
       },
+      securityRiskAreas,
     },
   };
 };
