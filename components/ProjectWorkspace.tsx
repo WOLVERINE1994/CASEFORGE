@@ -8633,6 +8633,72 @@ export default function ProjectWorkspace({
                       >
                         Set Strong Candidates As Default
                       </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          saveNamedCasesView(
+                            "Security High Risk",
+                            {
+                              searchQuery: "",
+                              assignee: "",
+                              priority: "",
+                              testDomain: "security",
+                              riskLevel: "high",
+                              securityCategory: "",
+                              accessibilityCategory: "",
+                              linked: "all",
+                              execution: "",
+                              review: "",
+                              reviewHealth: "",
+                              collaboration: "",
+                              suite: "",
+                              component: "",
+                              automation: "",
+                              automationProvider: "",
+                              archived: "active",
+                            },
+                            {
+                              pinned: true,
+                            }
+                          )
+                        }
+                        className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+                      >
+                        Save Security High Risk
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          saveNamedCasesView(
+                            "Accessibility Review Queue",
+                            {
+                              searchQuery: "",
+                              assignee: "",
+                              priority: "",
+                              testDomain: "accessibility",
+                              riskLevel: "",
+                              securityCategory: "",
+                              accessibilityCategory: "",
+                              linked: "all",
+                              execution: "",
+                              review: "",
+                              reviewHealth: "open-notes",
+                              collaboration: "",
+                              suite: "",
+                              component: "",
+                              automation: "",
+                              automationProvider: "",
+                              archived: "active",
+                            },
+                            {
+                              pinned: true,
+                            }
+                          )
+                        }
+                        className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20"
+                      >
+                        Save Accessibility Review Queue
+                      </button>
                       {providerFocusedCandidateViews.map((entry) => (
                         <button
                           key={`save-provider-${entry.provider}`}

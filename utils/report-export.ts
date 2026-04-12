@@ -16,6 +16,11 @@ type ReportAuditEntry = {
 export type ReportRow = {
   id: string;
   type: string;
+  testDomain?: string;
+  securityCategory?: string;
+  accessibilityCategory?: string;
+  complianceReference?: string;
+  riskLevel?: string;
   title: string;
   preconditions: string;
   steps: string;
@@ -156,6 +161,8 @@ const renderRowsTable = (rows: ReportRow[]) => `
         <th>ID</th>
         <th>Type</th>
         <th>Title</th>
+        <th>Domain</th>
+        <th>Risk</th>
         <th>Preconditions</th>
         <th>Steps</th>
         <th>Expected Result</th>
@@ -170,6 +177,8 @@ const renderRowsTable = (rows: ReportRow[]) => `
               <td>${escapeHtml(row.id)}</td>
               <td>${escapeHtml(row.type)}</td>
               <td>${escapeHtml(row.title)}</td>
+              <td>${escapeHtml(row.testDomain ?? "")}</td>
+              <td>${escapeHtml(row.riskLevel ?? "")}</td>
               <td>${escapeHtml(row.preconditions)}</td>
               <td>${escapeHtml(row.steps)}</td>
               <td>${escapeHtml(row.expectedResult)}</td>
@@ -199,6 +208,21 @@ const renderQaCaseCards = (rows: ReportRow[]) => `
               <div>
                 <div class="case-id">${escapeHtml(row.id)}</div>
                 <h3>${escapeHtml(row.title)}</h3>
+                <div class="case-meta">${escapeHtml(
+                  [
+                    row.testDomain ? `Domain: ${row.testDomain}` : "",
+                    row.riskLevel ? `Risk: ${row.riskLevel}` : "",
+                    row.securityCategory ? `Security: ${row.securityCategory}` : "",
+                    row.accessibilityCategory
+                      ? `Accessibility: ${row.accessibilityCategory}`
+                      : "",
+                    row.complianceReference
+                      ? `Compliance: ${row.complianceReference}`
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" | ")
+                )}</div>
               </div>
               <span class="case-type">${escapeHtml(row.type)}</span>
             </div>
@@ -362,6 +386,7 @@ export const buildReportHtml = (data: ReportData, mode: ReportMode) => {
           .case-card { border: 1px solid #e5e7eb; border-radius: 22px; background: #fcfcfb; padding: 18px; box-shadow: 0 18px 42px -34px rgba(15,23,42,0.28); }
           .case-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
           .case-id { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #6b7280; font-weight: 700; }
+          .case-meta { margin-top: 6px; font-size: 12px; color: #6b7280; line-height: 1.5; }
           .case-card h3 { margin: 8px 0 0; font-size: 20px; line-height: 1.35; color: #0f172a; }
           .case-type { display: inline-flex; align-items: center; justify-content: center; padding: 8px 14px; border-radius: 999px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-size: 12px; font-weight: 700; white-space: nowrap; }
           .case-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
