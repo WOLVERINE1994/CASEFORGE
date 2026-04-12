@@ -1130,6 +1130,47 @@ const getSavedViews = (value: unknown): Project["savedViews"] => {
                 filters.priority === "low"
                   ? (filters.priority as CasesSavedView["filters"]["priority"])
                   : "",
+              testDomain:
+                filters.testDomain === "functional" ||
+                filters.testDomain === "regression" ||
+                filters.testDomain === "api" ||
+                filters.testDomain === "ui" ||
+                filters.testDomain === "negative" ||
+                filters.testDomain === "edge" ||
+                filters.testDomain === "security" ||
+                filters.testDomain === "accessibility"
+                  ? (filters.testDomain as CasesSavedView["filters"]["testDomain"])
+                  : "",
+              riskLevel:
+                filters.riskLevel === "low" ||
+                filters.riskLevel === "medium" ||
+                filters.riskLevel === "high"
+                  ? (filters.riskLevel as CasesSavedView["filters"]["riskLevel"])
+                  : "",
+              securityCategory:
+                filters.securityCategory === "auth" ||
+                filters.securityCategory === "authorization" ||
+                filters.securityCategory === "session" ||
+                filters.securityCategory === "validation" ||
+                filters.securityCategory === "data-protection" ||
+                filters.securityCategory === "api-security" ||
+                filters.securityCategory === "upload-safety" ||
+                filters.securityCategory === "business-logic" ||
+                filters.securityCategory === "abuse-resistance"
+                  ? (filters.securityCategory as CasesSavedView["filters"]["securityCategory"])
+                  : "",
+              accessibilityCategory:
+                filters.accessibilityCategory === "keyboard-navigation" ||
+                filters.accessibilityCategory === "focus-management" ||
+                filters.accessibilityCategory === "screen-reader" ||
+                filters.accessibilityCategory === "forms" ||
+                filters.accessibilityCategory === "semantics" ||
+                filters.accessibilityCategory === "contrast" ||
+                filters.accessibilityCategory === "zoom-reflow" ||
+                filters.accessibilityCategory === "error-handling" ||
+                filters.accessibilityCategory === "media-content"
+                  ? (filters.accessibilityCategory as CasesSavedView["filters"]["accessibilityCategory"])
+                  : "",
               linked:
                 filters.linked === "linked" || filters.linked === "unlinked"
                   ? (filters.linked as CasesSavedView["filters"]["linked"])

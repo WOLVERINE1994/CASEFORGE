@@ -653,6 +653,19 @@ export default function ProjectWorkspace({
   const [casePriorityFilter, setCasePriorityFilter] = useState<
     TestCaseRow["priority"] | ""
   >("");
+  const [caseTestDomainFilter, setCaseTestDomainFilter] = useState<
+    NonNullable<TestCaseRow["testDomain"]> | ""
+  >("");
+  const [caseRiskLevelFilter, setCaseRiskLevelFilter] = useState<
+    NonNullable<TestCaseRow["riskLevel"]> | ""
+  >("");
+  const [caseSecurityCategoryFilter, setCaseSecurityCategoryFilter] = useState<
+    NonNullable<TestCaseRow["securityCategory"]> | ""
+  >("");
+  const [
+    caseAccessibilityCategoryFilter,
+    setCaseAccessibilityCategoryFilter,
+  ] = useState<NonNullable<TestCaseRow["accessibilityCategory"]> | "">("");
   const [caseLinkedFilter, setCaseLinkedFilter] = useState<"all" | "linked" | "unlinked">(
     "all"
   );
@@ -824,6 +837,10 @@ export default function ProjectWorkspace({
     setCaseSearchQuery("");
     setCaseAssigneeFilter("");
     setCasePriorityFilter("");
+    setCaseTestDomainFilter("");
+    setCaseRiskLevelFilter("");
+    setCaseSecurityCategoryFilter("");
+    setCaseAccessibilityCategoryFilter("");
     setCaseCollaborationFilter("");
     setCaseSuiteFilter("");
     setCaseComponentFilter("");
@@ -857,6 +874,10 @@ export default function ProjectWorkspace({
     setCaseSearchQuery(view.filters.searchQuery);
     setCaseAssigneeFilter(view.filters.assignee);
     setCasePriorityFilter(view.filters.priority);
+    setCaseTestDomainFilter(view.filters.testDomain);
+    setCaseRiskLevelFilter(view.filters.riskLevel);
+    setCaseSecurityCategoryFilter(view.filters.securityCategory);
+    setCaseAccessibilityCategoryFilter(view.filters.accessibilityCategory);
     setCaseLinkedFilter(view.filters.linked);
     setCaseExecutionFilter(view.filters.execution);
     setCaseReviewFilter(view.filters.review);
@@ -877,6 +898,10 @@ export default function ProjectWorkspace({
     const nextSearch = searchParams.get("search") ?? "";
     const nextAssignee = searchParams.get("assignee") ?? "";
     const nextPriority = searchParams.get("priority");
+    const nextTestDomain = searchParams.get("testDomain");
+    const nextRiskLevel = searchParams.get("riskLevel");
+    const nextSecurityCategory = searchParams.get("securityCategory");
+    const nextAccessibilityCategory = searchParams.get("accessibilityCategory");
     const nextExecution = searchParams.get("execution");
     const nextLinked = searchParams.get("linked");
     const nextReview = searchParams.get("review");
@@ -896,6 +921,51 @@ export default function ProjectWorkspace({
         nextPriority === "medium" ||
         nextPriority === "low"
         ? nextPriority
+        : ""
+    );
+    setCaseTestDomainFilter(
+      nextTestDomain === "functional" ||
+        nextTestDomain === "regression" ||
+        nextTestDomain === "api" ||
+        nextTestDomain === "ui" ||
+        nextTestDomain === "negative" ||
+        nextTestDomain === "edge" ||
+        nextTestDomain === "security" ||
+        nextTestDomain === "accessibility"
+        ? nextTestDomain
+        : ""
+    );
+    setCaseRiskLevelFilter(
+      nextRiskLevel === "low" ||
+        nextRiskLevel === "medium" ||
+        nextRiskLevel === "high"
+        ? nextRiskLevel
+        : ""
+    );
+    setCaseSecurityCategoryFilter(
+      nextSecurityCategory === "auth" ||
+        nextSecurityCategory === "authorization" ||
+        nextSecurityCategory === "session" ||
+        nextSecurityCategory === "validation" ||
+        nextSecurityCategory === "data-protection" ||
+        nextSecurityCategory === "api-security" ||
+        nextSecurityCategory === "upload-safety" ||
+        nextSecurityCategory === "business-logic" ||
+        nextSecurityCategory === "abuse-resistance"
+        ? nextSecurityCategory
+        : ""
+    );
+    setCaseAccessibilityCategoryFilter(
+      nextAccessibilityCategory === "keyboard-navigation" ||
+        nextAccessibilityCategory === "focus-management" ||
+        nextAccessibilityCategory === "screen-reader" ||
+        nextAccessibilityCategory === "forms" ||
+        nextAccessibilityCategory === "semantics" ||
+        nextAccessibilityCategory === "contrast" ||
+        nextAccessibilityCategory === "zoom-reflow" ||
+        nextAccessibilityCategory === "error-handling" ||
+        nextAccessibilityCategory === "media-content"
+        ? nextAccessibilityCategory
         : ""
     );
     setCaseExecutionFilter(
@@ -956,6 +1026,10 @@ export default function ProjectWorkspace({
       "search",
       "assignee",
       "priority",
+      "testDomain",
+      "riskLevel",
+      "securityCategory",
+      "accessibilityCategory",
       "linked",
       "execution",
       "review",
@@ -1034,6 +1108,30 @@ export default function ProjectWorkspace({
       nextParams.delete("priority");
     }
 
+    if (caseTestDomainFilter) {
+      nextParams.set("testDomain", caseTestDomainFilter);
+    } else {
+      nextParams.delete("testDomain");
+    }
+
+    if (caseRiskLevelFilter) {
+      nextParams.set("riskLevel", caseRiskLevelFilter);
+    } else {
+      nextParams.delete("riskLevel");
+    }
+
+    if (caseSecurityCategoryFilter) {
+      nextParams.set("securityCategory", caseSecurityCategoryFilter);
+    } else {
+      nextParams.delete("securityCategory");
+    }
+
+    if (caseAccessibilityCategoryFilter) {
+      nextParams.set("accessibilityCategory", caseAccessibilityCategoryFilter);
+    } else {
+      nextParams.delete("accessibilityCategory");
+    }
+
     if (caseLinkedFilter !== "all") {
       nextParams.set("linked", caseLinkedFilter);
     } else {
@@ -1105,6 +1203,7 @@ export default function ProjectWorkspace({
       scroll: false,
     });
   }, [
+    caseAccessibilityCategoryFilter,
     caseAssigneeFilter,
     caseExecutionFilter,
     caseAutomationFilter,
@@ -1113,11 +1212,14 @@ export default function ProjectWorkspace({
     caseComponentFilter,
     caseLinkedFilter,
     casePriorityFilter,
+    caseRiskLevelFilter,
     caseCollaborationFilter,
     caseReviewHealthFilter,
     caseReviewFilter,
     caseSearchQuery,
+    caseSecurityCategoryFilter,
       caseSuiteFilter,
+      caseTestDomainFilter,
       focusedCommentId,
       focusedRowId,
     isCasesSection,
@@ -5026,6 +5128,28 @@ export default function ProjectWorkspace({
           return false;
         }
 
+        if (caseTestDomainFilter && (row.testDomain ?? "") !== caseTestDomainFilter) {
+          return false;
+        }
+
+        if (caseRiskLevelFilter && (row.riskLevel ?? "") !== caseRiskLevelFilter) {
+          return false;
+        }
+
+        if (
+          caseSecurityCategoryFilter &&
+          (row.securityCategory ?? "") !== caseSecurityCategoryFilter
+        ) {
+          return false;
+        }
+
+        if (
+          caseAccessibilityCategoryFilter &&
+          (row.accessibilityCategory ?? "") !== caseAccessibilityCategoryFilter
+        ) {
+          return false;
+        }
+
         if (caseLinkedFilter === "linked" && !row.issueId && !row.issueKey) {
           return false;
         }
@@ -5148,6 +5272,11 @@ export default function ProjectWorkspace({
           row.issueKey,
           row.assignee,
           row.reviewStatus,
+          row.testDomain,
+          row.securityCategory,
+          row.accessibilityCategory,
+          row.complianceReference,
+          row.riskLevel,
           row.suiteName,
           row.componentArea,
           row.automationStatus,
@@ -5176,6 +5305,10 @@ export default function ProjectWorkspace({
       caseSearchQuery,
       caseAssigneeFilter,
       casePriorityFilter,
+      caseTestDomainFilter,
+      caseRiskLevelFilter,
+      caseSecurityCategoryFilter,
+      caseAccessibilityCategoryFilter,
       caseLinkedFilter,
       caseExecutionFilter,
       caseCollaborationFilter,
@@ -5496,6 +5629,10 @@ export default function ProjectWorkspace({
       searchQuery: caseSearchQuery,
       assignee: caseAssigneeFilter,
       priority: casePriorityFilter,
+      testDomain: caseTestDomainFilter,
+      riskLevel: caseRiskLevelFilter,
+      securityCategory: caseSecurityCategoryFilter,
+      accessibilityCategory: caseAccessibilityCategoryFilter,
       linked: caseLinkedFilter,
       execution: caseExecutionFilter,
       review: caseReviewFilter,
@@ -5510,17 +5647,21 @@ export default function ProjectWorkspace({
     [
       caseArchivedFilter,
       caseAssigneeFilter,
+      caseAccessibilityCategoryFilter,
       caseAutomationFilter,
       caseAutomationProviderFilter,
       caseComponentFilter,
       caseExecutionFilter,
       caseLinkedFilter,
       casePriorityFilter,
+      caseRiskLevelFilter,
       caseCollaborationFilter,
       caseReviewFilter,
       caseReviewHealthFilter,
       caseSearchQuery,
+      caseSecurityCategoryFilter,
       caseSuiteFilter,
+      caseTestDomainFilter,
     ]
   );
   const activeCasesPreset = useMemo(() => {
@@ -5528,6 +5669,10 @@ export default function ProjectWorkspace({
       !caseSearchQuery &&
       !caseAssigneeFilter &&
       !casePriorityFilter &&
+      !caseTestDomainFilter &&
+      !caseRiskLevelFilter &&
+      !caseSecurityCategoryFilter &&
+      !caseAccessibilityCategoryFilter &&
       caseLinkedFilter === "all" &&
       !caseExecutionFilter &&
       !caseReviewFilter &&
@@ -5546,6 +5691,10 @@ export default function ProjectWorkspace({
       !caseSearchQuery &&
       !caseAssigneeFilter &&
       !casePriorityFilter &&
+      !caseTestDomainFilter &&
+      !caseRiskLevelFilter &&
+      !caseSecurityCategoryFilter &&
+      !caseAccessibilityCategoryFilter &&
       caseLinkedFilter === "all" &&
       !caseExecutionFilter &&
       !caseReviewFilter &&
@@ -5564,6 +5713,10 @@ export default function ProjectWorkspace({
       !caseSearchQuery &&
       !caseAssigneeFilter &&
       !casePriorityFilter &&
+      !caseTestDomainFilter &&
+      !caseRiskLevelFilter &&
+      !caseSecurityCategoryFilter &&
+      !caseAccessibilityCategoryFilter &&
       caseLinkedFilter === "linked" &&
       caseExecutionFilter === "failed" &&
       !caseReviewFilter &&
@@ -5582,17 +5735,21 @@ export default function ProjectWorkspace({
   }, [
     caseArchivedFilter,
     caseAssigneeFilter,
+    caseAccessibilityCategoryFilter,
     caseAutomationFilter,
     caseAutomationProviderFilter,
     caseComponentFilter,
     caseExecutionFilter,
     caseLinkedFilter,
     casePriorityFilter,
+    caseRiskLevelFilter,
     caseCollaborationFilter,
     caseReviewFilter,
     caseReviewHealthFilter,
     caseSearchQuery,
+    caseSecurityCategoryFilter,
     caseSuiteFilter,
+    caseTestDomainFilter,
   ]);
   const activeSavedCasesView = useMemo(
     () =>
@@ -5852,6 +6009,10 @@ export default function ProjectWorkspace({
       searchQuery: "",
       assignee: "",
       priority: "",
+      testDomain: "",
+      riskLevel: "",
+      securityCategory: "",
+      accessibilityCategory: "",
       linked: "all" as const,
       execution: "",
       review: "",
@@ -7850,6 +8011,10 @@ export default function ProjectWorkspace({
                         setCaseSearchQuery("");
                         setCaseAssigneeFilter("");
                         setCasePriorityFilter("");
+                        setCaseTestDomainFilter("");
+                        setCaseRiskLevelFilter("");
+                        setCaseSecurityCategoryFilter("");
+                        setCaseAccessibilityCategoryFilter("");
                         setCaseLinkedFilter("all");
                         setCaseExecutionFilter("");
                         setCaseReviewFilter("");
@@ -7867,7 +8032,7 @@ export default function ProjectWorkspace({
                   </button>
                 </div>
 
-                <div className="mt-4 grid gap-3 xl:grid-cols-[1.35fr_repeat(10,minmax(0,1fr))]">
+                <div className="mt-4 grid gap-3 xl:grid-cols-[1.35fr_repeat(14,minmax(0,1fr))]">
                   <input
                     type="text"
                     value={caseSearchQuery}
@@ -7901,6 +8066,39 @@ export default function ProjectWorkspace({
                     <option value="high">High</option>
                     <option value="medium">Medium</option>
                     <option value="low">Low</option>
+                  </select>
+                  <select
+                    value={caseTestDomainFilter}
+                    onChange={(event) =>
+                      setCaseTestDomainFilter(
+                        (event.target.value || "") as NonNullable<TestCaseRow["testDomain"]> | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All domains</option>
+                    <option value="functional">Functional</option>
+                    <option value="regression">Regression</option>
+                    <option value="api">API</option>
+                    <option value="ui">UI</option>
+                    <option value="negative">Negative</option>
+                    <option value="edge">Edge</option>
+                    <option value="security">Security</option>
+                    <option value="accessibility">Accessibility</option>
+                  </select>
+                  <select
+                    value={caseRiskLevelFilter}
+                    onChange={(event) =>
+                      setCaseRiskLevelFilter(
+                        (event.target.value || "") as NonNullable<TestCaseRow["riskLevel"]> | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All risk levels</option>
+                    <option value="low">Low risk</option>
+                    <option value="medium">Medium risk</option>
+                    <option value="high">High risk</option>
                   </select>
                   <select
                     value={caseLinkedFilter}
@@ -7984,6 +8182,46 @@ export default function ProjectWorkspace({
                     ))}
                   </select>
                   <select
+                    value={caseSecurityCategoryFilter}
+                    onChange={(event) =>
+                      setCaseSecurityCategoryFilter(
+                        (event.target.value || "") as NonNullable<TestCaseRow["securityCategory"]> | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All security categories</option>
+                    <option value="auth">Auth</option>
+                    <option value="authorization">Authorization</option>
+                    <option value="session">Session</option>
+                    <option value="validation">Validation</option>
+                    <option value="data-protection">Data protection</option>
+                    <option value="api-security">API security</option>
+                    <option value="upload-safety">Upload safety</option>
+                    <option value="business-logic">Business logic</option>
+                    <option value="abuse-resistance">Abuse resistance</option>
+                  </select>
+                  <select
+                    value={caseAccessibilityCategoryFilter}
+                    onChange={(event) =>
+                      setCaseAccessibilityCategoryFilter(
+                        (event.target.value || "") as NonNullable<TestCaseRow["accessibilityCategory"]> | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All accessibility categories</option>
+                    <option value="keyboard-navigation">Keyboard navigation</option>
+                    <option value="focus-management">Focus management</option>
+                    <option value="screen-reader">Screen reader</option>
+                    <option value="forms">Forms</option>
+                    <option value="semantics">Semantics</option>
+                    <option value="contrast">Contrast</option>
+                    <option value="zoom-reflow">Zoom / reflow</option>
+                    <option value="error-handling">Error handling</option>
+                    <option value="media-content">Media / content</option>
+                  </select>
+                  <select
                     value={caseArchivedFilter}
                     onChange={(event) =>
                       setCaseArchivedFilter(
@@ -8045,6 +8283,26 @@ export default function ProjectWorkspace({
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">
+                    {caseTestDomainFilter ? (
+                      <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
+                        Domain: {caseTestDomainFilter}
+                      </span>
+                    ) : null}
+                    {caseRiskLevelFilter ? (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                        Risk: {caseRiskLevelFilter}
+                      </span>
+                    ) : null}
+                    {caseSecurityCategoryFilter ? (
+                      <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                        Security: {caseSecurityCategoryFilter}
+                      </span>
+                    ) : null}
+                    {caseAccessibilityCategoryFilter ? (
+                      <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">
+                        Accessibility: {caseAccessibilityCategoryFilter}
+                      </span>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => {
@@ -8317,6 +8575,10 @@ export default function ProjectWorkspace({
                               searchQuery: "",
                               assignee: "",
                               priority: "",
+                              testDomain: "",
+                              riskLevel: "",
+                              securityCategory: "",
+                              accessibilityCategory: "",
                               linked: "all",
                               execution: "",
                               review: "",
@@ -8346,6 +8608,10 @@ export default function ProjectWorkspace({
                               searchQuery: "",
                               assignee: "",
                               priority: "",
+                              testDomain: "",
+                              riskLevel: "",
+                              securityCategory: "",
+                              accessibilityCategory: "",
                               linked: "all",
                               execution: "",
                               review: "",
@@ -8378,6 +8644,10 @@ export default function ProjectWorkspace({
                                 searchQuery: "",
                                 assignee: "",
                                 priority: "",
+                                testDomain: "",
+                                riskLevel: "",
+                                securityCategory: "",
+                                accessibilityCategory: "",
                                 linked: "all",
                                 execution: "",
                                 review: "",
@@ -8409,6 +8679,10 @@ export default function ProjectWorkspace({
                                 searchQuery: "",
                                 assignee: "",
                                 priority: "",
+                                testDomain: "",
+                                riskLevel: "",
+                                securityCategory: "",
+                                accessibilityCategory: "",
                                 linked: "all",
                                 execution: "",
                                 review: "",

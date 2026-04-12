@@ -214,6 +214,10 @@ export type CasesSavedView = {
     searchQuery: string;
     assignee: string;
     priority: TestCaseRow["priority"] | "";
+    testDomain: NonNullable<TestCaseRow["testDomain"]> | "";
+    riskLevel: NonNullable<TestCaseRow["riskLevel"]> | "";
+    securityCategory: NonNullable<TestCaseRow["securityCategory"]> | "";
+    accessibilityCategory: NonNullable<TestCaseRow["accessibilityCategory"]> | "";
     linked: "all" | "linked" | "unlinked";
       execution: TestCaseRow["executionResult"] | "";
       review: TestCaseRow["reviewStatus"] | "";
