@@ -583,7 +583,7 @@ export default async function HomePage() {
               </div>
               </div>
             </details>
-          ) : null}
+           ) : null}
         </div>
       </ResponsiveShell>
     </main>

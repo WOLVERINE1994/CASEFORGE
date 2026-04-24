@@ -7,9 +7,17 @@ import {
   SourceType,
   TestCaseType,
 } from "@prisma/client";
+import { cache } from "react";
 
 import { prisma } from "./prisma";
 import {
+  AutomationAction,
+  AutomationActionParameter,
+  AutomationScenario,
+  AutomationScenarioParameterizationMode,
+  AutomationScenarioPriority,
+  AutomationScenarioStatus,
+  AutomationScheduleFrequency,
   AutomationArtifactType,
   AutomationBinding,
   AutomationExecution,
@@ -19,6 +27,10 @@ import {
   AutomationScript,
   AutomationStep,
   AutomationStepAction,
+  AutomationStepExecutionStatus,
+  AutomationSuite,
+  AutomationScheduleStatus,
+  AutomationSuiteStatus,
   AutomationTargetType,
   normalizeAutomationProvider,
   CasesSavedView,
@@ -27,6 +39,7 @@ import {
   ProjectViewPreferences,
   ReleaseReviewState,
   RunsSavedView,
+  ScenarioTestDataSet,
   SourceArtifact,
   TestCaseRow,
   TestRunRecord,
@@ -66,6 +79,16 @@ type ProjectRecord = Awaited<
       include: {
         changeComparisons: true;
         requirements: true;
+        testCases: true;
+      };
+    }>
+  >
+>;
+
+type AutomationProjectRecord = Awaited<
+  ReturnType<
+    typeof prisma.project.findFirstOrThrow<{
+      include: {
         testCases: true;
       };
     }>
@@ -241,6 +264,7 @@ const getStoredRuns = (value: unknown): TestRunRecord[] => {
       }
 
       const record = item as Record<string, unknown>;
+
       return {
         id: typeof record.id === "string" ? record.id : "",
         name: typeof record.name === "string" ? record.name : "Untitled Run",
@@ -421,9 +445,39 @@ const getStoredAutomationScripts = (
       projectId: record.projectId,
       provider,
       executionMode: record.executionMode === "headed" ? "headed" : "headless",
+      environmentBindingId:
+        typeof record.environmentBindingId === "string"
+          ? record.environmentBindingId
+          : undefined,
       name: record.name,
       description:
         typeof record.description === "string" ? record.description : undefined,
+      sourceType:
+        record.sourceType === "standalone" ? "standalone" : "case-linked",
+      linkedCaseIds: Array.isArray(record.linkedCaseIds)
+        ? record.linkedCaseIds.filter(
+            (item): item is string =>
+              typeof item === "string" && item.trim().length > 0
+          )
+        : [],
+      linkedRequirementIds: Array.isArray(record.linkedRequirementIds)
+        ? record.linkedRequirementIds.filter(
+            (item): item is string =>
+              typeof item === "string" && item.trim().length > 0
+          )
+        : [],
+      linkedReleaseIds: Array.isArray(record.linkedReleaseIds)
+        ? record.linkedReleaseIds.filter(
+            (item): item is string =>
+              typeof item === "string" && item.trim().length > 0
+          )
+        : [],
+      linkedIssueIds: Array.isArray(record.linkedIssueIds)
+        ? record.linkedIssueIds.filter(
+            (item): item is string =>
+              typeof item === "string" && item.trim().length > 0
+          )
+        : [],
       createdBy:
         typeof record.createdBy === "string" ? record.createdBy : undefined,
       createdAt:
@@ -434,6 +488,349 @@ const getStoredAutomationScripts = (
   });
 
   return parsedScripts;
+};
+
+const getStoredAutomationSuites = (
+  value: unknown
+): Project["automationSuites"] => {
+  const planning = getProjectPlanning(value);
+  const suites = planning?.automationSuites;
+
+  if (!Array.isArray(suites)) {
+    return [];
+  }
+
+  const parsed: AutomationSuite[] = [];
+  suites.forEach((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return;
+    }
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.id !== "string" ||
+      typeof record.projectId !== "string" ||
+      typeof record.name !== "string"
+    ) {
+      return;
+    }
+    const status: AutomationSuiteStatus =
+      record.status === "active" || record.status === "paused"
+        ? (record.status as AutomationSuiteStatus)
+        : "draft";
+    parsed.push({
+      id: record.id,
+      projectId: record.projectId,
+      name: record.name,
+      description:
+        typeof record.description === "string" ? record.description : undefined,
+      scenarioIds: Array.isArray(record.scenarioIds)
+        ? record.scenarioIds.filter(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.trim().length > 0
+          )
+        : [],
+      tags: Array.isArray(record.tags)
+        ? record.tags.filter(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.trim().length > 0
+          )
+        : [],
+      status,
+      environmentBindingId:
+        typeof record.environmentBindingId === "string"
+          ? record.environmentBindingId
+          : undefined,
+      createdAt:
+        typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+      updatedAt:
+        typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+    });
+  });
+  return parsed;
+};
+
+const getStoredAutomationActions = (
+  value: unknown
+): Project["automationActions"] => {
+  const planning = getProjectPlanning(value);
+  const actions = planning?.automationActions;
+
+  if (!Array.isArray(actions)) {
+    return [];
+  }
+
+  const parsed: AutomationAction[] = [];
+  actions.forEach((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return;
+    }
+
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.id !== "string" ||
+      typeof record.projectId !== "string" ||
+      typeof record.name !== "string"
+    ) {
+      return;
+    }
+
+    const provider =
+      record.provider === "playwright" ||
+      record.provider === "cypress" ||
+      record.provider === "api" ||
+      record.provider === "mobile"
+        ? (record.provider as AutomationProvider)
+        : "playwright";
+
+    const parameters: AutomationActionParameter[] = Array.isArray(record.parameters)
+      ? record.parameters.flatMap((entry) => {
+          if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+            return [];
+          }
+          const parameter = entry as Record<string, unknown>;
+          if (typeof parameter.id !== "string" || typeof parameter.name !== "string") {
+            return [];
+          }
+          return [
+            {
+              id: parameter.id,
+              name: parameter.name,
+              description:
+                typeof parameter.description === "string"
+                  ? parameter.description
+                  : undefined,
+              required:
+                typeof parameter.required === "boolean"
+                  ? parameter.required
+                  : undefined,
+              defaultValue:
+                typeof parameter.defaultValue === "string"
+                  ? parameter.defaultValue
+                  : undefined,
+            },
+          ];
+        })
+      : [];
+
+    const outputs = Array.isArray(record.outputs)
+      ? record.outputs.flatMap((entry) => {
+          if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+            return [];
+          }
+          const output = entry as Record<string, unknown>;
+          if (typeof output.name !== "string") {
+            return [];
+          }
+          return [
+            {
+              name: output.name,
+              description:
+                typeof output.description === "string"
+                  ? output.description
+                  : undefined,
+            },
+          ];
+        })
+      : [];
+
+    parsed.push({
+      id: record.id,
+      projectId: record.projectId,
+      name: record.name,
+      description:
+        typeof record.description === "string" ? record.description : undefined,
+      tags: Array.isArray(record.tags)
+        ? record.tags.filter(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.trim().length > 0
+          )
+        : [],
+      provider,
+      parameters,
+      steps: Array.isArray(record.steps)
+        ? (record.steps as AutomationStep[])
+        : [],
+      outputs,
+      backingBlockId:
+        typeof record.backingBlockId === "string"
+          ? record.backingBlockId
+          : undefined,
+      createdAt:
+        typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+      updatedAt:
+        typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+    });
+  });
+
+  return parsed;
+};
+
+const getStoredAutomationScenarios = (
+  value: unknown
+): Project["automationScenarios"] => {
+  const planning = getProjectPlanning(value);
+  const scenarios = planning?.automationScenarios;
+
+  if (!Array.isArray(scenarios)) {
+    return [];
+  }
+
+  const parsed: AutomationScenario[] = [];
+  scenarios.forEach((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return;
+    }
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.id !== "string" ||
+      typeof record.projectId !== "string" ||
+      typeof record.name !== "string"
+    ) {
+      return;
+    }
+    const provider =
+      record.provider === "playwright" ||
+      record.provider === "cypress" ||
+      record.provider === "api" ||
+      record.provider === "mobile"
+        ? (record.provider as AutomationProvider)
+        : "playwright";
+    const priority: AutomationScenarioPriority =
+      record.priority === "highest" ||
+      record.priority === "high" ||
+      record.priority === "medium" ||
+      record.priority === "low"
+        ? (record.priority as AutomationScenarioPriority)
+        : "medium";
+    const status: AutomationScenarioStatus =
+      record.status === "draft" ||
+      record.status === "ready" ||
+      record.status === "active" ||
+      record.status === "paused"
+        ? (record.status as AutomationScenarioStatus)
+        : "draft";
+    const parameterizationMode: AutomationScenarioParameterizationMode =
+      record.parameterizationMode === "selected-dataset" ||
+      record.parameterizationMode === "all-datasets"
+        ? (record.parameterizationMode as AutomationScenarioParameterizationMode)
+        : "default-only";
+    parsed.push({
+      id: record.id,
+      projectId: record.projectId,
+      suiteId: typeof record.suiteId === "string" ? record.suiteId : undefined,
+      scriptId: typeof record.scriptId === "string" ? record.scriptId : undefined,
+      provider,
+      executionMode: record.executionMode === "headed" ? "headed" : "headless",
+      environmentBindingId:
+        typeof record.environmentBindingId === "string"
+          ? record.environmentBindingId
+          : undefined,
+      name: record.name,
+      description:
+        typeof record.description === "string" ? record.description : undefined,
+      tags: Array.isArray(record.tags)
+        ? record.tags.filter(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.trim().length > 0
+          )
+        : [],
+      priority,
+      status,
+      testDataSetIds: Array.isArray(record.testDataSetIds)
+        ? record.testDataSetIds.filter(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.trim().length > 0
+          )
+        : [],
+      defaultDataSetId:
+        typeof record.defaultDataSetId === "string"
+          ? record.defaultDataSetId
+          : undefined,
+      parameterizationMode,
+      sourceType: record.sourceType === "standalone" ? "standalone" : "case-linked",
+      linkedCaseIds: Array.isArray(record.linkedCaseIds)
+        ? record.linkedCaseIds.filter(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.trim().length > 0
+          )
+        : [],
+      linkedRequirementIds: Array.isArray(record.linkedRequirementIds)
+        ? record.linkedRequirementIds.filter(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.trim().length > 0
+          )
+        : [],
+      linkedReleaseIds: Array.isArray(record.linkedReleaseIds)
+        ? record.linkedReleaseIds.filter(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.trim().length > 0
+          )
+        : [],
+      linkedIssueIds: Array.isArray(record.linkedIssueIds)
+        ? record.linkedIssueIds.filter(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.trim().length > 0
+          )
+        : [],
+      createdBy:
+        typeof record.createdBy === "string" ? record.createdBy : undefined,
+      createdAt:
+        typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+      updatedAt:
+        typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+    });
+  });
+  return parsed;
+};
+
+const getStoredAutomationScenarioTestDataSets = (
+  value: unknown
+): Project["automationScenarioTestDataSets"] => {
+  const planning = getProjectPlanning(value);
+  const sets = planning?.automationScenarioTestDataSets;
+
+  if (!Array.isArray(sets)) {
+    return [];
+  }
+
+  const parsed: ScenarioTestDataSet[] = [];
+  sets.forEach((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return;
+    }
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.id !== "string" ||
+      typeof record.scenarioId !== "string" ||
+      typeof record.name !== "string"
+    ) {
+      return;
+    }
+    const variables =
+      record.variables &&
+      typeof record.variables === "object" &&
+      !Array.isArray(record.variables)
+        ? Object.fromEntries(
+            Object.entries(record.variables as Record<string, unknown>)
+              .filter(([, value]) => typeof value === "string")
+              .map(([key, value]) => [key, value as string])
+          )
+        : {};
+    parsed.push({
+      id: record.id,
+      scenarioId: record.scenarioId,
+      name: record.name,
+      description:
+        typeof record.description === "string" ? record.description : undefined,
+      variables,
+      isDefault: Boolean(record.isDefault),
+      createdAt:
+        typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+      updatedAt:
+        typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+    });
+  });
+  return parsed;
 };
 
 const getStoredAutomationSteps = (
@@ -470,12 +867,14 @@ const getStoredAutomationSteps = (
             "goto",
             "click",
             "fill",
+            "select",
             "press",
             "wait-for",
             "assert-text",
             "assert-visible",
             "assert-url",
             "assert-value",
+            "run-block",
           ].includes(record.action)
             ? (record.action as AutomationStepAction)
             : null;
@@ -491,6 +890,9 @@ const getStoredAutomationSteps = (
             "text",
             "value",
             "key",
+            "shared-block",
+            "selector-preset",
+            "route",
           ].includes(String(record.targetType))
             ? (record.targetType as AutomationTargetType)
             : undefined;
@@ -515,6 +917,16 @@ const getStoredAutomationSteps = (
                 : undefined,
             timeoutMs:
               typeof record.timeoutMs === "number" ? record.timeoutMs : undefined,
+            sharedBlockId:
+              typeof record.sharedBlockId === "string"
+                ? record.sharedBlockId
+                : undefined,
+            selectorPresetId:
+              typeof record.selectorPresetId === "string"
+                ? record.selectorPresetId
+                : undefined,
+            routeKey:
+              typeof record.routeKey === "string" ? record.routeKey : undefined,
             metaJson:
               record.metaJson &&
               typeof record.metaJson === "object" &&
@@ -621,7 +1033,48 @@ const getStoredAutomationExecutions = (
       runId: record.runId,
       caseId: record.caseId,
       scriptId: record.scriptId,
+      suiteId: typeof record.suiteId === "string" ? record.suiteId : undefined,
+      suiteName:
+        typeof record.suiteName === "string" ? record.suiteName : undefined,
+      scenarioId:
+        typeof record.scenarioId === "string" ? record.scenarioId : undefined,
+      scenarioName:
+        typeof record.scenarioName === "string"
+          ? record.scenarioName
+          : undefined,
+      dataSetId:
+        typeof record.dataSetId === "string" ? record.dataSetId : undefined,
+      dataSetName:
+        typeof record.dataSetName === "string"
+          ? record.dataSetName
+          : undefined,
+      dataSetVariables:
+        record.dataSetVariables &&
+        typeof record.dataSetVariables === "object" &&
+        !Array.isArray(record.dataSetVariables)
+          ? Object.fromEntries(
+              Object.entries(record.dataSetVariables as Record<string, unknown>)
+                .filter(([, value]) => typeof value === "string")
+                .map(([key, value]) => [key, value as string])
+            )
+          : undefined,
+      environmentBindingId:
+        typeof record.environmentBindingId === "string"
+          ? record.environmentBindingId
+          : undefined,
+      environmentName:
+        typeof record.environmentName === "string"
+          ? record.environmentName
+          : undefined,
       provider,
+      executionMode:
+        record.executionMode === "headed" ? "headed" : "headless",
+      triggerType:
+        record.triggerType === "scheduled" ? "scheduled" : "manual",
+      scheduleId:
+        typeof record.scheduleId === "string" ? record.scheduleId : undefined,
+      scheduleName:
+        typeof record.scheduleName === "string" ? record.scheduleName : undefined,
       status,
       startedAt: record.startedAt,
       finishedAt:
@@ -632,6 +1085,112 @@ const getStoredAutomationExecutions = (
         typeof record.failureMessage === "string"
           ? record.failureMessage
           : undefined,
+      failureOrigin:
+        record.failureOrigin === "shared-block" || record.failureOrigin === "local-step"
+          ? record.failureOrigin
+          : undefined,
+      failureReferenceId:
+        typeof record.failureReferenceId === "string"
+          ? record.failureReferenceId
+          : undefined,
+      stepResults: Array.isArray(record.stepResults)
+        ? record.stepResults
+            .map((stepResult) => {
+              if (
+                !stepResult ||
+                typeof stepResult !== "object" ||
+                Array.isArray(stepResult)
+              ) {
+                return null;
+              }
+
+              const nextRecord = stepResult as Record<string, unknown>;
+              if (
+                typeof nextRecord.stepId !== "string" ||
+                typeof nextRecord.stepIndex !== "number" ||
+                typeof nextRecord.action !== "string"
+              ) {
+                return null;
+              }
+
+              return {
+                stepId: nextRecord.stepId,
+                sourceStepId:
+                  typeof nextRecord.sourceStepId === "string"
+                    ? nextRecord.sourceStepId
+                    : undefined,
+                stepIndex: nextRecord.stepIndex,
+                action: (
+                  nextRecord.action === "goto" ||
+                  nextRecord.action === "click" ||
+                  nextRecord.action === "fill" ||
+                  nextRecord.action === "select" ||
+                  nextRecord.action === "press" ||
+                  nextRecord.action === "wait-for" ||
+                  nextRecord.action === "assert-text" ||
+                  nextRecord.action === "assert-visible" ||
+                  nextRecord.action === "assert-url" ||
+                  nextRecord.action === "assert-value" ||
+                  nextRecord.action === "run-block"
+                    ? nextRecord.action
+                    : "goto"
+                ) as AutomationStepAction,
+                status: (
+                  nextRecord.status === "passed" ||
+                  nextRecord.status === "failed" ||
+                  nextRecord.status === "blocked" ||
+                  nextRecord.status === "pending" ||
+                  nextRecord.status === "running" ||
+                  nextRecord.status === "skipped"
+                    ? nextRecord.status
+                    : "pending"
+                ) as AutomationStepExecutionStatus,
+                targetValue:
+                  typeof nextRecord.targetValue === "string"
+                    ? nextRecord.targetValue
+                    : undefined,
+                message:
+                  typeof nextRecord.message === "string"
+                    ? nextRecord.message
+                    : undefined,
+                failureReason:
+                  typeof nextRecord.failureReason === "string"
+                    ? nextRecord.failureReason
+                    : undefined,
+                logLines: Array.isArray(nextRecord.logLines)
+                  ? nextRecord.logLines.filter(
+                      (line): line is string => typeof line === "string"
+                    )
+                  : undefined,
+                startedAt:
+                  typeof nextRecord.startedAt === "number"
+                    ? nextRecord.startedAt
+                    : undefined,
+                finishedAt:
+                  typeof nextRecord.finishedAt === "number"
+                    ? nextRecord.finishedAt
+                    : undefined,
+                durationMs:
+                  typeof nextRecord.durationMs === "number"
+                    ? nextRecord.durationMs
+                    : undefined,
+                origin:
+                  nextRecord.origin === "shared-block" ||
+                  nextRecord.origin === "local-step"
+                    ? (nextRecord.origin as "shared-block" | "local-step")
+                    : undefined,
+                referenceId:
+                  typeof nextRecord.referenceId === "string"
+                    ? nextRecord.referenceId
+                    : undefined,
+                referenceLabel:
+                  typeof nextRecord.referenceLabel === "string"
+                    ? nextRecord.referenceLabel
+                    : undefined,
+              };
+            })
+            .filter((item): item is NonNullable<typeof item> => Boolean(item))
+        : undefined,
       artifactIds: Array.isArray(record.artifactIds)
         ? record.artifactIds.filter(
             (artifactId): artifactId is string =>
@@ -697,6 +1256,282 @@ const getStoredAutomationArtifacts = (
   });
 
   return parsedArtifacts;
+};
+
+const getStoredAutomationReusableBlocks = (
+  value: unknown
+): Project["automationReusableBlocks"] => {
+  const planning = getProjectPlanning(value);
+  const blocks = planning?.automationReusableBlocks;
+
+  if (!Array.isArray(blocks)) {
+    return [];
+  }
+
+  return blocks
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.id !== "string" ||
+        typeof record.name !== "string" ||
+        typeof record.provider !== "string"
+      ) {
+        return null;
+      }
+
+      const provider =
+        record.provider === "playwright" ||
+        record.provider === "cypress" ||
+        record.provider === "api" ||
+        record.provider === "mobile"
+          ? (record.provider as AutomationProvider)
+          : "playwright";
+
+      const steps = Array.isArray(record.steps)
+        ? (record.steps as NonNullable<Project["automationReusableBlocks"]>[number]["steps"])
+        : [];
+
+      return {
+        id: record.id,
+        name: record.name,
+        description:
+          typeof record.description === "string" ? record.description : undefined,
+        provider,
+        steps,
+        createdAt:
+          typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+        updatedAt:
+          typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+};
+
+const getStoredAutomationSelectorPresets = (
+  value: unknown
+): Project["automationSelectorPresets"] => {
+  const planning = getProjectPlanning(value);
+  const presets = planning?.automationSelectorPresets;
+
+  if (!Array.isArray(presets)) {
+    return [];
+  }
+
+  return presets
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.id !== "string" ||
+        typeof record.name !== "string" ||
+        typeof record.selector !== "string"
+      ) {
+        return null;
+      }
+      return {
+        id: record.id,
+        name: record.name,
+        selector: record.selector,
+        description:
+          typeof record.description === "string" ? record.description : undefined,
+        createdAt:
+          typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+        updatedAt:
+          typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+};
+
+const getStoredAutomationEnvironmentBindings = (
+  value: unknown
+): Project["automationEnvironmentBindings"] => {
+  const planning = getProjectPlanning(value);
+  const bindings = planning?.automationEnvironmentBindings;
+
+  if (!Array.isArray(bindings)) {
+    return [];
+  }
+
+  return bindings
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+      const record = item as Record<string, unknown>;
+      if (typeof record.id !== "string" || typeof record.name !== "string") {
+        return null;
+      }
+      const platformDomain =
+        record.platformDomain === "salesforce" ? ("salesforce" as const) : undefined;
+      return {
+        id: record.id,
+        name: record.name,
+        baseUrl:
+          typeof record.baseUrl === "string" ? record.baseUrl : undefined,
+        platformDomain,
+        environmentScope:
+          typeof record.environmentScope === "string"
+            ? record.environmentScope
+            : undefined,
+        salesforceOrgAlias:
+          typeof record.salesforceOrgAlias === "string"
+            ? record.salesforceOrgAlias
+            : undefined,
+        routePresets:
+          record.routePresets &&
+          typeof record.routePresets === "object" &&
+          !Array.isArray(record.routePresets)
+            ? Object.fromEntries(
+                Object.entries(record.routePresets).filter(
+                  ([key, value]) => typeof key === "string" && typeof value === "string"
+                )
+              )
+            : undefined,
+        credentialAliases: Array.isArray(record.credentialAliases)
+          ? record.credentialAliases.filter(
+              (item): item is string => typeof item === "string" && item.trim().length > 0
+            )
+          : [],
+        salesforceUserAliases: Array.isArray(record.salesforceUserAliases)
+          ? record.salesforceUserAliases.filter(
+              (item): item is string => typeof item === "string" && item.trim().length > 0
+            )
+          : [],
+        salesforceProfileAliases: Array.isArray(record.salesforceProfileAliases)
+          ? record.salesforceProfileAliases.filter(
+              (item): item is string => typeof item === "string" && item.trim().length > 0
+            )
+          : [],
+        salesforceAppAliases: Array.isArray(record.salesforceAppAliases)
+          ? record.salesforceAppAliases.filter(
+              (item): item is string => typeof item === "string" && item.trim().length > 0
+            )
+          : [],
+        isDefault: Boolean(record.isDefault),
+        createdAt:
+          typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+        updatedAt:
+          typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+};
+
+const getStoredAutomationSchedules = (
+  value: unknown
+): Project["automationSchedules"] => {
+  const planning = getProjectPlanning(value);
+  const schedules = planning?.automationSchedules;
+
+  if (!Array.isArray(schedules)) {
+    return [];
+  }
+
+  return schedules
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.id !== "string" ||
+        typeof record.scriptId !== "string" ||
+        typeof record.name !== "string"
+      ) {
+        return null;
+      }
+
+      const scheduleStatus =
+        record.status === "running" ||
+        record.status === "paused" ||
+        record.status === "completed" ||
+        record.status === "failed" ||
+        record.status === "scheduled"
+          ? (record.status as AutomationScheduleStatus)
+          : record.isEnabled === false
+            ? ("paused" as AutomationScheduleStatus)
+            : ("scheduled" as AutomationScheduleStatus);
+
+      return {
+        id: record.id,
+        scriptId: record.scriptId,
+        suiteId: typeof record.suiteId === "string" ? record.suiteId : undefined,
+        scenarioId:
+          typeof record.scenarioId === "string" ? record.scenarioId : undefined,
+        datasetId:
+          typeof record.datasetId === "string" ? record.datasetId : undefined,
+        runAllDataSets: Boolean(record.runAllDataSets),
+        name: record.name,
+        frequency:
+          record.frequency === "once" ||
+          record.frequency === "daily" ||
+          record.frequency === "weekly" ||
+          record.frequency === "custom"
+            ? (record.frequency as AutomationScheduleFrequency)
+            : ("once" as AutomationScheduleFrequency),
+        cronExpression:
+          typeof record.cronExpression === "string"
+            ? record.cronExpression
+            : undefined,
+        scheduledFor:
+          typeof record.scheduledFor === "number"
+            ? record.scheduledFor
+            : undefined,
+        nextRunAt:
+          typeof record.nextRunAt === "number" ? record.nextRunAt : undefined,
+        environmentBindingId:
+          typeof record.environmentBindingId === "string"
+            ? record.environmentBindingId
+            : undefined,
+        executionMode:
+          record.executionMode === "headed"
+            ? ("headed" as const)
+            : ("headless" as const),
+        isEnabled: record.isEnabled !== false,
+        status: scheduleStatus,
+        lastRunStatus:
+          record.lastRunStatus === "passed" ||
+          record.lastRunStatus === "failed" ||
+          record.lastRunStatus === "blocked" ||
+          record.lastRunStatus === "not-run"
+            ? (record.lastRunStatus as AutomationExecutionStatus)
+            : undefined,
+        lastExecutionId:
+          typeof record.lastExecutionId === "string"
+            ? record.lastExecutionId
+            : undefined,
+        lastError:
+          typeof record.lastError === "string" ? record.lastError : undefined,
+        lastRunAt:
+          typeof record.lastRunAt === "number" ? record.lastRunAt : undefined,
+        lastCheckedAt:
+          typeof record.lastCheckedAt === "number"
+            ? record.lastCheckedAt
+            : undefined,
+        createdAt:
+          typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+        updatedAt:
+          typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+};
+
+const getStoredGenerationFeedbackLog = (
+  value: unknown
+): Project["generationFeedbackLog"] => {
+  const planning = getProjectPlanning(value);
+  return Array.isArray(planning?.generationFeedbackLog)
+    ? (planning.generationFeedbackLog as Project["generationFeedbackLog"])
+    : [];
 };
 
 const getStoredTestDataSets = (value: unknown): Project["testDataSets"] => {
@@ -1114,12 +1949,12 @@ const getSavedViews = (value: unknown): Project["savedViews"] => {
             return null;
           }
 
-          return {
-            id: item.id,
-            name: item.name,
-            pinned: Boolean(item.pinned),
-            updatedAt: item.updatedAt,
-            filters: {
+  return {
+    id: item.id,
+    name: item.name,
+    pinned: Boolean(item.pinned),
+    updatedAt: item.updatedAt,
+    filters: {
               searchQuery:
                 typeof filters.searchQuery === "string" ? filters.searchQuery : "",
               assignee: typeof filters.assignee === "string" ? filters.assignee : "",
@@ -1170,6 +2005,19 @@ const getSavedViews = (value: unknown): Project["savedViews"] => {
                 filters.accessibilityCategory === "error-handling" ||
                 filters.accessibilityCategory === "media-content"
                   ? (filters.accessibilityCategory as CasesSavedView["filters"]["accessibilityCategory"])
+                  : "",
+              approvalState:
+                filters.approvalState === "pending" ||
+                filters.approvalState === "approved" ||
+                filters.approvalState === "rejected"
+                  ? (filters.approvalState as CasesSavedView["filters"]["approvalState"])
+                  : "",
+              handoffState:
+                filters.handoffState === "needs-qa-review" ||
+                filters.handoffState === "needs-automation" ||
+                filters.handoffState === "needs-product-signoff" ||
+                filters.handoffState === "release-blocking"
+                  ? (filters.handoffState as CasesSavedView["filters"]["handoffState"])
                   : "",
               linked:
                 filters.linked === "linked" || filters.linked === "unlinked"
@@ -1594,12 +2442,12 @@ const getLatestChangeComparison = (project: ProjectRecord) =>
     .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())[0] ??
   null;
 
-const toWorkspaceRows = (project: ProjectRecord): Project["rows"] => {
+const toWorkspaceRows = (project: { rows: unknown; testCases: ProjectRecord["testCases"] }) => {
   if (project.testCases.length === 0) {
     return getLegacyRows(project.rows);
   }
 
-  return project.testCases.map((testCase) => {
+  return project.testCases.map((testCase): TestCaseRow => {
     const linkedIssueId = (testCase as { issueId?: string | null }).issueId;
     const metadata =
       testCase.metadata && typeof testCase.metadata === "object"
@@ -1693,6 +2541,83 @@ const toWorkspaceRows = (project: ProjectRecord): Project["rows"] => {
         metadata.automationBindingMode === "automated" ||
         metadata.automationBindingMode === "hybrid"
           ? metadata.automationBindingMode
+          : undefined,
+      platformDomain:
+        metadata.platformDomain === "salesforce" ? "salesforce" : undefined,
+      salesforceModule:
+        typeof metadata.salesforceModule === "string"
+          ? metadata.salesforceModule
+          : undefined,
+      salesforceObjectType:
+        typeof metadata.salesforceObjectType === "string"
+          ? metadata.salesforceObjectType
+          : undefined,
+      salesforceTestType:
+        typeof metadata.salesforceTestType === "string"
+          ? metadata.salesforceTestType
+          : undefined,
+      permissionScope:
+        typeof metadata.permissionScope === "string"
+          ? metadata.permissionScope
+          : undefined,
+      environmentScope:
+        typeof metadata.environmentScope === "string"
+          ? metadata.environmentScope
+          : undefined,
+      generationSource:
+        metadata.generationSource === "ai-generated" ||
+        metadata.generationSource === "manual" ||
+        metadata.generationSource === "imported"
+          ? metadata.generationSource
+          : undefined,
+      generationFeedback:
+        metadata.generationFeedback &&
+        typeof metadata.generationFeedback === "object" &&
+        !Array.isArray(metadata.generationFeedback)
+          ? (metadata.generationFeedback as Project["rows"][number]["generationFeedback"])
+          : undefined,
+      approvalState:
+        metadata.approvalState === "pending" ||
+        metadata.approvalState === "approved" ||
+        metadata.approvalState === "rejected"
+          ? metadata.approvalState
+          : undefined,
+      handoffState:
+        metadata.handoffState === "needs-qa-review" ||
+        metadata.handoffState === "needs-automation" ||
+        metadata.handoffState === "needs-product-signoff" ||
+        metadata.handoffState === "release-blocking"
+          ? metadata.handoffState
+          : undefined,
+      generatedBy:
+        metadata.generatedBy &&
+        typeof metadata.generatedBy === "object" &&
+        !Array.isArray(metadata.generatedBy)
+          ? (metadata.generatedBy as Project["rows"][number]["generatedBy"])
+          : undefined,
+      editedBy:
+        metadata.editedBy &&
+        typeof metadata.editedBy === "object" &&
+        !Array.isArray(metadata.editedBy)
+          ? (metadata.editedBy as Project["rows"][number]["editedBy"])
+          : undefined,
+      approvedBy:
+        metadata.approvedBy &&
+        typeof metadata.approvedBy === "object" &&
+        !Array.isArray(metadata.approvedBy)
+          ? (metadata.approvedBy as Project["rows"][number]["approvedBy"])
+          : undefined,
+      rejectedBy:
+        metadata.rejectedBy &&
+        typeof metadata.rejectedBy === "object" &&
+        !Array.isArray(metadata.rejectedBy)
+          ? (metadata.rejectedBy as Project["rows"][number]["rejectedBy"])
+          : undefined,
+      releaseReviewedBy:
+        metadata.releaseReviewedBy &&
+        typeof metadata.releaseReviewedBy === "object" &&
+        !Array.isArray(metadata.releaseReviewedBy)
+          ? (metadata.releaseReviewedBy as Project["rows"][number]["releaseReviewedBy"])
           : undefined,
       archived:
         typeof metadata.archived === "boolean" ? metadata.archived : undefined,
@@ -1823,11 +2748,26 @@ const toWorkspaceProject = (project: ProjectRecord): Project => {
     savedViews: getSavedViews(project.rows),
     releaseReview: getReleaseReviewState(project.rows),
     runs: getStoredRuns(project.rows),
+    automationSuites: getStoredAutomationSuites(project.rows),
+    automationScenarios: getStoredAutomationScenarios(project.rows),
+    automationActions: getStoredAutomationActions(project.rows),
+    automationScenarioTestDataSets: getStoredAutomationScenarioTestDataSets(
+      project.rows
+    ),
     automationScripts: getStoredAutomationScripts(project.rows),
     automationSteps: getStoredAutomationSteps(project.rows),
     automationBindings: getStoredAutomationBindings(project.rows),
     automationExecutions: getStoredAutomationExecutions(project.rows),
     automationArtifacts: getStoredAutomationArtifacts(project.rows),
+    automationReusableBlocks: getStoredAutomationReusableBlocks(project.rows),
+    automationSelectorPresets: getStoredAutomationSelectorPresets(project.rows),
+    automationEnvironmentBindings: getStoredAutomationEnvironmentBindings(project.rows),
+    automationSchedules: getStoredAutomationSchedules(project.rows),
+    activeAutomationEnvironmentId:
+      typeof getProjectPlanning(project.rows)?.activeAutomationEnvironmentId === "string"
+        ? (getProjectPlanning(project.rows)?.activeAutomationEnvironmentId as string)
+        : "",
+    generationFeedbackLog: getStoredGenerationFeedbackLog(project.rows),
     activeRunId: getActiveRunId(project.rows),
     lastGeneratedChangeImpactSignature: latestChangeComparison?.signature ?? null,
     latestChangeEntries: Array.isArray(latestChangeComparison?.changes)
@@ -1842,11 +2782,103 @@ const toWorkspaceProject = (project: ProjectRecord): Project => {
   };
 };
 
+const toWorkspaceAutomationProject = (project: AutomationProjectRecord): Project => ({
+  id: project.id,
+  name: project.name,
+  projectKey:
+    project.key?.trim() ||
+    (typeof getProjectPlanning(project.rows)?.projectKey === "string"
+      ? (getProjectPlanning(project.rows)?.projectKey as string)
+      : ""),
+  sprintName:
+    typeof getProjectPlanning(project.rows)?.sprintName === "string"
+      ? (getProjectPlanning(project.rows)?.sprintName as string)
+      : "",
+  releaseName:
+    typeof getProjectPlanning(project.rows)?.releaseName === "string"
+      ? (getProjectPlanning(project.rows)?.releaseName as string)
+      : "",
+  teamName:
+    typeof getProjectPlanning(project.rows)?.teamName === "string"
+      ? (getProjectPlanning(project.rows)?.teamName as string)
+      : "",
+  input: project.input,
+  oldRequirement: "",
+  rows: toWorkspaceRows(project),
+  generationMode: project.generationMode as Project["generationMode"],
+  coverageDepth: project.coverageDepth as Project["coverageDepth"],
+  persona: toWorkspacePersona(project.persona),
+  autosaveEnabled: project.autosaveEnabled,
+  sourceArtifacts: Array.isArray(project.sourceArtifacts)
+    ? (project.sourceArtifacts as Project["sourceArtifacts"])
+    : [],
+  reviewerName: project.reviewerName,
+  reviewerNotes: project.reviewerNotes,
+  signoffStatus: toWorkspaceSignoffStatus(project.signoffStatus),
+  auditTrail: Array.isArray(project.auditTrail)
+    ? (project.auditTrail as Project["auditTrail"])
+    : [],
+  caseComments: getStoredCaseComments(project.rows),
+  notifications: getStoredNotifications(project.rows),
+  caseVersionHistory: getStoredCaseVersionHistory(project.rows),
+  caseReviewHistory: getStoredCaseReviewHistory(project.rows),
+  testDataSets: getStoredTestDataSets(project.rows),
+  caseTemplates: getStoredCaseTemplates(project.rows),
+  viewPreferences: getViewPreferences(project.rows),
+  savedViews: getSavedViews(project.rows),
+  releaseReview: getReleaseReviewState(project.rows),
+  runs: getStoredRuns(project.rows),
+  automationSuites: getStoredAutomationSuites(project.rows),
+  automationScenarios: getStoredAutomationScenarios(project.rows),
+  automationActions: getStoredAutomationActions(project.rows),
+  automationScenarioTestDataSets: getStoredAutomationScenarioTestDataSets(
+    project.rows
+  ),
+  automationScripts: getStoredAutomationScripts(project.rows),
+  automationSteps: getStoredAutomationSteps(project.rows),
+  automationBindings: getStoredAutomationBindings(project.rows),
+  automationExecutions: getStoredAutomationExecutions(project.rows),
+  automationArtifacts: getStoredAutomationArtifacts(project.rows),
+  automationReusableBlocks: getStoredAutomationReusableBlocks(project.rows),
+  automationSelectorPresets: getStoredAutomationSelectorPresets(project.rows),
+  automationEnvironmentBindings: getStoredAutomationEnvironmentBindings(project.rows),
+  automationSchedules: getStoredAutomationSchedules(project.rows),
+  activeAutomationEnvironmentId:
+    typeof getProjectPlanning(project.rows)?.activeAutomationEnvironmentId === "string"
+      ? (getProjectPlanning(project.rows)?.activeAutomationEnvironmentId as string)
+      : "",
+  generationFeedbackLog: getStoredGenerationFeedbackLog(project.rows),
+  activeRunId: getActiveRunId(project.rows),
+  lastGeneratedChangeImpactSignature: null,
+  latestChangeEntries: [],
+  changeComparisonCount: 0,
+  activeRequirementId: undefined,
+  requirementCount: 0,
+  testCaseCount: project.testCases.length,
+  createdAt: project.createdAt.getTime(),
+  updatedAt: project.updatedAt.getTime(),
+});
+
 const safeToWorkspaceProject = (project: ProjectRecord): Project | null => {
   try {
     return toWorkspaceProject(project);
   } catch (error) {
     console.error("Failed to convert project record:", {
+      projectId: project.id,
+      projectName: project.name,
+      error,
+    });
+    return null;
+  }
+};
+
+const safeToWorkspaceAutomationProject = (
+  project: AutomationProjectRecord
+): Project | null => {
+  try {
+    return toWorkspaceAutomationProject(project);
+  } catch (error) {
+    console.error("Failed to convert automation project record:", {
       projectId: project.id,
       projectName: project.name,
       error,
@@ -1883,6 +2915,18 @@ const normalizeProject = (project: Project): Project => ({
     snapshots: [],
   },
   runs: Array.isArray(project.runs) ? project.runs : [],
+  automationSuites: Array.isArray(project.automationSuites)
+    ? project.automationSuites
+    : [],
+  automationScenarios: Array.isArray(project.automationScenarios)
+    ? project.automationScenarios
+    : [],
+  automationActions: Array.isArray(project.automationActions)
+    ? project.automationActions
+    : [],
+  automationScenarioTestDataSets: Array.isArray(project.automationScenarioTestDataSets)
+    ? project.automationScenarioTestDataSets
+    : [],
   automationScripts: Array.isArray(project.automationScripts)
     ? project.automationScripts
     : [],
@@ -1899,12 +2943,97 @@ const normalizeProject = (project: Project): Project => ({
   automationArtifacts: Array.isArray(project.automationArtifacts)
     ? project.automationArtifacts
     : [],
+  automationReusableBlocks: Array.isArray(project.automationReusableBlocks)
+    ? project.automationReusableBlocks
+    : [],
+  automationSelectorPresets: Array.isArray(project.automationSelectorPresets)
+    ? project.automationSelectorPresets
+    : [],
+  automationEnvironmentBindings: Array.isArray(project.automationEnvironmentBindings)
+    ? project.automationEnvironmentBindings
+    : [],
+  automationSchedules: Array.isArray(project.automationSchedules)
+    ? project.automationSchedules
+    : [],
+  activeAutomationEnvironmentId: project.activeAutomationEnvironmentId ?? "",
+  generationFeedbackLog: Array.isArray(project.generationFeedbackLog)
+    ? project.generationFeedbackLog
+    : [],
   activeRunId: project.activeRunId ?? "",
   lastGeneratedChangeImpactSignature:
     project.lastGeneratedChangeImpactSignature ?? null,
   latestChangeEntries: project.latestChangeEntries ?? [],
   rows: Array.isArray(project.rows) ? project.rows : [],
 });
+
+export type ProjectShellSummary = {
+  id: string;
+  name: string;
+  projectKey: string;
+  sprintName: string;
+  releaseName: string;
+  teamName: string;
+  testCaseCount: number;
+  releaseDecision?: "safe" | "caution" | "blocked";
+  releaseDecisionRecordedAt?: number;
+};
+
+const projectShellSelect = {
+  id: true,
+  key: true,
+  name: true,
+  rows: true,
+  _count: {
+    select: {
+      testCases: true,
+    },
+  },
+};
+
+const toProjectShellSummary = (project: {
+  id: string;
+  key: string | null;
+  name: string;
+  rows: Prisma.JsonValue;
+  _count: {
+    testCases: number;
+  };
+}): ProjectShellSummary => {
+  const planning = getProjectPlanning(project.rows);
+  const releaseReview =
+    planning?.releaseReview &&
+    typeof planning.releaseReview === "object" &&
+    !Array.isArray(planning.releaseReview)
+      ? (planning.releaseReview as Record<string, unknown>)
+      : null;
+
+  const releaseDecision =
+    releaseReview?.recordedDecision === "safe" ||
+    releaseReview?.recordedDecision === "caution" ||
+    releaseReview?.recordedDecision === "blocked"
+      ? (releaseReview.recordedDecision as ProjectShellSummary["releaseDecision"])
+      : undefined;
+
+  return {
+    id: project.id,
+    name: project.name,
+    projectKey:
+      (typeof planning?.projectKey === "string" && planning.projectKey.trim()) ||
+      project.key?.trim() ||
+      project.id,
+    sprintName:
+      typeof planning?.sprintName === "string" ? planning.sprintName : "",
+    releaseName:
+      typeof planning?.releaseName === "string" ? planning.releaseName : "",
+    teamName: typeof planning?.teamName === "string" ? planning.teamName : "",
+    testCaseCount: project._count.testCases,
+    releaseDecision,
+    releaseDecisionRecordedAt:
+      typeof releaseReview?.decisionRecordedAt === "number"
+        ? releaseReview.decisionRecordedAt
+        : undefined,
+  };
+};
 
 const projectInclude = {
   changeComparisons: {
@@ -1924,7 +3053,15 @@ const projectInclude = {
   },
 };
 
-export const readProjects = async () => {
+const automationProjectInclude = {
+  testCases: {
+    orderBy: {
+      createdAt: "asc" as const,
+    },
+  },
+};
+
+export const readProjects = cache(async () => {
   const projects = await prisma.project.findMany({
     include: projectInclude,
     orderBy: {
@@ -1935,9 +3072,9 @@ export const readProjects = async () => {
   return projects
     .map(safeToWorkspaceProject)
     .filter((project): project is Project => Boolean(project));
-};
+});
 
-export const readProjectById = async (projectId: string) => {
+export const readProjectById = cache(async (projectId: string) => {
   const project = await prisma.project.findUnique({
     where: {
       id: projectId,
@@ -1946,9 +3083,57 @@ export const readProjectById = async (projectId: string) => {
   });
 
   return project ? safeToWorkspaceProject(project) : null;
-};
+});
 
-export const readProjectByRef = async (projectRef: string) => {
+export const readAutomationProjectById = cache(async (projectId: string) => {
+  const project = await prisma.project.findUnique({
+    where: {
+      id: projectId,
+    },
+    include: automationProjectInclude,
+  });
+
+  return project ? safeToWorkspaceAutomationProject(project) : null;
+});
+
+export const readProjectShellById = cache(async (projectId: string) => {
+  const project = await prisma.project.findUnique({
+    where: {
+      id: projectId,
+    },
+    select: projectShellSelect,
+  });
+
+  return project ? toProjectShellSummary(project) : null;
+});
+
+export const readProjectByRef = cache(async (projectRef: string) => {
+  const directById = await readProjectById(projectRef);
+  if (directById) {
+    return directById;
+  }
+
+  const directProjectRows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT "id"
+    FROM "Project"
+    WHERE LOWER("id") = LOWER(${projectRef})
+       OR LOWER(COALESCE("key", '')) = LOWER(${projectRef})
+       OR LOWER(COALESCE("rows"->'planning'->>'projectKey', '')) = LOWER(${projectRef})
+    LIMIT 1
+  `);
+
+  const directProjectId = directProjectRows[0]?.id;
+  if (directProjectId) {
+    const directMatch = await prisma.project.findUnique({
+      where: {
+        id: directProjectId,
+      },
+      include: projectInclude,
+    });
+
+    return directMatch ? safeToWorkspaceProject(directMatch) : null;
+  }
+
   const normalizedRef = projectRef.trim().toLowerCase();
   const projects = await readProjects();
 
@@ -1958,7 +3143,67 @@ export const readProjectByRef = async (projectRef: string) => {
       return project.id.toLowerCase() === normalizedRef || normalizedKey === normalizedRef;
     }) ?? null
   );
-};
+});
+
+export const readAutomationProjectByRef = cache(async (projectRef: string) => {
+  const directById = await readAutomationProjectById(projectRef);
+  if (directById) {
+    return directById;
+  }
+
+  const directProjectRows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT "id"
+    FROM "Project"
+    WHERE LOWER("id") = LOWER(${projectRef})
+       OR LOWER(COALESCE("key", '')) = LOWER(${projectRef})
+       OR LOWER(COALESCE("rows"->'planning'->>'projectKey', '')) = LOWER(${projectRef})
+    LIMIT 1
+  `);
+
+  const directProjectId = directProjectRows[0]?.id;
+  if (!directProjectId) {
+    return null;
+  }
+
+  const project = await prisma.project.findUnique({
+    where: {
+      id: directProjectId,
+    },
+    include: automationProjectInclude,
+  });
+
+  return project ? safeToWorkspaceAutomationProject(project) : null;
+});
+
+export const readProjectShellByRef = cache(async (projectRef: string) => {
+  const directById = await readProjectShellById(projectRef);
+  if (directById) {
+    return directById;
+  }
+
+  const directProjectRows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT "id"
+    FROM "Project"
+    WHERE LOWER("id") = LOWER(${projectRef})
+       OR LOWER(COALESCE("key", '')) = LOWER(${projectRef})
+       OR LOWER(COALESCE("rows"->'planning'->>'projectKey', '')) = LOWER(${projectRef})
+    LIMIT 1
+  `);
+
+  const directProjectId = directProjectRows[0]?.id;
+  if (!directProjectId) {
+    return null;
+  }
+
+  const project = await prisma.project.findUnique({
+    where: {
+      id: directProjectId,
+    },
+    select: projectShellSelect,
+  });
+
+  return project ? toProjectShellSummary(project) : null;
+});
 
 export const writeProjects = async (projects: Project[]) => {
   const normalizedProjects = projects.map(normalizeProject);
@@ -1994,6 +3239,15 @@ export const writeProjects = async (projects: Project[]) => {
         automationReference: row.automationReference,
         automationScriptId: row.automationScriptId,
         automationBindingMode: row.automationBindingMode,
+        generationSource: row.generationSource,
+        generationFeedback: row.generationFeedback,
+        approvalState: row.approvalState,
+        handoffState: row.handoffState,
+        generatedBy: row.generatedBy,
+        editedBy: row.editedBy,
+        approvedBy: row.approvedBy,
+        rejectedBy: row.rejectedBy,
+        releaseReviewedBy: row.releaseReviewedBy,
         archived: row.archived,
         assignee: row.assignee,
         labels: row.labels,
@@ -2099,11 +3353,23 @@ export const writeProjects = async (projects: Project[]) => {
                     snapshots: [],
                   },
                   runs: project.runs ?? [],
+                  automationSuites: project.automationSuites ?? [],
+                  automationScenarios: project.automationScenarios ?? [],
+                  automationActions: project.automationActions ?? [],
+                  automationScenarioTestDataSets:
+                    project.automationScenarioTestDataSets ?? [],
                   automationScripts: project.automationScripts ?? [],
                   automationSteps: project.automationSteps ?? {},
                   automationBindings: project.automationBindings ?? [],
                   automationExecutions: project.automationExecutions ?? [],
                   automationArtifacts: project.automationArtifacts ?? [],
+                  automationReusableBlocks: project.automationReusableBlocks ?? [],
+                  automationSelectorPresets: project.automationSelectorPresets ?? [],
+                  automationEnvironmentBindings: project.automationEnvironmentBindings ?? [],
+                  automationSchedules: project.automationSchedules ?? [],
+                  activeAutomationEnvironmentId:
+                    project.activeAutomationEnvironmentId ?? "",
+                  generationFeedbackLog: project.generationFeedbackLog ?? [],
                   activeRunId: project.activeRunId ?? "",
                 },
               }),
@@ -2144,11 +3410,23 @@ export const writeProjects = async (projects: Project[]) => {
                     snapshots: [],
                   },
                   runs: project.runs ?? [],
+                  automationSuites: project.automationSuites ?? [],
+                  automationScenarios: project.automationScenarios ?? [],
+                  automationActions: project.automationActions ?? [],
+                  automationScenarioTestDataSets:
+                    project.automationScenarioTestDataSets ?? [],
                   automationScripts: project.automationScripts ?? [],
                   automationSteps: project.automationSteps ?? {},
                   automationBindings: project.automationBindings ?? [],
                   automationExecutions: project.automationExecutions ?? [],
                   automationArtifacts: project.automationArtifacts ?? [],
+                  automationReusableBlocks: project.automationReusableBlocks ?? [],
+                  automationSelectorPresets: project.automationSelectorPresets ?? [],
+                  automationEnvironmentBindings: project.automationEnvironmentBindings ?? [],
+                  automationSchedules: project.automationSchedules ?? [],
+                  activeAutomationEnvironmentId:
+                    project.activeAutomationEnvironmentId ?? "",
+                  generationFeedbackLog: project.generationFeedbackLog ?? [],
                   activeRunId: project.activeRunId ?? "",
                 },
               }),

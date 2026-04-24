@@ -152,6 +152,9 @@ export class IssueServiceNotReadyError extends Error {
   }
 }
 
+const ISSUE_UI_TIMEOUT = 1200;
+const ISSUE_UI_TIMEOUT_SENTINEL = "__CASEFORGE_ISSUE_UI_TIMEOUT__";
+
 const withIssueReadiness = <T,>(operation: () => Promise<T>) =>
   operation().catch((error) => {
     if (isMissingIssueTablesError(error)) {
@@ -206,6 +209,31 @@ export const listProjectIssues = async (
 
     return issues.map(mapIssueRecord);
   });
+
+export const listProjectIssuesForUi = async (
+  projectKey: string,
+  timeoutMs = ISSUE_UI_TIMEOUT
+): Promise<IssueRecord[]> => {
+  try {
+    return await Promise.race([
+      listProjectIssues(projectKey),
+      new Promise<IssueRecord[]>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(ISSUE_UI_TIMEOUT_SENTINEL));
+        }, timeoutMs);
+      }),
+    ]);
+  } catch (error) {
+    if (
+      error instanceof IssueServiceNotReadyError ||
+      (error instanceof Error && error.message === ISSUE_UI_TIMEOUT_SENTINEL)
+    ) {
+      return [];
+    }
+
+    throw error;
+  }
+};
 
 export const createProjectIssue = async (
   projectKey: string,

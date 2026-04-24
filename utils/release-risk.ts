@@ -41,6 +41,7 @@ export interface ReleaseHotspot {
 export interface ReleaseRiskSummary {
   score: number;
   level: ReleaseRiskLevel;
+  decisionLabel?: "Ready" | "Ready with Risk" | "Not Ready";
   recommendation: string;
   totalCases: number;
   executedCases: number;
@@ -60,6 +61,10 @@ export interface ReleaseRiskSummary {
   automationBlockedCases?: number;
   highRiskSecurityCases?: number;
   failedHighRiskSecurityCases?: number;
+  accessibilityFailedCases?: number;
+  unresolvedLinkedIssues?: number;
+  coverageGapCases?: number;
+  regressionInstabilityPercent?: number;
   reasons: ReleaseRiskReason[];
   actions: ReleaseActionItem[];
   hotspots: ReleaseHotspot[];
@@ -95,6 +100,12 @@ export type ReleaseRiskContext = {
     failedCount: number;
     rowIds: string[];
   }>;
+  accessibilityRiskCases?: Array<{
+    rowId: string;
+    title: string;
+    complianceReference?: string;
+  }>;
+  regressionInstabilityPercent?: number;
 };
 
 type ReleaseRiskComputationResult = {
@@ -236,6 +247,11 @@ export const buildReleaseRiskSummary = (
         automationExecutedCases: 0,
         automationFailedCases: 0,
         automationBlockedCases: 0,
+        decisionLabel: "Not Ready",
+        accessibilityFailedCases: 0,
+        unresolvedLinkedIssues: 0,
+        coverageGapCases: 0,
+        regressionInstabilityPercent: 0,
         reasons: [
           {
             id: "project-missing",
@@ -271,6 +287,8 @@ export const buildReleaseRiskSummary = (
           blockedCases: 0,
         },
         securityRiskAreas: [],
+        accessibilityRiskCases: [],
+        regressionInstabilityPercent: 0,
       },
     };
   }
@@ -368,6 +386,45 @@ export const buildReleaseRiskSummary = (
       latestAutomation?.status === "blocked"
     );
   });
+  const accessibilityFailedCases = effectiveCases.filter((row) => {
+    const wcagTagged = Boolean(row.complianceReference?.toLowerCase().includes("wcag"));
+    return (
+      (row.testDomain === "accessibility" || wcagTagged) &&
+      (row.executionResult === "failed" || row.executionResult === "blocked")
+    );
+  });
+  const unresolvedLinkedIssues = Array.from(
+    new Set(
+      effectiveCases
+        .map((row) => row.issueId)
+        .filter((value): value is string => Boolean(value))
+        .filter((issueId) => issueMap.get(issueId)?.status !== "done")
+    )
+  );
+  const coverageGapCases = effectiveCases.filter((row) => Boolean(row.gapSourceId));
+  const recentRuns = [...(project.runs ?? [])]
+    .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
+    .slice(0, 3);
+  const regressionInstabilityPercent =
+    recentRuns.length < 2 || effectiveCases.length === 0
+      ? 0
+      : toPercent(
+          effectiveCases.filter((row) => {
+            const resultSet = new Set(
+              recentRuns
+                .map((run) => run.rowResults?.[row.id])
+                .filter(
+                  (value): value is TestCaseExecutionResult =>
+                    value === "passed" ||
+                    value === "failed" ||
+                    value === "blocked" ||
+                    value === "not-run"
+                )
+            );
+            return resultSet.size >= 2;
+          }).length,
+          effectiveCases.length
+        );
 
   const openIssues = issues.filter((issue) => issue.status !== "done").length;
   const openHighPriorityIssues = issues.filter(
@@ -607,6 +664,10 @@ export const buildReleaseRiskSummary = (
     failedHighRiskSecurityCases.length > 0
       ? Math.min(12, failedHighRiskSecurityCases.length * 4)
       : 0;
+  score -= accessibilityFailedCases.length > 0 ? Math.min(8, accessibilityFailedCases.length * 3) : 0;
+  score -= unresolvedLinkedIssues.length > 0 ? Math.min(8, unresolvedLinkedIssues.length * 2) : 0;
+  score -= coverageGapCases.length > 0 ? Math.min(6, coverageGapCases.length * 2) : 0;
+  score -= regressionInstabilityPercent >= 20 ? Math.min(8, Math.round(regressionInstabilityPercent / 10)) : 0;
   score = Math.max(0, Math.min(100, score));
 
   let level: ReleaseRiskLevel =
@@ -625,6 +686,9 @@ export const buildReleaseRiskSummary = (
     level = level === "safe" ? "caution" : level;
   }
   if (failedHighRiskSecurityCases.length > 0) {
+    level = level === "safe" ? "caution" : level;
+  }
+  if (accessibilityFailedCases.length > 0 || unresolvedLinkedIssues.length >= 3) {
     level = level === "safe" ? "caution" : level;
   }
 
@@ -696,6 +760,24 @@ export const buildReleaseRiskSummary = (
     });
   }
 
+  if (accessibilityFailedCases.length > 0) {
+    reasons.push({
+      id: "accessibility-failures",
+      title: "Accessibility validation is still failing in release scope",
+      description: `${accessibilityFailedCases.length} accessibility or WCAG-tagged case${
+        accessibilityFailedCases.length === 1 ? "" : "s"
+      } failed or remain blocked in the current release view.`,
+      severity: accessibilityFailedCases.length >= 2 ? "high" : "medium",
+      metric: accessibilityFailedCases.length,
+      actionHint:
+        "Review keyboard flow, focus management, form semantics, error announcements, and screen-reader expectations before sign-off.",
+      linkedCaseIds: accessibilityFailedCases.map((row) => row.id),
+      linkedIssueIds: accessibilityFailedCases
+        .map((row) => row.issueId)
+        .filter((value): value is string => Boolean(value)),
+    });
+  }
+
   if (blockerIssues > 0) {
     reasons.push({
       id: "blocker-issues",
@@ -747,6 +829,45 @@ export const buildReleaseRiskSummary = (
       metric: openHighPriorityIssues,
       actionHint: "Review open high and highest priority issues before approving release.",
       linkedIssueIds: highPriorityIssueIds,
+    });
+  }
+
+  if (unresolvedLinkedIssues.length > 0) {
+    reasons.push({
+      id: "unresolved-linked-issues",
+      title: "Linked release issues are still unresolved",
+      description: `${unresolvedLinkedIssues.length} linked issue${
+        unresolvedLinkedIssues.length === 1 ? "" : "s"
+      } tied to in-scope cases are still open.`,
+      severity: unresolvedLinkedIssues.length >= 3 ? "high" : "medium",
+      metric: unresolvedLinkedIssues.length,
+      actionHint: "Review linked defects alongside execution evidence before making the final ship call.",
+      linkedIssueIds: unresolvedLinkedIssues,
+    });
+  }
+
+  if (coverageGapCases.length > 0) {
+    reasons.push({
+      id: "coverage-gap-follow-through",
+      title: "Coverage gaps still need follow-through",
+      description: `${coverageGapCases.length} gap-focused case${
+        coverageGapCases.length === 1 ? "" : "s"
+      } remain in the current scope, which suggests requirement coverage is still maturing.`,
+      severity: coverageGapCases.length >= 3 ? "medium" : "low",
+      metric: coverageGapCases.length,
+      actionHint: "Confirm the remaining gap-driven cases are either executed, accepted, or intentionally deferred.",
+      linkedCaseIds: coverageGapCases.map((row) => row.id),
+    });
+  }
+
+  if (regressionInstabilityPercent >= 20) {
+    reasons.push({
+      id: "regression-instability",
+      title: "Recent run history shows unstable regression behavior",
+      description: `${regressionInstabilityPercent}% of in-scope cases changed result across the recent run history.`,
+      severity: regressionInstabilityPercent >= 35 ? "high" : "medium",
+      metric: regressionInstabilityPercent,
+      actionHint: "Inspect recent run flips and decide whether the instability reflects flaky automation, partial fixes, or genuine regression risk.",
     });
   }
 
@@ -860,6 +981,20 @@ export const buildReleaseRiskSummary = (
     });
   }
 
+  if (accessibilityFailedCases.length > 0) {
+    actions.push({
+      id: "review-accessibility-failures",
+      title: "Resolve accessibility and WCAG failures",
+      description:
+        "Review failed accessibility validations, confirm fixes or waivers, and keep inclusive UX risk visible before release.",
+      priority: accessibilityFailedCases.length >= 2 ? "high" : "medium",
+      linkedCaseIds: accessibilityFailedCases.map((row) => row.id),
+      linkedIssueIds: accessibilityFailedCases
+        .map((row) => row.issueId)
+        .filter((value): value is string => Boolean(value)),
+    });
+  }
+
   if (untestedCriticalAreas.length > 0) {
     actions.push({
       id: "cover-critical-areas",
@@ -882,6 +1017,38 @@ export const buildReleaseRiskSummary = (
             (issue.priority === "high" || issue.priority === "highest")
         )
         .map((issue) => issue.id),
+    });
+  }
+
+  if (unresolvedLinkedIssues.length > 0) {
+    actions.push({
+      id: "resolve-linked-release-issues",
+      title: "Resolve linked release issues or document waivers",
+      description:
+        "Every linked in-scope defect should be resolved, accepted with explicit risk, or intentionally removed from the release decision.",
+      priority: unresolvedLinkedIssues.length >= 3 ? "high" : "medium",
+      linkedIssueIds: unresolvedLinkedIssues,
+    });
+  }
+
+  if (coverageGapCases.length > 0) {
+    actions.push({
+      id: "close-coverage-gap-follow-up",
+      title: "Close the remaining coverage-gap follow-up",
+      description:
+        "Work through the remaining requirement-gap cases so release confidence is backed by intentional coverage, not just generated drafts.",
+      priority: "medium",
+      linkedCaseIds: coverageGapCases.map((row) => row.id),
+    });
+  }
+
+  if (regressionInstabilityPercent >= 20) {
+    actions.push({
+      id: "stabilize-regression-instability",
+      title: "Investigate recent regression instability",
+      description:
+        "Recent run history is changing too often for a clean release call. Review flipped results and stabilize the highest-signal regressions first.",
+      priority: regressionInstabilityPercent >= 35 ? "high" : "medium",
     });
   }
 
@@ -962,15 +1129,22 @@ export const buildReleaseRiskSummary = (
 
   const recommendation =
     level === "safe"
-      ? "Safe to release with minor follow-up."
+      ? "Ready: current evidence supports release with only minor follow-up."
       : level === "caution"
-      ? "Release with caution: unresolved high-risk items remain."
-      : "Not ready for release: critical blockers must be resolved first.";
+      ? "Ready with Risk: unresolved high-risk signals still need explicit review."
+      : "Not Ready: critical blockers or unstable evidence still need resolution.";
+  const decisionLabel =
+    level === "safe"
+      ? "Ready"
+      : level === "caution"
+      ? "Ready with Risk"
+      : "Not Ready";
 
   return {
     summary: {
       score,
       level,
+      decisionLabel,
       recommendation,
       totalCases,
       executedCases,
@@ -990,6 +1164,10 @@ export const buildReleaseRiskSummary = (
       automationBlockedCases,
       highRiskSecurityCases: highRiskSecurityCases.length,
       failedHighRiskSecurityCases: failedHighRiskSecurityCases.length,
+      accessibilityFailedCases: accessibilityFailedCases.length,
+      unresolvedLinkedIssues: unresolvedLinkedIssues.length,
+      coverageGapCases: coverageGapCases.length,
+      regressionInstabilityPercent,
       reasons: reasons.slice(0, 5),
       actions: actions.slice(0, 6),
       hotspots: hotspots.slice(0, 6),
@@ -1010,6 +1188,12 @@ export const buildReleaseRiskSummary = (
         blockedCases: automationBlockedCases,
       },
       securityRiskAreas,
+      accessibilityRiskCases: accessibilityFailedCases.map((row) => ({
+        rowId: row.id,
+        title: row.title,
+        complianceReference: row.complianceReference,
+      })),
+      regressionInstabilityPercent,
     },
   };
 };

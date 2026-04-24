@@ -35,17 +35,25 @@ export type AutomationProvider =
   | "mobile";
 
 export type AutomationBindingMode = "manual" | "automated" | "hybrid";
+export type ApprovalState = "pending" | "approved" | "rejected";
+export type TestCaseHandoffState =
+  | "needs-qa-review"
+  | "needs-automation"
+  | "needs-product-signoff"
+  | "release-blocking";
 
 export type AutomationStepAction =
   | "goto"
   | "click"
   | "fill"
+  | "select"
   | "press"
   | "wait-for"
   | "assert-text"
   | "assert-visible"
   | "assert-url"
-  | "assert-value";
+  | "assert-value"
+  | "run-block";
 
 export type AutomationTargetType =
   | "selector"
@@ -53,13 +61,50 @@ export type AutomationTargetType =
   | "endpoint"
   | "text"
   | "value"
-  | "key";
+  | "key"
+  | "shared-block"
+  | "selector-preset"
+  | "route";
 
 export type AutomationExecutionStatus =
   | "not-run"
   | "passed"
   | "failed"
   | "blocked";
+
+export type AutomationStepExecutionStatus =
+  | "pending"
+  | "running"
+  | "passed"
+  | "failed"
+  | "blocked"
+  | "skipped";
+
+export type AutomationValidationIssueField =
+  | "step"
+  | "action"
+  | "targetType"
+  | "targetValue"
+  | "inputValue"
+  | "expectedValue"
+  | "sharedBlockId"
+  | "selectorPresetId"
+  | "timeoutMs";
+
+export type AutomationValidationIssue = {
+  code: string;
+  message: string;
+  stepId?: string;
+  stepIndex?: number;
+  field?: AutomationValidationIssueField;
+  severity?: "error" | "warning";
+};
+
+export type AutomationValidationResult = {
+  valid: boolean;
+  errors: string[];
+  issues: AutomationValidationIssue[];
+};
 
 export type AutomationArtifactType =
   | "log"
@@ -102,6 +147,89 @@ export type AuditEntry = {
   createdAt: number;
   actorName?: string;
   actorEmail?: string;
+};
+
+export type ActorAttribution = {
+  id?: string;
+  name?: string;
+  email?: string;
+  at?: number;
+};
+
+export type GeneratedCaseSnapshot = {
+  title: string;
+  preconditions: string;
+  steps: string;
+  expectedResult: string;
+  testData?: string;
+  type?: string;
+  testDomain?: string;
+  riskLevel?: string;
+  labels?: string[];
+};
+
+export type GenerationFeedbackSignal =
+  | "useful"
+  | "needed-edits"
+  | "low-quality"
+  | "duplicate"
+  | "missing-important-scenario";
+
+export type GenerationFeedbackRecord = {
+  rowId: string;
+  sourceRequirement?: string;
+  generationMode?: string;
+  generatedAt?: number;
+  originalGenerated?: GeneratedCaseSnapshot;
+  finalEdited?: GeneratedCaseSnapshot;
+  editDeltaSummary?: {
+    changedFields: string[];
+    changedFieldCount: number;
+    editIntensity: "low" | "medium" | "high";
+  };
+  reviewSignal?: GenerationFeedbackSignal;
+  disposition?: "accepted" | "rejected" | "regenerated";
+  duplicateRemoved?: boolean;
+  executionOutcome?: TestCaseExecutionResult;
+  linkedIssueId?: string;
+  linkedIssueKey?: string;
+  lastUpdatedAt?: number;
+};
+
+export type AutomationReusableBlock = {
+  id: string;
+  name: string;
+  description?: string;
+  provider: AutomationProvider;
+  steps: AutomationStep[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AutomationSelectorPreset = {
+  id: string;
+  name: string;
+  selector: string;
+  description?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AutomationEnvironmentBinding = {
+  id: string;
+  name: string;
+  baseUrl?: string;
+  routePresets?: Record<string, string>;
+  credentialAliases?: string[];
+  platformDomain?: "salesforce";
+  environmentScope?: string;
+  salesforceOrgAlias?: string;
+  salesforceUserAliases?: string[];
+  salesforceProfileAliases?: string[];
+  salesforceAppAliases?: string[];
+  isDefault?: boolean;
+  createdAt: number;
+  updatedAt: number;
 };
 
 export type TestCaseComment = {
@@ -218,6 +346,8 @@ export type CasesSavedView = {
     riskLevel: NonNullable<TestCaseRow["riskLevel"]> | "";
     securityCategory: NonNullable<TestCaseRow["securityCategory"]> | "";
     accessibilityCategory: NonNullable<TestCaseRow["accessibilityCategory"]> | "";
+    approvalState: NonNullable<TestCaseRow["approvalState"]> | "";
+    handoffState: NonNullable<TestCaseRow["handoffState"]> | "";
     linked: "all" | "linked" | "unlinked";
       execution: TestCaseRow["executionResult"] | "";
       review: TestCaseRow["reviewStatus"] | "";
@@ -304,14 +434,160 @@ export type ReleaseReviewState = {
 
 export type AutomationExecutionMode = "headless" | "headed";
 
+export type AutomationScriptSource = "case-linked" | "standalone";
+
+export type AutomationScenarioPriority =
+  | "highest"
+  | "high"
+  | "medium"
+  | "low";
+
+export type AutomationScenarioStatus =
+  | "draft"
+  | "ready"
+  | "active"
+  | "paused";
+
+export type AutomationSuiteStatus =
+  | "draft"
+  | "active"
+  | "paused";
+
+export type AutomationScenarioParameterizationMode =
+  | "default-only"
+  | "selected-dataset"
+  | "all-datasets";
+
+export type AutomationScheduleFrequency =
+  | "once"
+  | "daily"
+  | "weekly"
+  | "custom";
+
+export type AutomationScheduleStatus =
+  | "scheduled"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed";
+
+export type AutomationSuite = {
+  id: string;
+  projectId: string;
+  name: string;
+  description?: string;
+  scenarioIds?: string[];
+  tags?: string[];
+  status?: AutomationSuiteStatus;
+  environmentBindingId?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AutomationActionParameter = {
+  id: string;
+  name: string;
+  description?: string;
+  required?: boolean;
+  defaultValue?: string;
+};
+
+export type AutomationActionOutput = {
+  name: string;
+  description?: string;
+};
+
+export type AutomationAction = {
+  id: string;
+  projectId: string;
+  name: string;
+  description?: string;
+  tags?: string[];
+  provider: AutomationProvider;
+  parameters?: AutomationActionParameter[];
+  steps: AutomationStep[];
+  outputs?: AutomationActionOutput[];
+  backingBlockId?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AutomationScenario = {
+  id: string;
+  projectId: string;
+  suiteId?: string;
+  scriptId?: string;
+  provider: AutomationProvider;
+  executionMode?: AutomationExecutionMode;
+  environmentBindingId?: string;
+  name: string;
+  description?: string;
+  tags?: string[];
+  priority?: AutomationScenarioPriority;
+  status?: AutomationScenarioStatus;
+  testDataSetIds?: string[];
+  defaultDataSetId?: string;
+  parameterizationMode?: AutomationScenarioParameterizationMode;
+  sourceType?: AutomationScriptSource;
+  linkedCaseIds?: string[];
+  linkedRequirementIds?: string[];
+  linkedReleaseIds?: string[];
+  linkedIssueIds?: string[];
+  createdBy?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ScenarioTestDataSet = {
+  id: string;
+  scenarioId: string;
+  name: string;
+  description?: string;
+  variables: Record<string, string>;
+  isDefault?: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type AutomationScript = {
   id: string;
   projectId: string;
   provider: AutomationProvider;
   executionMode?: AutomationExecutionMode;
+  environmentBindingId?: string;
   name: string;
   description?: string;
+  sourceType?: AutomationScriptSource;
+  linkedCaseIds?: string[];
+  linkedRequirementIds?: string[];
+  linkedReleaseIds?: string[];
+  linkedIssueIds?: string[];
   createdBy?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AutomationSchedule = {
+  id: string;
+  scriptId: string;
+  suiteId?: string;
+  scenarioId?: string;
+  datasetId?: string;
+  runAllDataSets?: boolean;
+  name: string;
+  frequency: AutomationScheduleFrequency;
+  cronExpression?: string;
+  scheduledFor?: number;
+  nextRunAt?: number;
+  environmentBindingId?: string;
+  executionMode?: AutomationExecutionMode;
+  isEnabled: boolean;
+  status?: AutomationScheduleStatus;
+  lastRunStatus?: AutomationExecutionStatus;
+  lastExecutionId?: string;
+  lastError?: string;
+  lastRunAt?: number;
+  lastCheckedAt?: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -327,7 +603,14 @@ export type AutomationStep = {
   assertionType?: string;
   expectedValue?: string;
   timeoutMs?: number;
+  sharedBlockId?: string;
+  selectorPresetId?: string;
+  routeKey?: string;
   metaJson?: Record<string, unknown>;
+  sourceStepId?: string;
+  sourceOrigin?: "local-step" | "shared-block";
+  sourceReferenceId?: string;
+  sourceReferenceLabel?: string;
 };
 
 export type AutomationBinding = {
@@ -345,20 +628,156 @@ export type AutomationExecutionArtifact = {
   metadataJson?: Record<string, unknown>;
 };
 
+export type AutomationExecutionEventType =
+  | "step_start"
+  | "step_success"
+  | "step_failure"
+  | "log_message"
+  | "execution_complete";
+
+export type AutomationExecutionEventArtifact = {
+  type: AutomationArtifactType;
+  path: string;
+  metadataJson?: Record<string, unknown>;
+};
+
+export type AutomationStepResult = {
+  stepId: string;
+  sourceStepId?: string;
+  stepIndex: number;
+  action: AutomationStepAction;
+  status: AutomationStepExecutionStatus;
+  targetValue?: string;
+  message?: string;
+  failureReason?: string;
+  logLines?: string[];
+  startedAt?: number;
+  finishedAt?: number;
+  durationMs?: number;
+  origin?: "local-step" | "shared-block";
+  referenceId?: string;
+  referenceLabel?: string;
+};
+
+export type AutomationDebugStatus =
+  | "idle"
+  | "starting"
+  | "running"
+  | "passed"
+  | "failed"
+  | "blocked";
+
+export type AutomationRecorderEventType =
+  | "goto"
+  | "click"
+  | "fill"
+  | "select"
+  | "press";
+
+export type AutomationRecorderEvent = {
+  id: string;
+  type: AutomationRecorderEventType;
+  timestamp: number;
+  url?: string;
+  selector?: string;
+  value?: string;
+  key?: string;
+  label?: string;
+};
+
+export type AutomationRecorderStatus =
+  | "idle"
+  | "starting"
+  | "recording"
+  | "stopping"
+  | "stopped"
+  | "failed";
+
+export type AutomationDebugSession = {
+  id: string;
+  rowId: string;
+  scriptName: string;
+  status: AutomationDebugStatus;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt?: number;
+  currentStepId?: string;
+  currentSourceStepId?: string;
+  currentStepIndex?: number;
+  logs: string[];
+  stepResults: AutomationStepResult[];
+  failureMessage?: string;
+  outputDir: string;
+};
+
+export type AutomationRecorderSession = {
+  id: string;
+  rowId: string;
+  scriptName: string;
+  status: AutomationRecorderStatus;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt?: number;
+  logs: string[];
+  events: AutomationRecorderEvent[];
+  generatedSteps: AutomationStep[];
+  failureMessage?: string;
+  outputDir: string;
+  startUrl?: string;
+};
+
 export type AutomationExecution = {
   id: string;
   runId: string;
   caseId: string;
   scriptId: string;
+  suiteId?: string;
+  suiteName?: string;
+  scenarioId?: string;
+  scenarioName?: string;
+  dataSetId?: string;
+  dataSetName?: string;
+  dataSetVariables?: Record<string, string>;
+  environmentBindingId?: string;
+  environmentName?: string;
   provider: AutomationProvider;
+  executionMode?: AutomationExecutionMode;
+  triggerType?: "manual" | "scheduled";
+  scheduleId?: string;
+  scheduleName?: string;
   status: AutomationExecutionStatus;
   startedAt: number;
   finishedAt?: number;
   logSummary?: string;
   failureMessage?: string;
+  failureOrigin?: "local-step" | "shared-block";
+  failureReferenceId?: string;
+  stepResults?: AutomationStepResult[];
   artifactIds: string[];
   linkedIssueId?: string;
   linkedIssueKey?: string;
+};
+
+export type AutomationExecutionEvent = {
+  type: AutomationExecutionEventType;
+  timestamp: number;
+  executionId: string;
+  caseId?: string;
+  scenarioId?: string;
+  scenarioName?: string;
+  dataSetId?: string;
+  dataSetName?: string;
+  stepId?: string;
+  sourceStepId?: string;
+  stepIndex?: number;
+  message?: string;
+  level?: "info" | "success" | "error";
+  status?: AutomationExecutionStatus;
+  failureMessage?: string;
+  stepResult?: AutomationStepResult;
+  artifact?: AutomationExecutionEventArtifact;
+  execution?: AutomationExecution;
+  artifacts?: AutomationExecutionArtifact[];
 };
 
 export type TestRunRecord = {
@@ -382,6 +801,7 @@ export type TestCaseRow = {
   issueId?: string;
   issueKey?: string;
   type: string;
+  platformDomain?: "salesforce";
   testDomain?:
     | "functional"
     | "regression"
@@ -414,6 +834,15 @@ export type TestCaseRow = {
   complianceReference?: string;
   riskLevel?: "low" | "medium" | "high";
   automationPotential?: "low" | "medium" | "high";
+  generationSource?: "ai-generated" | "manual" | "imported";
+  generationFeedback?: GenerationFeedbackRecord;
+  approvalState?: ApprovalState;
+  handoffState?: TestCaseHandoffState;
+  generatedBy?: ActorAttribution;
+  editedBy?: ActorAttribution;
+  approvedBy?: ActorAttribution;
+  rejectedBy?: ActorAttribution;
+  releaseReviewedBy?: ActorAttribution;
   title: string;
   preconditions: string;
   steps: string;
@@ -432,6 +861,11 @@ export type TestCaseRow = {
   automationReference?: string;
   automationScriptId?: string;
   automationBindingMode?: AutomationBindingMode;
+  salesforceModule?: string;
+  salesforceObjectType?: string;
+  salesforceTestType?: string;
+  permissionScope?: string;
+  environmentScope?: string;
   archived?: boolean;
   assignee?: string;
   labels?: string[];
@@ -456,7 +890,8 @@ export type GenerationMode =
   | "api"
   | "regression"
   | "security"
-  | "accessibility";
+  | "accessibility"
+  | "salesforce";
 
 export type CoverageDepth = "basic" | "standard" | "thorough";
 
@@ -486,6 +921,20 @@ export const generationModeLabels: Record<GenerationMode, string> = {
   edge: "Edge Cases",
   security: "Security Cases",
   accessibility: "Accessibility / WCAG Cases",
+  salesforce: "Salesforce Cases",
+};
+
+export const handoffStateLabels: Record<TestCaseHandoffState, string> = {
+  "needs-qa-review": "Needs QA Review",
+  "needs-automation": "Needs Automation",
+  "needs-product-signoff": "Needs Product Signoff",
+  "release-blocking": "Release Blocking",
+};
+
+export const approvalStateLabels: Record<ApprovalState, string> = {
+  pending: "Pending",
+  approved: "Approved",
+  rejected: "Rejected",
 };
 
 export const sourceArtifactLabels: Record<SourceArtifactType, string> = {
@@ -612,11 +1061,21 @@ export type Project = {
   };
   releaseReview?: ReleaseReviewState;
   runs?: TestRunRecord[];
+  automationSuites?: AutomationSuite[];
+  automationScenarios?: AutomationScenario[];
+  automationActions?: AutomationAction[];
+  automationScenarioTestDataSets?: ScenarioTestDataSet[];
   automationScripts?: AutomationScript[];
   automationSteps?: Record<string, AutomationStep[]>;
   automationBindings?: AutomationBinding[];
   automationExecutions?: AutomationExecution[];
   automationArtifacts?: AutomationExecutionArtifact[];
+  automationReusableBlocks?: AutomationReusableBlock[];
+  automationSelectorPresets?: AutomationSelectorPreset[];
+  automationEnvironmentBindings?: AutomationEnvironmentBinding[];
+  automationSchedules?: AutomationSchedule[];
+  activeAutomationEnvironmentId?: string;
+  generationFeedbackLog?: GenerationFeedbackRecord[];
   activeRunId?: string;
   lastGeneratedChangeImpactSignature?: string | null;
   latestChangeEntries?: Array<{
@@ -646,6 +1105,7 @@ export const modePrimaryType: Record<GenerationMode, TestCaseRow["type"]> = {
   regression: "Regression",
   security: "Security",
   accessibility: "UI",
+  salesforce: "Functional",
 };
 
 const allowedTypesByMode: Record<GenerationMode, TestCaseRow["type"][]> = {
@@ -657,6 +1117,7 @@ const allowedTypesByMode: Record<GenerationMode, TestCaseRow["type"][]> = {
   regression: ["Regression", "Functional"],
   security: ["Security", "API", "Negative", "Edge", "Functional", "UI"],
   accessibility: ["UI", "Functional", "Negative", "Edge"],
+  salesforce: ["Functional", "Regression", "UI", "Negative", "Edge", "Integration"],
 };
 
 export const resolveTypeForMode = (
@@ -684,12 +1145,22 @@ export const normalizeRows = (rows: TestCaseRow[], mode: GenerationMode) =>
     issueId: row.issueId?.trim() || undefined,
     issueKey: row.issueKey?.trim() || undefined,
     title: row.title || "",
+    platformDomain: row.platformDomain,
     testDomain: row.testDomain,
     securityCategory: row.securityCategory,
     accessibilityCategory: row.accessibilityCategory,
     complianceReference: row.complianceReference?.trim() || undefined,
     riskLevel: row.riskLevel,
     automationPotential: row.automationPotential,
+    generationSource: row.generationSource ?? "manual",
+    generationFeedback: row.generationFeedback,
+    approvalState: row.approvalState ?? "pending",
+    handoffState: row.handoffState,
+    generatedBy: row.generatedBy,
+    editedBy: row.editedBy,
+    approvedBy: row.approvedBy,
+    rejectedBy: row.rejectedBy,
+    releaseReviewedBy: row.releaseReviewedBy,
     preconditions: row.preconditions || "",
     steps: row.steps || "",
     expectedResult: row.expectedResult || "",
@@ -720,6 +1191,11 @@ export const normalizeRows = (rows: TestCaseRow[], mode: GenerationMode) =>
       row.automationBindingMode === "manual"
         ? row.automationBindingMode
         : undefined,
+    salesforceModule: row.salesforceModule?.trim() || undefined,
+    salesforceObjectType: row.salesforceObjectType?.trim() || undefined,
+    salesforceTestType: row.salesforceTestType?.trim() || undefined,
+    permissionScope: row.permissionScope?.trim() || undefined,
+    environmentScope: row.environmentScope?.trim() || undefined,
     archived: row.archived ?? false,
     assignee: row.assignee?.trim() || "",
     labels: parseLabels(row.labels),

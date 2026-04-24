@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CaseForge",
-  description: "Forge smarter test cases from every requirement.",
+  title: "caseForge",
+  description: "AI-first QA operations for automation, execution, and reporting.",
 };
 
 export default function RootLayout({
@@ -12,7 +12,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="dark" suppressHydrationWarning>
       <body suppressHydrationWarning className="antialiased">
         {children}
       </body>

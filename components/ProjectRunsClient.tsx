@@ -8,6 +8,12 @@ import { useProjectDataState } from "./ProjectDataStateContext";
 import { useProjectRouteMetrics } from "./ProjectRouteMetricsContext";
 import { buildBugDraftFromRunCase, type BugDraft } from "../utils/bug-draft";
 import { splitCaseSteps } from "../utils/parser";
+import {
+  PrimaryToolbar,
+  QuickFilters,
+  SavedViewsSection,
+  WorkflowShortcutsSection,
+} from "./FilterWorkspaceSections";
 import type {
   AutomationExecution,
   AutomationExecutionArtifact,
@@ -129,6 +135,9 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
     setLinkedFilter(view.filters.linked);
     setHighRiskOnly(view.filters.highRiskOnly);
   }, []);
+  const resetRunsFilters = useCallback(() => {
+    applyRunsPreset("default");
+  }, [applyRunsPreset]);
 
   const rows = useMemo(() => project?.rows ?? [], [project]);
   const runs = useMemo(() => normalizeRuns(project), [project]);
@@ -1869,6 +1878,148 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
         </div>
       </section>
 
+      <PrimaryToolbar
+        title="Primary search and quick filters"
+        description="Keep execution triage focused on the queue first, with only the most useful run filters visible by default."
+        actions={
+          <>
+            <span className="rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+              {filteredRows.length} visible
+            </span>
+            <button
+              type="button"
+              onClick={resetRunsFilters}
+              className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
+            >
+              Reset filters
+            </button>
+          </>
+        }
+      >
+        <QuickFilters
+          title="Quick filters"
+          description="Keep only the most useful run controls visible by default."
+          actions={
+            <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
+              {[executionFilter, linkedFilter !== "all" ? linkedFilter : "", highRiskOnly ? "risk" : ""].filter(Boolean).length} quick active
+            </span>
+          }
+        >
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search case id, title, issue key, labels..."
+              className="min-h-[48px] rounded-2xl border border-zinc-200/80 bg-white px-4 py-3 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+            />
+            <select
+              value={executionFilter}
+              onChange={(event) =>
+                setExecutionFilter((event.target.value || "") as TestCaseExecutionResult | "")
+              }
+              className="min-h-[48px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+            >
+              <option value="">All execution states</option>
+              <option value="not-run">Not Run</option>
+              <option value="passed">Passed</option>
+              <option value="failed">Failed</option>
+              <option value="blocked">Blocked</option>
+            </select>
+            <select
+              value={linkedFilter}
+              onChange={(event) =>
+                setLinkedFilter(event.target.value as "all" | "linked" | "unlinked")
+              }
+              className="min-h-[48px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+            >
+              <option value="all">All cases</option>
+              <option value="linked">Linked to issues</option>
+              <option value="unlinked">Unlinked</option>
+            </select>
+            <label className="flex min-h-[48px] items-center gap-2 rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100">
+              <input
+                type="checkbox"
+                checked={highRiskOnly}
+                onChange={(event) => setHighRiskOnly(event.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300 text-rose-600 focus:ring-rose-500"
+              />
+              High-risk only
+            </label>
+          </div>
+        </QuickFilters>
+      </PrimaryToolbar>
+
+      <WorkflowShortcutsSection
+        title="Run shortcuts"
+        description="Preset run slices stay separate from the queue search controls so the page remains easier to scan."
+      >
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => applyRunsPreset("high-risk")}
+            className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+          >
+            High Risk Run
+          </button>
+          <button
+            type="button"
+            onClick={() => applyRunsPreset("failed-linked")}
+            className="rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
+          >
+            Failed Linked Run
+          </button>
+          <button
+            type="button"
+            onClick={() => applyRunsPreset("default")}
+            className="rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            Default Run View
+          </button>
+        </div>
+      </WorkflowShortcutsSection>
+
+      <SavedViewsSection
+        title="Run views and preset state"
+        description="Saved views and default preset state are grouped here instead of competing with the queue itself."
+      >
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+          <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/70 p-4 dark:border-zinc-700 dark:bg-zinc-950/70">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <input
+                type="text"
+                value={newRunsViewName}
+                onChange={(event) => setNewRunsViewName(event.target.value)}
+                placeholder="Save current run view as..."
+                className="min-h-[44px] flex-1 rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+              />
+              <button
+                type="button"
+                onClick={() => void saveCurrentRunsView()}
+                className="rounded-2xl bg-[linear-gradient(135deg,_#1d4ed8_0%,_#0f766e_100%)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
+              >
+                Save View
+              </button>
+            </div>
+          </div>
+          <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/70 p-4 dark:border-zinc-700 dark:bg-zinc-950/70">
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
+                Active preset: {activeRunsPreset === "high-risk" ? "High Risk Run" : activeRunsPreset === "failed-linked" ? "Failed Linked Run" : activeRunsPreset === "default" ? "Default Run View" : "Custom"}
+              </span>
+              <span className="rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
+                Default preset: {runsDefaultPreset === "high-risk" ? "High Risk Run" : runsDefaultPreset === "failed-linked" ? "Failed Linked Run" : "Default Run View"}
+              </span>
+              {activeSavedRunsView ? (
+                <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">
+                  Active saved view: {activeSavedRunsView.name}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </SavedViewsSection>
+
       {cameFromRelease && (
         <section className="rounded-[24px] border border-sky-200 bg-sky-50/90 px-4 py-4 text-sm text-sky-900 shadow-sm dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -2670,6 +2821,21 @@ export default function ProjectRunsClient({ projectKey, initialProject }: Props)
                     <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
                       {focusedAutomationExecution.failureMessage}
                     </p>
+                  ) : null}
+                  {focusedAutomationExecution.failureOrigin ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className="rounded-full border border-amber-200 bg-white px-3 py-1 text-[11px] font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-zinc-950 dark:text-amber-300">
+                        Failure source:{" "}
+                        {focusedAutomationExecution.failureOrigin === "shared-block"
+                          ? "Shared block"
+                          : "Local case step"}
+                      </span>
+                      {focusedAutomationExecution.failureReferenceId ? (
+                        <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-[11px] font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
+                          Ref {focusedAutomationExecution.failureReferenceId}
+                        </span>
+                      ) : null}
+                    </div>
                   ) : null}
                   {focusedAutomationExecution.logSummary ? (
                     <pre className="mt-3 overflow-x-auto rounded-2xl bg-zinc-950 px-3 py-3 text-[11px] leading-5 text-zinc-100">

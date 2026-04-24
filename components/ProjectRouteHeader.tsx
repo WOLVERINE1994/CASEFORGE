@@ -30,6 +30,9 @@ type RouteIconProps = {
     | "overview"
     | "workspace"
     | "cases"
+    | "salesforce"
+    | "activity"
+    | "automation"
     | "notifications"
     | "release"
     | "runs"
@@ -73,6 +76,30 @@ function RouteIcon({ kind }: RouteIconProps) {
           <path d="M8.5 9h7" />
           <path d="M8.5 13h7" />
           <path d="M8.5 17h4" />
+        </svg>
+      );
+    case "salesforce":
+      return (
+        <svg {...commonProps}>
+          <path d="M7 7.5h10" />
+          <path d="M9 12h8" />
+          <path d="M11 16.5h6" />
+          <path d="M6 5.5v13" />
+        </svg>
+      );
+    case "automation":
+      return (
+        <svg {...commonProps}>
+          <path d="M12 4.5 8.2 11H12l-1 8.5 4.8-7H12l.9-8Z" />
+        </svg>
+      );
+    case "activity":
+      return (
+        <svg {...commonProps}>
+          <path d="M6 7.5h12" />
+          <path d="M6 12h7" />
+          <path d="M6 16.5h10" />
+          <circle cx="18" cy="12" r="2.5" />
         </svg>
       );
     case "notifications":
@@ -138,23 +165,26 @@ function RouteIcon({ kind }: RouteIconProps) {
 const routeBadgeClassName = (active: boolean) =>
   `mr-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1.5 text-[10px] font-bold uppercase tracking-[0.08em] ${
     active
-      ? "border-emerald-200 bg-white text-emerald-800 dark:border-emerald-500/20 dark:bg-zinc-950 dark:text-emerald-200"
-      : "border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+      ? "border-cyan-400/20 bg-slate-950/85 text-cyan-200"
+      : "border-slate-700 bg-slate-900/80 text-slate-400"
   }`;
 
 const linkClassName = (active: boolean) =>
   `group relative inline-flex items-center rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
     active
-      ? "border-emerald-200 bg-emerald-50 text-emerald-950 shadow-sm ring-1 ring-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100 dark:ring-emerald-500/10"
-      : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+      ? "border-transparent bg-[linear-gradient(135deg,#2563EB_0%,#4F46E5_52%,#7C3AED_100%)] text-white shadow-[0_18px_34px_-24px_rgba(79,70,229,0.72)]"
+      : "border-slate-700 bg-slate-900/80 text-slate-200 hover:bg-slate-800"
   }`;
 
 const countClassName = (active: boolean) =>
   `ml-2 inline-flex min-w-6 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
     active
-      ? "bg-white text-emerald-800 dark:bg-zinc-950 dark:text-emerald-200"
-      : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+      ? "bg-slate-950/85 text-cyan-200"
+      : "bg-slate-800 text-slate-300"
   }`;
+
+const isActiveRoute = (pathname: string, href: string) =>
+  pathname === href || pathname.startsWith(`${href}/`);
 
 const releaseDecisionChipTone = {
   safe: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200",
@@ -212,14 +242,20 @@ export default function ProjectRouteHeader({
     return query ? `${basePath}?${query}` : basePath;
   };
   const overviewHref = buildProjectHref(`/projects/${encodedProjectKey}`);
-  const workspaceHref = buildProjectHref(`/projects/${encodedProjectKey}/workspace`);
   const casesHref = buildProjectHref(`/projects/${encodedProjectKey}/cases`);
+  const salesforceHref = buildProjectHref(
+    `/projects/${encodedProjectKey}/salesforce`
+  );
+  const activityHref = buildProjectHref(`/projects/${encodedProjectKey}/activity`);
+  const automationHref = buildProjectHref(`/projects/${encodedProjectKey}/automation`);
   const notificationsHref = buildProjectHref(
     `/projects/${encodedProjectKey}/notifications`
   );
   const releaseHref = buildProjectHref(`/projects/${encodedProjectKey}/release`);
   const runsHref = buildProjectHref(`/projects/${encodedProjectKey}/runs`);
   const reportsHref = buildProjectHref(`/projects/${encodedProjectKey}/reports`);
+  const releasesHref = buildProjectHref(`/projects/${encodedProjectKey}/releases`);
+  const workspaceHref = buildProjectHref(`/projects/${encodedProjectKey}/workspace`);
   const boardHref = buildProjectHref(`/projects/${encodedProjectKey}/board`);
   const issuesHref = buildProjectHref(`/projects/${encodedProjectKey}/issues`);
   const planningSummary = [
@@ -347,19 +383,19 @@ export default function ProjectRouteHeader({
   ].filter(Boolean) as string[];
 
   return (
-    <section className="sticky top-4 z-20 flex flex-col gap-4 rounded-[24px] border border-zinc-200/80 bg-white/94 px-5 py-5 shadow-[0_24px_55px_-38px_rgba(15,23,42,0.26)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94">
+    <section className="cf-panel sticky top-4 z-20 flex flex-col gap-4 rounded-[28px] px-5 py-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
             Project Route
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-50">
             {projectName.trim() || "Unsaved workspace"}
           </h1>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{planningSummary}</p>
+          <p className="mt-2 text-sm text-slate-300">{planningSummary}</p>
           <div className="mt-3 flex flex-wrap gap-2.5">
             {cameFromRelease && (
-              <div className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+              <div className="inline-flex items-center rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200">
                 Release Review Context
               </div>
             )}
@@ -378,7 +414,7 @@ export default function ProjectRouteHeader({
             {activeReviewerSession.reviewer ? (
               <Link
                 href="/settings/users"
-                className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
               >
                 Active Reviewer:{" "}
                 <span className="ml-1 font-bold">
@@ -388,21 +424,21 @@ export default function ProjectRouteHeader({
                 </span>
               </Link>
             ) : activeReviewerSession.loading ? (
-              <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
-                Loading reviewer...
-              </span>
-            ) : (
-              <Link
-                href="/settings/users"
-                className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
-              >
-                Set Active Reviewer
-              </Link>
+                <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-xs font-semibold text-slate-400">
+                  Loading reviewer...
+                </span>
+              ) : (
+                <Link
+                  href="/settings/users"
+                  className="inline-flex items-center rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/15"
+                >
+                  Set Active Reviewer
+                </Link>
             )}
             {activeReviewerSession.reviewer ? (
               <Link
                 href={notificationsHref}
-                className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
+                className="inline-flex items-center rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/15"
               >
                 Reviewer inbox:{" "}
                 <span className="ml-1 font-bold">
@@ -412,17 +448,17 @@ export default function ProjectRouteHeader({
             ) : null}
           </div>
           {activeReviewerSession.reviewer && activeReviewerNotifications.length > 0 ? (
-            <div className="mt-3 rounded-[18px] border border-zinc-200/80 bg-zinc-50/75 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950/55">
+            <div className="mt-3 rounded-[18px] border border-slate-700/80 bg-slate-900/60 px-4 py-3">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                     Reviewer Focus
                   </p>
-                  <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-200">
+                  <p className="mt-1 text-sm text-slate-200">
                     Open the reviewer inbox for the full detail view. The header keeps only the signals you are most likely to check first.
                   </p>
                   {reviewerContextNotes.length > 0 ? (
-                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                    <p className="mt-2 text-xs text-slate-400">
                       {reviewerContextNotes.join(" | ")}
                     </p>
                   ) : null}
@@ -430,7 +466,7 @@ export default function ProjectRouteHeader({
                 <div className="flex flex-wrap gap-2">
                   <Link
                     href={`${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}unread=1`}
-                    className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
+                    className="inline-flex items-center rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/15"
                   >
                     Unread alerts: <span className="ml-1 font-bold">{unreadReviewerNotificationCount}</span>
                   </Link>
@@ -454,67 +490,84 @@ export default function ProjectRouteHeader({
         </div>
 
         {showNavigation ? (
-          <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/55">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
-              Quick Links
+          <div className="cf-card rounded-[20px] p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+              Primary Modules
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-            <Link href={overviewHref} className={linkClassName(pathname === overviewHref)}>
+            <Link href={overviewHref} className={linkClassName(isActiveRoute(pathname, overviewHref))}>
               <RouteIcon kind="overview" />
-              <span className={routeBadgeClassName(pathname === overviewHref)}>OV</span>
+              <span className={routeBadgeClassName(isActiveRoute(pathname, overviewHref))}>OV</span>
               Overview
             </Link>
-            <Link href={workspaceHref} className={linkClassName(pathname === workspaceHref)}>
-              <RouteIcon kind="workspace" />
-              <span className={routeBadgeClassName(pathname === workspaceHref)}>WS</span>
-              Workspace
-            </Link>
-            <Link href={casesHref} className={linkClassName(pathname === casesHref)}>
+            <Link href={casesHref} className={linkClassName(isActiveRoute(pathname, casesHref))}>
               <RouteIcon kind="cases" />
-              <span className={routeBadgeClassName(pathname === casesHref)}>CS</span>
+              <span className={routeBadgeClassName(isActiveRoute(pathname, casesHref))}>CS</span>
               Cases
-              <span className={countClassName(pathname === casesHref)}>{resolvedCaseCount}</span>
+              <span className={countClassName(isActiveRoute(pathname, casesHref))}>{resolvedCaseCount}</span>
+            </Link>
+            <Link href={salesforceHref} className={linkClassName(isActiveRoute(pathname, salesforceHref))}>
+              <RouteIcon kind="salesforce" />
+              <span className={routeBadgeClassName(isActiveRoute(pathname, salesforceHref))}>SF</span>
+              Salesforce
+            </Link>
+            <Link href={runsHref} className={linkClassName(isActiveRoute(pathname, runsHref))}>
+              <RouteIcon kind="runs" />
+              <span className={routeBadgeClassName(isActiveRoute(pathname, runsHref))}>RN</span>
+              Runs
+            </Link>
+            <Link href={reportsHref} className={linkClassName(isActiveRoute(pathname, reportsHref))}>
+              <RouteIcon kind="reports" />
+              <span className={routeBadgeClassName(isActiveRoute(pathname, reportsHref))}>RP</span>
+              Reports
+            </Link>
+            <Link href={releasesHref} className={linkClassName(isActiveRoute(pathname, releasesHref) || isActiveRoute(pathname, releaseHref))}>
+              <RouteIcon kind="release" />
+              <span className={routeBadgeClassName(isActiveRoute(pathname, releasesHref) || isActiveRoute(pathname, releaseHref))}>RL</span>
+              Releases
+            </Link>
+            <Link href={activityHref} className={linkClassName(isActiveRoute(pathname, activityHref))}>
+              <RouteIcon kind="activity" />
+              <span className={routeBadgeClassName(isActiveRoute(pathname, activityHref))}>AC</span>
+              Activity
+            </Link>
+            <Link href={automationHref} className={linkClassName(isActiveRoute(pathname, automationHref))}>
+              <RouteIcon kind="automation" />
+              <span className={routeBadgeClassName(isActiveRoute(pathname, automationHref))}>AT</span>
+              Automation
+            </Link>
+            <Link href={issuesHref} className={linkClassName(isActiveRoute(pathname, issuesHref))}>
+              <RouteIcon kind="issues" />
+              <span className={routeBadgeClassName(isActiveRoute(pathname, issuesHref))}>IS</span>
+              Issues
+              <span className={countClassName(isActiveRoute(pathname, issuesHref))}>{resolvedIssueCount}</span>
+            </Link>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+              Secondary Tools
+            </span>
+            <Link href={workspaceHref} className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800">
+              <RouteIcon kind="workspace" />
+              Workspace
             </Link>
             <Link
               href={notificationsHref}
-              className={linkClassName(pathname === notificationsHref)}
+              className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
             >
               <RouteIcon kind="notifications" />
-              <span className={routeBadgeClassName(pathname === notificationsHref)}>NT</span>
               Notifications
-              <span className={countClassName(pathname === notificationsHref)}>
+              <span className="ml-2 rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">
                 {unreadReviewerNotificationCount}
               </span>
             </Link>
-            <Link href={releaseHref} className={linkClassName(pathname === releaseHref)}>
-              <RouteIcon kind="release" />
-              <span className={routeBadgeClassName(pathname === releaseHref)}>RL</span>
-              Release
-            </Link>
-            <Link href={runsHref} className={linkClassName(pathname === runsHref)}>
-              <RouteIcon kind="runs" />
-              <span className={routeBadgeClassName(pathname === runsHref)}>RN</span>
-              Runs
-            </Link>
-            <Link href={reportsHref} className={linkClassName(pathname === reportsHref)}>
-              <RouteIcon kind="reports" />
-              <span className={routeBadgeClassName(pathname === reportsHref)}>RP</span>
-              Reports
-            </Link>
-            <Link href={boardHref} className={linkClassName(pathname === boardHref)}>
+            <Link href={boardHref} className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800">
               <RouteIcon kind="board" />
-              <span className={routeBadgeClassName(pathname === boardHref)}>BD</span>
               Board
-            </Link>
-            <Link href={issuesHref} className={linkClassName(pathname === issuesHref)}>
-              <RouteIcon kind="issues" />
-              <span className={routeBadgeClassName(pathname === issuesHref)}>IS</span>
-              Issues
-              <span className={countClassName(pathname === issuesHref)}>{resolvedIssueCount}</span>
             </Link>
             <Link
               href="/projects"
-              className="inline-flex items-center rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
             >
               <RouteIcon kind="library" />
               Project Library

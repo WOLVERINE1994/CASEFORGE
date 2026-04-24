@@ -20,6 +20,8 @@ const getModeInstructions = (mode: string) => {
       return "Focus on manual accessibility and WCAG-oriented validation. Cover keyboard navigation, visible focus order, focus management, semantic labels, form labels and error associations, alt text expectations, heading structure, color contrast review points, screen reader behavior, zoom and reflow, status announcements, clear link/button labels, and motion/accessibility considerations where relevant.";
     case "regression":
       return "Focus on core workflows that should remain stable after changes, including key business flows and previously working behaviors.";
+    case "salesforce":
+      return "Focus on Salesforce business workflows and enterprise validation. Cover Accounts, Contacts, Leads, Opportunities, Cases, Campaigns, custom objects, validation rules, field behavior, page layouts, related lists, Lightning UI flows, role/profile permissions, approval processes, Flow and Process validation, search and list views, reporting visibility, integrations, negative paths, and realistic business edge cases.";
     case "functional":
     default:
       return "Focus on core functional flows, expected user behavior, successful paths, and major business logic.";

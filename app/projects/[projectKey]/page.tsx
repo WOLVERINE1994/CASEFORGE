@@ -7,8 +7,7 @@ import { formatUtcDateTime } from "../../../utils/date-format";
 import { buildProjectReportsSummary } from "../../../utils/project-reports";
 import { buildAutomationCandidateInsights } from "../../../utils/test-case-management";
 import {
-  IssueServiceNotReadyError,
-  listProjectIssues,
+  listProjectIssuesForUi,
 } from "../../../services/issue-service";
 
 const statusChipClassName: Record<string, string> = {
@@ -68,11 +67,9 @@ export default async function ProjectOverviewPage({
   let issues: SharedIssueRecord[] = [];
 
   try {
-    issues = await listProjectIssues(projectKey);
+    issues = await listProjectIssuesForUi(projectKey);
   } catch (error) {
-    if (!(error instanceof IssueServiceNotReadyError)) {
-      console.error("PROJECT OVERVIEW ISSUE LOAD ERROR:", error);
-    }
+    console.error("PROJECT OVERVIEW ISSUE LOAD ERROR:", error);
   }
 
   const resolvedProjectKey = project?.projectKey?.trim() || projectKey;

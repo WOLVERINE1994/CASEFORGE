@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import CaseForgeBrand from "./CaseForgeBrand";
 import { useProjectDataState } from "./ProjectDataStateContext";
 import { useProjectRouteMetrics } from "./ProjectRouteMetricsContext";
 import { useActiveReviewerSession } from "./useActiveReviewerSession";
+import { getSalesforceRows } from "../utils/salesforce";
 import type { ReviewerNotification } from "../utils/workspace";
 
 type ProjectSidebarProps = {
@@ -22,6 +24,9 @@ type NavKind =
   | "overview"
   | "workspace"
   | "cases"
+  | "salesforce"
+  | "activity"
+  | "automation"
   | "notifications"
   | "release"
   | "runs"
@@ -30,6 +35,19 @@ type NavKind =
   | "issues"
   | "settings"
   | "library";
+
+type NavItem = {
+  href: string;
+  label: string;
+  kind: NavKind;
+  count?: number;
+  matchPrefixes?: string[];
+};
+
+const isUuidLike = (value: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value.trim()
+  );
 
 function NavIcon({ kind }: { kind: NavKind }) {
   const commonProps = {
@@ -65,6 +83,30 @@ function NavIcon({ kind }: { kind: NavKind }) {
           <path d="M8.5 9h7" />
           <path d="M8.5 13h7" />
           <path d="M8.5 17h4" />
+        </svg>
+      );
+    case "salesforce":
+      return (
+        <svg {...commonProps}>
+          <path d="M7 7.5h10" />
+          <path d="M9 12h8" />
+          <path d="M11 16.5h6" />
+          <path d="M6 5.5v13" />
+        </svg>
+      );
+    case "automation":
+      return (
+        <svg {...commonProps}>
+          <path d="M12 4.5 8.2 11H12l-1 8.5 4.8-7H12l.9-8Z" />
+        </svg>
+      );
+    case "activity":
+      return (
+        <svg {...commonProps}>
+          <path d="M6 7.5h12" />
+          <path d="M6 12h7" />
+          <path d="M6 16.5h10" />
+          <circle cx="18" cy="12" r="2.5" />
         </svg>
       );
     case "notifications":
@@ -151,6 +193,11 @@ const matchesReviewerNotification = (
 
   return recipientIds.some((value) => reviewerIds.includes(value));
 };
+
+const isActiveNavItem = (pathname: string, item: NavItem) =>
+  [item.href, ...(item.matchPrefixes ?? [])].some(
+    (candidate) => pathname === candidate || pathname.startsWith(`${candidate}/`)
+  );
 
 const readProjectSidebarState = (projectKey: string) => {
   if (typeof window === "undefined") {
@@ -257,8 +304,15 @@ export default function ProjectSidebar({
       !notification.archivedAt &&
       !notification.readAt
   ).length;
+  const shellMeta = [
+    sprintName.trim() || null,
+    releaseName.trim() || null,
+    teamName.trim() || null,
+  ].filter(Boolean) as string[];
+  const displayProjectKey =
+    projectKey.trim() && !isUuidLike(projectKey) ? projectKey.trim() : null;
 
-  const navItems = useMemo(
+  const primaryNavItems = useMemo<NavItem[]>(
     () => [
       {
         href: buildProjectHref(`/projects/${encodedProjectKey}`),
@@ -266,21 +320,16 @@ export default function ProjectSidebar({
         kind: "overview" as const,
       },
       {
-        href: buildProjectHref(`/projects/${encodedProjectKey}/workspace`),
-        label: "Workspace",
-        kind: "workspace" as const,
-      },
-      {
         href: buildProjectHref(`/projects/${encodedProjectKey}/cases`),
-        label: "Cases",
+        label: "Test Management",
         kind: "cases" as const,
         count: resolvedCaseCount,
       },
       {
-        href: buildProjectHref(`/projects/${encodedProjectKey}/notifications`),
-        label: "Notifications",
-        kind: "notifications" as const,
-        count: unreadNotifications,
+        href: buildProjectHref(`/projects/${encodedProjectKey}/salesforce`),
+        label: "Salesforce",
+        kind: "salesforce" as const,
+        count: getSalesforceRows(projectDataState?.project ?? null).length,
       },
       {
         href: buildProjectHref(`/projects/${encodedProjectKey}/runs`),
@@ -288,19 +337,29 @@ export default function ProjectSidebar({
         kind: "runs" as const,
       },
       {
-        href: buildProjectHref(`/projects/${encodedProjectKey}/release`),
-        label: "Release",
-        kind: "release" as const,
-      },
-      {
         href: buildProjectHref(`/projects/${encodedProjectKey}/reports`),
         label: "Reports",
         kind: "reports" as const,
       },
       {
-        href: buildProjectHref(`/projects/${encodedProjectKey}/board`),
-        label: "Board",
-        kind: "board" as const,
+        href: buildProjectHref(`/projects/${encodedProjectKey}/releases`),
+        label: "Releases",
+        kind: "release" as const,
+        matchPrefixes: [
+          `/projects/${encodedProjectKey}/release`,
+          `/projects/${encodedProjectKey}/releases`,
+        ],
+      },
+      {
+        href: buildProjectHref(`/projects/${encodedProjectKey}/automation`),
+        label: "Automation",
+        kind: "automation" as const,
+        count: (projectDataState?.project?.automationScripts ?? []).length,
+      },
+      {
+        href: buildProjectHref(`/projects/${encodedProjectKey}/activity`),
+        label: "Activity",
+        kind: "activity" as const,
       },
       {
         href: buildProjectHref(`/projects/${encodedProjectKey}/issues`),
@@ -317,51 +376,73 @@ export default function ProjectSidebar({
     [
       buildProjectHref,
       encodedProjectKey,
+      projectDataState?.project,
       resolvedCaseCount,
       resolvedIssueCount,
-      unreadNotifications,
     ]
+  );
+  const secondaryNavItems = useMemo<NavItem[]>(
+    () => [
+      {
+        href: buildProjectHref(`/projects/${encodedProjectKey}/workspace`),
+        label: "AI Case Generation",
+        kind: "workspace",
+      },
+      {
+        href: buildProjectHref(`/projects/${encodedProjectKey}/notifications`),
+        label: "Notifications",
+        kind: "notifications",
+        count: unreadNotifications,
+      },
+      {
+        href: buildProjectHref(`/projects/${encodedProjectKey}/board`),
+        label: "Board",
+        kind: "board",
+      },
+    ],
+    [buildProjectHref, encodedProjectKey, unreadNotifications]
   );
   const navigationGroups = useMemo(
     () => [
       {
         key: "overview",
-        label: "Project Overview",
+        label: "Test Management",
         open: overviewGroupOpen,
         setOpen: setOverviewGroupOpen,
-        items: navItems.filter((item) => item.kind === "overview" || item.kind === "workspace"),
+        items: primaryNavItems.filter(
+          (item) =>
+            item.kind === "overview" ||
+            item.kind === "cases" ||
+            item.kind === "salesforce" ||
+            item.kind === "runs" ||
+            item.kind === "reports" ||
+            item.kind === "release"
+        ),
       },
       {
         key: "delivery",
-        label: "Delivery Flow",
+        label: "Automation",
         open: deliveryGroupOpen,
         setOpen: setDeliveryGroupOpen,
-        items: navItems.filter(
+        items: primaryNavItems.filter(
           (item) =>
-            item.kind === "cases" ||
-            item.kind === "runs" ||
-            item.kind === "release" ||
-            item.kind === "reports"
+            item.kind === "automation" ||
+            item.kind === "activity" ||
+            item.kind === "issues"
         ),
       },
       {
         key: "collaboration",
-        label: "Tracking And Collaboration",
+        label: "Administration",
         open: collaborationGroupOpen,
         setOpen: setCollaborationGroupOpen,
-        items: navItems.filter(
-          (item) =>
-            item.kind === "notifications" ||
-            item.kind === "board" ||
-            item.kind === "issues" ||
-            item.kind === "settings"
-        ),
+        items: primaryNavItems.filter((item) => item.kind === "settings"),
       },
     ],
     [
       collaborationGroupOpen,
       deliveryGroupOpen,
-      navItems,
+      primaryNavItems,
       overviewGroupOpen,
       setCollaborationGroupOpen,
       setDeliveryGroupOpen,
@@ -399,13 +480,13 @@ export default function ProjectSidebar({
     <button
       type="button"
       onClick={onToggle}
-      className="flex w-full items-center justify-between rounded-xl px-1 py-1 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-950"
+      className="flex w-full items-center justify-between rounded-xl px-1 py-1 text-left transition hover:bg-slate-800/70"
     >
-      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
         {label}
       </span>
       <svg
-        className={`h-4 w-4 text-zinc-400 transition-transform ${open ? "rotate-180" : ""}`}
+        className={`h-4 w-4 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -419,47 +500,55 @@ export default function ProjectSidebar({
   );
 
   return (
-    <aside className="sticky top-6 rounded-[24px] border border-zinc-200/80 bg-white/96 shadow-[0_26px_60px_-42px_rgba(15,23,42,0.28)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94">
+    <aside className="cf-panel sticky top-6 rounded-[24px]">
       <div
         className="flex max-h-[calc(100vh-3rem)] flex-col gap-5 overflow-y-auto p-5 pr-4 [mask-image:linear-gradient(to_bottom,transparent_0,black_20px,black_calc(100%-20px),transparent_100%)] [scrollbar-gutter:stable] dark:[mask-image:linear-gradient(to_bottom,transparent_0,black_20px,black_calc(100%-20px),transparent_100%)]"
         style={{ scrollbarWidth: "thin" }}
       >
-      <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-950/70">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
-          Project Shell
+      <div className="rounded-[20px] border border-slate-700/80 bg-[radial-gradient(circle_at_top_right,_rgba(37,99,235,0.18),_transparent_46%),linear-gradient(180deg,_rgba(17,24,39,0.98)_0%,_rgba(15,23,42,0.98)_100%)] p-4 shadow-[0_24px_60px_-42px_rgba(37,99,235,0.65)]">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+            caseForge
+          </p>
+          <CaseForgeBrand size="md" className="mt-3" />
+          <h2 className="mt-3 text-xl font-semibold tracking-tight text-slate-50">
+            {projectName.trim() || "Unsaved workspace"}
+          </h2>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-slate-300">
+          Structured QA operations across manual testing, automation, execution, and reporting.
         </p>
-        <h2 className="mt-2 text-xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-          {projectName.trim() || "Unsaved workspace"}
-        </h2>
-        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
-            {(projectKey || "NO-KEY").trim()}
-          </span>
-          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
-            {(sprintName || "No sprint").trim()}
-          </span>
-          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
-            {(releaseName || "No release").trim()}
-          </span>
-          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
-            {(teamName || "No team").trim()}
-          </span>
+        <div className="mt-4 flex flex-wrap gap-2 text-xs">
+          {displayProjectKey ? (
+            <span className="rounded-full border border-slate-600/80 bg-slate-900/85 px-2.5 py-1 font-semibold text-slate-200">
+              {displayProjectKey}
+            </span>
+          ) : null}
+          {shellMeta.length ? shellMeta.map((item) => (
+            <span key={item} className="rounded-full border border-slate-700/80 bg-slate-900/75 px-2.5 py-1 font-semibold text-slate-300">
+              {item}
+            </span>
+          )) : (
+            <span className="rounded-full border border-slate-700/80 bg-slate-900/75 px-2.5 py-1 font-semibold text-slate-300">
+              Workspace active
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="rounded-[20px] border border-zinc-200/80 bg-white/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+      <div className="cf-card rounded-[20px] p-4">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
           Project Navigation
         </p>
         <div className="space-y-3">
         {navigationGroups.map((group) => {
-          const hasActiveItem = group.items.some((item) => pathname === item.href);
+          const hasActiveItem = group.items.some((item) => isActiveNavItem(pathname, item));
           const isOpen = hasActiveItem ? true : group.open;
 
           return (
             <div
               key={group.key}
-              className="rounded-[18px] border border-zinc-200/80 bg-zinc-50/70 p-3 dark:border-zinc-800 dark:bg-zinc-950/55"
+              className="rounded-[18px] border border-slate-700/70 bg-slate-900/55 p-3"
             >
               {renderSectionToggle(group.label, isOpen, () =>
                 group.setOpen((current) => !current)
@@ -467,7 +556,7 @@ export default function ProjectSidebar({
               {isOpen ? (
                 <nav className="mt-2 space-y-1.5">
                   {group.items.map((item) => {
-                    const active = pathname === item.href;
+                    const active = isActiveNavItem(pathname, item);
 
                     return (
                       <Link
@@ -475,12 +564,12 @@ export default function ProjectSidebar({
                         href={item.href}
                         className={`relative flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm font-semibold transition ${
                           active
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-950 shadow-sm ring-1 ring-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100 dark:ring-emerald-500/10"
-                            : "border-transparent bg-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white dark:text-zinc-200 dark:hover:border-zinc-700 dark:hover:bg-zinc-900"
+                            ? "border-sky-400/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.2),rgba(79,70,229,0.18),rgba(124,58,237,0.2))] text-slate-50 shadow-[0_18px_34px_-28px_rgba(79,70,229,0.85)]"
+                            : "border-transparent bg-transparent text-slate-300 hover:border-slate-700 hover:bg-slate-800/70"
                         }`}
                       >
                         {active ? (
-                          <span className="absolute inset-y-2 left-1.5 w-1 rounded-full bg-emerald-500 dark:bg-emerald-300" />
+                          <span className="absolute inset-y-2 left-1.5 w-1 rounded-full bg-cyan-300" />
                         ) : null}
                         <span className="flex items-center gap-3">
                           <NavIcon kind={item.kind} />
@@ -490,8 +579,8 @@ export default function ProjectSidebar({
                           <span
                             className={`inline-flex min-w-6 items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
                               active
-                                ? "bg-white text-emerald-800 dark:bg-zinc-950 dark:text-emerald-200"
-                                : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                                ? "bg-slate-950/85 text-cyan-200"
+                                : "bg-slate-800 text-slate-300"
                             }`}
                           >
                             {item.count}
@@ -508,31 +597,62 @@ export default function ProjectSidebar({
         </div>
       </div>
 
-      <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-950/70">
+      <div className="cf-card rounded-[20px] p-4">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+          Secondary Tools
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {secondaryNavItems.map((item) => {
+            const active = isActiveNavItem(pathname, item);
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                  active
+                    ? "border-sky-400/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.2),rgba(79,70,229,0.18),rgba(124,58,237,0.2))] text-slate-50"
+                    : "border-slate-700 bg-slate-900/80 text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                <NavIcon kind={item.kind} />
+                {item.label}
+                {typeof item.count === "number" ? (
+                  <span className="rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">
+                    {item.count}
+                  </span>
+                ) : null}
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="cf-card rounded-[20px] p-4">
         {renderSectionToggle("Reviewer Focus", reviewerOpen, () =>
           setReviewerOpen((current) => !current)
         )}
         {reviewerOpen ? (
           <>
-            <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            <p className="mt-2 text-sm font-semibold text-slate-100">
               {activeReviewerSession.reviewer?.name ||
                 activeReviewerSession.reviewer?.email ||
                 "No active reviewer"}
             </p>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mt-1 text-xs text-slate-400">
               {unreadNotifications} unread reviewer alert
               {unreadNotifications === 1 ? "" : "s"} on this project.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Link
                 href={buildProjectHref(`/projects/${encodedProjectKey}/notifications?unread=1`)}
-                className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-semibold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
+                className="rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-semibold text-cyan-200 transition hover:bg-cyan-500/15"
               >
                 Open Inbox
               </Link>
               <Link
                 href="/settings/users"
-                className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                className="rounded-xl border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-[11px] font-semibold text-slate-200 transition hover:bg-slate-800"
               >
                 Change Reviewer
               </Link>
@@ -543,7 +663,7 @@ export default function ProjectSidebar({
 
       <Link
         href="/projects"
-        className="inline-flex items-center gap-3 rounded-xl border border-zinc-200 bg-white px-3.5 py-3 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+        className="inline-flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-900/85 px-3.5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
       >
         <NavIcon kind="library" />
         Project Library

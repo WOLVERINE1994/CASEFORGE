@@ -270,11 +270,12 @@ export default function ReleaseRiskDashboard({
     snapshots: project?.releaseReview?.snapshots ?? [],
   };
   const statusLabel =
-    summary.level === "safe"
-      ? "SAFE TO RELEASE"
+    summary.decisionLabel ??
+    (summary.level === "safe"
+      ? "Ready"
       : summary.level === "caution"
-      ? "RELEASE WITH CAUTION"
-      : "NOT READY FOR RELEASE";
+      ? "Ready with Risk"
+      : "Not Ready");
 
   const hasUsableData = summary.totalCases > 0 || summary.openIssues > 0;
   const primaryUntestedArea = context.untestedCriticalAreas[0] ?? context.lowCoverageAreas[0]?.area ?? null;
@@ -1145,6 +1146,12 @@ export default function ReleaseRiskDashboard({
             <span className={chipClassName}>
               Security high risk {summary.highRiskSecurityCases ?? 0}
             </span>
+            <span className={chipClassName}>
+              Accessibility failures {summary.accessibilityFailedCases ?? 0}
+            </span>
+            <span className={chipClassName}>
+              Linked issues open {summary.unresolvedLinkedIssues ?? 0}
+            </span>
             <span className={`${chipClassName} ${releaseDeltaTone[latestSnapshotDeltaDirection]}`}>
               {latestSnapshotDelta === null
                 ? "Release delta n/a"
@@ -1215,6 +1222,91 @@ export default function ReleaseRiskDashboard({
               </p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className={`rounded-[24px] border px-5 py-5 shadow-sm ${levelTone[summary.level]}`}>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-3xl">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-75">
+              Ship Decision
+            </p>
+            <h3 className="mt-2 text-2xl font-semibold">
+              {statusLabel}
+            </h3>
+            <p className="mt-2 text-sm leading-6 opacity-85">
+              {summary.recommendation}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={buildRunFilterHref(projectKey, { execution: "failed" })}
+              className={sharedActionLinkClassName}
+            >
+              Open Failing Evidence
+            </Link>
+            <Link
+              href={buildCasesFilterHref(projectKey, { handoffState: "release-blocking" })}
+              className={sharedActionLinkClassName}
+            >
+              Open Release Blocking Cases
+            </Link>
+            <Link
+              href={buildIssueFilterHref(projectKey, { status: "blocked" })}
+              className={sharedActionLinkClassName}
+            >
+              Open Blocking Issues
+            </Link>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-3">
+          {summary.reasons.slice(0, 3).map((reason) => (
+            <article
+              key={reason.id}
+              className="rounded-[20px] border border-white/60 bg-white/70 px-4 py-4 shadow-sm dark:border-zinc-700/80 dark:bg-zinc-950/50"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                  {reason.title}
+                </p>
+                <span
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${severityTone[reason.severity]}`}
+                >
+                  {reason.severity}
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
+                {reason.description}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {reason.linkedCaseIds?.[0] ? (
+                  <Link
+                    href={buildCaseFocusHref(projectKey, reason.linkedCaseIds[0])}
+                    className={sharedActionLinkClassName}
+                  >
+                    Inspect Case
+                  </Link>
+                ) : null}
+                {reason.linkedIssueIds?.[0] ? (
+                  <Link
+                    href={buildIssueFocusHref(projectKey, reason.linkedIssueIds[0])}
+                    className={sharedActionLinkClassName}
+                  >
+                    Inspect Issue
+                  </Link>
+                ) : null}
+                {!reason.linkedCaseIds?.length && !reason.linkedIssueIds?.length && reason.affectedArea ? (
+                  <Link
+                    href={buildCasesFilterHref(projectKey, { search: reason.affectedArea })}
+                    className={sharedActionLinkClassName}
+                  >
+                    Open Area Slice
+                  </Link>
+                ) : null}
+              </div>
+            </article>
+          ))}
         </div>
       </section>
 

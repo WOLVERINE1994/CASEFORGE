@@ -1,23 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type DragEvent } from "react";
+import { Fragment, type DragEvent, type ReactNode } from "react";
 import {
   getAutomationBindingForCase,
   getAutomationExecutionsForCase,
   getAutomationScriptById,
-  getAutomationStepsForScript,
 } from "../utils/automation";
-import CaseAutomationPanel from "./CaseAutomationPanel";
+import {
+  EnvironmentSummaryCard,
+  VersionHistorySummaryCard,
+  WorkflowAuditSummaryCard,
+} from "./CaseModuleSummaryCards";
+import CaseAutomationLinkPanel from "./CaseAutomationLinkPanel";
 import {
   type AutomationBinding,
+  type AutomationEnvironmentBinding,
   type AutomationExecution,
-  type AutomationExecutionArtifact,
   type AutomationScript,
-  type AutomationStep,
+  approvalStateLabels,
   automationProviderOptions,
   automationStatusLabels,
   executionResultLabels,
+  handoffStateLabels,
   priorityLabels,
   reviewStatusLabels,
   workflowStatusLabels,
@@ -151,10 +156,10 @@ type Props = {
   testDataSets: TestDataSet[];
   caseTemplates: CaseTemplate[];
   automationScripts: AutomationScript[];
-  automationSteps: Record<string, AutomationStep[]>;
   automationBindings: AutomationBinding[];
   automationExecutions: AutomationExecution[];
-  automationArtifacts: AutomationExecutionArtifact[];
+  automationEnvironmentBindings: AutomationEnvironmentBinding[];
+  activeAutomationEnvironmentId: string;
   userOptions: UserOption[];
   updateCell: (
     index: number,
@@ -168,38 +173,22 @@ type Props = {
   onToggleCaseWatch: (rowId: string) => void;
   onCloneRow: (rowId: string) => void;
   onSaveTemplateFromRow: (row: TestCaseRow) => void;
-  onRestoreCaseVersion: (rowId: string, versionId: string) => void;
-  onSaveAutomation: (payload: {
-    rowId: string;
-    mode: "manual" | "automated" | "hybrid";
-    provider: "playwright" | "cypress" | "api" | "mobile";
-    executionMode: "headless" | "headed";
-    name: string;
-    description?: string;
-    steps: AutomationStep[];
-  }) => void;
+  onApplyGenerationFeedback: (
+    rowId: string,
+    signal:
+      | "useful"
+      | "needed-edits"
+      | "low-quality"
+      | "duplicate"
+      | "missing-important-scenario"
+  ) => void;
   onRunAutomation: (rowId: string) => Promise<{
     tone: "info" | "success" | "error";
     text: string;
   } | void>;
-  onRunAutomationWithOptions?: (payload: {
-    rowId: string;
-    scriptId?: string;
-    executionMode: "headless" | "headed";
-  }) => Promise<{
-    tone: "info" | "success" | "error";
-    text: string;
-  } | void>;
-  onDebugAutomationInBrowser?: (payload: {
-    rowId: string;
-    provider: "playwright" | "cypress" | "api" | "mobile";
-    scriptName: string;
-    steps: AutomationStep[];
-  }) => Promise<{
-    tone: "info" | "success" | "error";
-    text: string;
-  } | void>;
   onCreateAutomationIssue?: (rowId: string) => Promise<void>;
+  onGenerateAutomation?: (rowId: string) => Promise<void>;
+  generatingAutomationRowIds?: string[];
   deleteRow: (index: number) => void;
   regenerateRow: (index: number) => void;
   regeneratingIndex: number | null;
@@ -218,7 +207,133 @@ type Props = {
   selectedRowIds?: string[];
   onToggleRowSelection?: (rowId: string) => void;
   onToggleSelectAll?: () => void;
+  stickyHeader?: boolean;
 };
+
+type ReviewFieldProps = {
+  label: string;
+  helper?: string;
+  children: ReactNode;
+};
+
+function ReviewField({ label, helper, children }: ReviewFieldProps) {
+  return (
+    <label className="min-w-0">
+      <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
+        {label}
+      </span>
+      {children}
+      {helper ? (
+        <span className="mt-2 block text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+          {helper}
+        </span>
+      ) : null}
+    </label>
+  );
+}
+
+type CompactPreviewFieldProps = {
+  label: string;
+  value?: string | null;
+  className?: string;
+};
+
+function CompactPreviewField({
+  label,
+  value,
+  className = "",
+}: CompactPreviewFieldProps) {
+  return (
+    <div
+      className={`min-w-0 rounded-[20px] border border-zinc-200/80 bg-white/92 px-3 py-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/78 ${className}`}
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
+        {label}
+      </p>
+      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-700 dark:text-zinc-200">
+        {value?.trim() || "Not added yet"}
+      </p>
+    </div>
+  );
+}
+
+type WorkspaceSectionProps = {
+  eyebrow: string;
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+  children: ReactNode;
+};
+
+function WorkspaceSection({
+  eyebrow,
+  title,
+  description,
+  actions,
+  children,
+}: WorkspaceSectionProps) {
+  return (
+    <section className="rounded-[26px] border border-zinc-200/80 bg-white/94 p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/80">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
+            {eyebrow}
+          </p>
+          <h3 className="mt-1 text-base font-semibold text-zinc-900 dark:text-zinc-100">
+            {title}
+          </h3>
+          {description ? (
+            <p className="mt-1 text-sm leading-6 text-zinc-500 dark:text-zinc-400">
+              {description}
+            </p>
+          ) : null}
+        </div>
+        {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+type InspectorSectionProps = {
+  title: string;
+  description?: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+};
+
+function InspectorSection({
+  title,
+  description,
+  defaultOpen = true,
+  children,
+}: InspectorSectionProps) {
+  return (
+    <details
+      open={defaultOpen}
+      className="rounded-[24px] border border-zinc-200/80 bg-white/94 p-4 shadow-sm open:shadow-md dark:border-zinc-700 dark:bg-zinc-950/82"
+    >
+      <summary className="cursor-pointer list-none">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              {title}
+            </p>
+            {description ? (
+              <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+                {description}
+              </p>
+            ) : null}
+          </div>
+          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] font-semibold text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+            Open
+          </span>
+        </div>
+      </summary>
+      <div className="mt-4">{children}</div>
+    </details>
+  );
+}
 
 export default function TestCaseTable({
   rows,
@@ -237,10 +352,10 @@ export default function TestCaseTable({
   testDataSets,
   caseTemplates,
   automationScripts,
-  automationSteps,
   automationBindings,
   automationExecutions,
-  automationArtifacts,
+  automationEnvironmentBindings,
+  activeAutomationEnvironmentId,
   userOptions,
   updateCell,
   onCaseCommentDraftChange,
@@ -250,12 +365,11 @@ export default function TestCaseTable({
   onToggleCaseWatch,
   onCloneRow,
   onSaveTemplateFromRow,
-  onRestoreCaseVersion,
-  onSaveAutomation,
+  onApplyGenerationFeedback,
   onRunAutomation,
-  onRunAutomationWithOptions,
-  onDebugAutomationInBrowser,
   onCreateAutomationIssue,
+  onGenerateAutomation,
+  generatingAutomationRowIds = [],
   deleteRow,
   regenerateRow,
   regeneratingIndex,
@@ -274,11 +388,8 @@ export default function TestCaseTable({
   selectedRowIds = [],
   onToggleRowSelection,
   onToggleSelectAll,
+  stickyHeader = true,
 }: Props) {
-  const [versionCompareSelections, setVersionCompareSelections] = useState<
-    Record<string, string[]>
-  >({});
-
   const handleDragOver = (
     event: DragEvent<HTMLTableRowElement>,
     index: number
@@ -296,33 +407,7 @@ export default function TestCaseTable({
     onDragEnd();
   };
 
-  const toggleVersionCompareSelection = (rowId: string, versionId: string) => {
-    setVersionCompareSelections((current) => {
-      const existing = current[rowId] ?? [];
-      const next = existing.includes(versionId)
-        ? existing.filter((item) => item !== versionId)
-        : [...existing.slice(-1), versionId];
-
-      if (next.length === 0) {
-        const rest = { ...current };
-        delete rest[rowId];
-        return rest;
-      }
-
-      return {
-        ...current,
-        [rowId]: next,
-      };
-    });
-  };
-
-  const clearVersionCompareSelection = (rowId: string) => {
-    setVersionCompareSelections((current) => {
-      const rest = { ...current };
-      delete rest[rowId];
-      return rest;
-    });
-  };
+  const totalColumnCount = enableSelection ? 10 : 9;
 
   return (
     <div className="overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/96 shadow-[0_26px_58px_-40px_rgba(15,23,42,0.24)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94">
@@ -393,7 +478,11 @@ export default function TestCaseTable({
             <col className="w-[300px]" />
             <col className="w-[140px]" />
           </colgroup>
-          <thead className="sticky top-0 z-10 bg-zinc-50/95 dark:bg-zinc-950/90">
+          <thead
+            className={`bg-zinc-50/95 dark:bg-zinc-950/90 ${
+              stickyHeader ? "sticky top-0 z-10" : ""
+            }`}
+          >
             <tr>
               {enableSelection && (
                 <th className="border-b border-zinc-200 px-4 py-3.5 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
@@ -461,18 +550,9 @@ export default function TestCaseTable({
                   automationScripts,
                   automationBinding?.scriptId ?? row.automationScriptId
                 );
-                const automationScriptSteps = getAutomationStepsForScript(
-                  automationSteps,
-                  automationScript?.id
-                );
                 const automationExecution =
                   getAutomationExecutionsForCase(automationExecutions, row.id)[0] ??
                   null;
-                const automationExecutionArtifacts = automationExecution
-                  ? automationArtifacts.filter(
-                      (artifact) => artifact.executionId === automationExecution.id
-                    )
-                  : [];
                 const draftStepCount = row.steps
                   .split(";")
                   .map((step) => step.trim())
@@ -503,128 +583,16 @@ export default function TestCaseTable({
                   readyForApproval &&
                   (row.reviewStatus ?? "draft") !== "in-review" &&
                   (row.reviewStatus ?? "draft") !== "approved";
-                const selectedVersionIds = versionCompareSelections[row.id] ?? [];
-                const selectedVersions = selectedVersionIds
-                  .map((versionId) =>
-                    rowVersionHistory.find((version) => version.id === versionId)
-                  )
-                  .filter(Boolean) as TestCaseVersionEntry[];
-                const summarizeVersionDiff = (snapshot: TestCaseRow) => {
-                  const changedFields = [
-                    snapshot.title !== row.title ? "title" : null,
-                    snapshot.preconditions !== row.preconditions ? "preconditions" : null,
-                    snapshot.steps !== row.steps ? "steps" : null,
-                    snapshot.expectedResult !== row.expectedResult
-                      ? "expected result"
-                      : null,
-                    (snapshot.testData ?? "") !== (row.testData ?? "")
-                      ? "test data"
-                      : null,
-                    (snapshot.workflowStatus ?? "backlog") !==
-                    (row.workflowStatus ?? "backlog")
-                      ? "workflow"
-                      : null,
-                    (snapshot.priority ?? "medium") !== (row.priority ?? "medium")
-                      ? "priority"
-                      : null,
-                    (snapshot.executionResult ?? "not-run") !==
-                    (row.executionResult ?? "not-run")
-                      ? "execution"
-                      : null,
-                    (snapshot.reviewStatus ?? "draft") !==
-                    (row.reviewStatus ?? "draft")
-                      ? "review"
-                      : null,
-                    (snapshot.reviewOwner ?? "") !== (row.reviewOwner ?? "")
-                      ? "review owner"
-                      : null,
-                    (snapshot.assignee ?? "") !== (row.assignee ?? "")
-                      ? "assignee"
-                      : null,
-                  ].filter(Boolean) as string[];
-
-                  if (changedFields.length === 0) {
-                    return "Matches the current case state.";
-                  }
-
-                  const preview = changedFields.slice(0, 4).join(", ");
-                  return changedFields.length > 4
-                    ? `${changedFields.length} fields differ: ${preview}, and more.`
-                    : `${changedFields.length} field${changedFields.length === 1 ? "" : "s"} differ: ${preview}.`;
-                };
-                const buildVersionComparisons = (
-                  leftSnapshot: TestCaseRow,
-                  rightSnapshot: TestCaseRow
-                ) =>
-                  [
-                    {
-                      label: "Title",
-                      left: leftSnapshot.title || "Not set",
-                      right: rightSnapshot.title || "Not set",
-                    },
-                    {
-                      label: "Preconditions",
-                      left: leftSnapshot.preconditions || "Not set",
-                      right: rightSnapshot.preconditions || "Not set",
-                    },
-                    {
-                      label: "Steps",
-                      left: leftSnapshot.steps || "Not set",
-                      right: rightSnapshot.steps || "Not set",
-                    },
-                    {
-                      label: "Expected Result",
-                      left: leftSnapshot.expectedResult || "Not set",
-                      right: rightSnapshot.expectedResult || "Not set",
-                    },
-                    {
-                      label: "Test Data",
-                      left: leftSnapshot.testData || "Not set",
-                      right: rightSnapshot.testData || "Not set",
-                    },
-                    {
-                      label: "Workflow",
-                      left:
-                        workflowStatusLabels[leftSnapshot.workflowStatus ?? "backlog"],
-                      right:
-                        workflowStatusLabels[rightSnapshot.workflowStatus ?? "backlog"],
-                    },
-                    {
-                      label: "Priority",
-                      left: priorityLabels[leftSnapshot.priority ?? "medium"],
-                      right: priorityLabels[rightSnapshot.priority ?? "medium"],
-                    },
-                    {
-                      label: "Execution",
-                      left:
-                        executionResultLabels[
-                          leftSnapshot.executionResult ?? "not-run"
-                        ],
-                      right:
-                        executionResultLabels[
-                          rightSnapshot.executionResult ?? "not-run"
-                        ],
-                    },
-                    {
-                      label: "Review",
-                      left: reviewStatusLabels[leftSnapshot.reviewStatus ?? "draft"],
-                      right: reviewStatusLabels[rightSnapshot.reviewStatus ?? "draft"],
-                    },
-                    {
-                      label: "Review Owner",
-                      left: leftSnapshot.reviewOwner || "Not assigned",
-                      right: rightSnapshot.reviewOwner || "Not assigned",
-                    },
-                    {
-                      label: "Assignee",
-                      left: leftSnapshot.assignee || "Unassigned",
-                      right: rightSnapshot.assignee || "Unassigned",
-                    },
-                  ].filter((field) => field.left !== field.right);
-
+                const activeEnvironment =
+                  automationEnvironmentBindings.find(
+                    (environment) => environment.id === activeAutomationEnvironmentId
+                  ) ??
+                  automationEnvironmentBindings.find((environment) => environment.isDefault) ??
+                  null;
+                const isGeneratingAutomation = generatingAutomationRowIds.includes(row.id);
                 return (
+                <Fragment key={row.id}>
                 <tr
-                  key={`${row.id}-${index}`}
                   id={`test-case-row-${row.id}`}
                   className={`group align-top transition-all duration-150 ${
                     isDragged ? "scale-[0.995] opacity-50" : ""
@@ -788,6 +756,53 @@ export default function TestCaseTable({
                   </td>
 
                   <td className="border-b border-zinc-200/80 p-4 align-top dark:border-zinc-800">
+                    {isHighlighted ? (
+                      <div className="space-y-3">
+                        <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
+                          <div className="flex flex-wrap gap-2">
+                            {row.issueKey && (
+                              <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">
+                                Linked: {row.issueKey}
+                              </span>
+                            )}
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${workflowTone[row.workflowStatus ?? "backlog"]}`}
+                            >
+                              {workflowStatusLabels[row.workflowStatus ?? "backlog"]}
+                            </span>
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${priorityTone[row.priority ?? "medium"]}`}
+                            >
+                              {priorityLabels[row.priority ?? "medium"]}
+                            </span>
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${executionTone[row.executionResult ?? "not-run"]}`}
+                            >
+                              {executionResultLabels[row.executionResult ?? "not-run"]}
+                            </span>
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${reviewTone[row.reviewStatus ?? "draft"]}`}
+                            >
+                              {reviewStatusLabels[row.reviewStatus ?? "draft"]}
+                            </span>
+                          </div>
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            <CompactPreviewField
+                              label="Review Summary"
+                              value={`Owner: ${row.reviewOwner?.trim() || "Not assigned"}\nOpen notes: ${openReviewNotesCount}\n${readyForApproval ? "Ready to approve" : "Needs review cleanup"}`}
+                            />
+                            <CompactPreviewField
+                              label="Requirement Summary"
+                              value={
+                                traceability
+                                  ? `${traceability.requirementSentence}\nRisk area: ${traceability.riskArea}`
+                                  : "No linked requirement or traceability summary yet."
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
                       <div className="space-y-3">
                         <div className="flex flex-wrap gap-2">
                           {row.issueKey && (
@@ -1095,24 +1110,99 @@ export default function TestCaseTable({
                       <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
+                              Generation Feedback
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                              Capture how the AI draft held up after editing, execution, and review.
+                            </p>
+                          </div>
+                          {row.generationFeedback?.reviewSignal ? (
+                            <span className="max-w-full rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-center text-[11px] font-semibold leading-tight text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                              {row.generationFeedback.reviewSignal}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {[
+                            "useful",
+                            "needed-edits",
+                            "low-quality",
+                            "duplicate",
+                            "missing-important-scenario",
+                          ].map((signal) => (
+                            <button
+                              key={signal}
+                              type="button"
+                              onClick={() =>
+                                onApplyGenerationFeedback(
+                                  row.id,
+                                  signal as
+                                    | "useful"
+                                    | "needed-edits"
+                                    | "low-quality"
+                                    | "duplicate"
+                                    | "missing-important-scenario"
+                                )
+                              }
+                              className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                            >
+                              {signal}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="min-w-0 rounded-2xl border border-zinc-200/80 bg-white/90 p-3 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-950/80">
+                            <p className="font-semibold uppercase tracking-[0.08em] text-zinc-500 dark:text-zinc-400">
+                              Original Generated Draft
+                            </p>
+                            <p className="mt-2 break-words text-zinc-700 dark:text-zinc-200">
+                              {row.generationFeedback?.originalGenerated?.title || row.title}
+                            </p>
+                            <p className="mt-1 break-words leading-5 text-zinc-500 dark:text-zinc-400">
+                              {row.generationFeedback?.originalGenerated?.expectedResult ||
+                                "Original generated snapshot available once AI creates the row."}
+                            </p>
+                          </div>
+                          <div className="min-w-0 rounded-2xl border border-zinc-200/80 bg-white/90 p-3 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-950/80">
+                            <p className="font-semibold uppercase tracking-[0.08em] text-zinc-500 dark:text-zinc-400">
+                              Final Edited Draft
+                            </p>
+                            <p className="mt-2 break-words text-zinc-700 dark:text-zinc-200">
+                              {row.generationFeedback?.finalEdited?.title || row.title}
+                            </p>
+                            <p className="mt-1 break-words leading-5 text-zinc-500 dark:text-zinc-400">
+                              {row.generationFeedback?.editDeltaSummary
+                                ? `${row.generationFeedback.editDeltaSummary.changedFieldCount} field changes | ${row.generationFeedback.editDeltaSummary.editIntensity} edit intensity`
+                                : "No edit delta captured yet."}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
                               Review & Linking
                             </p>
                             <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
                               Edit linkage, ownership, execution, and review readiness here.
                             </p>
                           </div>
-                          <span className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                          <span className="max-w-full rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-center text-[11px] font-semibold leading-tight text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                             {readyForApproval ? "Ready" : "Needs follow-up"}
                           </span>
                         </div>
 
                         <div className="mt-3 rounded-[22px] border border-zinc-200/80 bg-white/90 p-3 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-950/80">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                            <p className="font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
                               Draft Readiness
                             </p>
-                            <span className="font-medium text-zinc-500 dark:text-zinc-400">
+                            <span className="max-w-full text-sm font-medium leading-5 text-zinc-500 dark:text-zinc-400">
                               Approval needs an owner and no open notes
                             </span>
                           </div>
@@ -1141,113 +1231,171 @@ export default function TestCaseTable({
                           )}
                         </div>
 
-                        <div className="mt-3 grid gap-3 md:grid-cols-2">
-                          <select
-                            value={row.issueId ?? ""}
-                            onChange={(e) => updateCell(index, "issueId", e.target.value)}
-                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                          >
-                            <option value="">
-                              {loadingIssueOptions ? "Loading issues..." : "No linked issue"}
-                            </option>
-                            {issueOptions.map((issue) => (
-                              <option key={issue.id} value={issue.id}>
-                                {issue.issueKey} - {issue.summary}
-                              </option>
-                            ))}
-                          </select>
-
-                          <select
-                            value={row.workflowStatus ?? "backlog"}
-                            onChange={(e) =>
-                              updateCell(index, "workflowStatus", e.target.value)
-                            }
-                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                          >
-                            <option value="backlog">Backlog</option>
-                            <option value="todo">To Do</option>
-                            <option value="in-progress">In Progress</option>
-                            <option value="blocked">Blocked</option>
-                            <option value="done">Done</option>
-                          </select>
-
-                          <select
-                            value={row.priority ?? "medium"}
-                            onChange={(e) =>
-                              updateCell(index, "priority", e.target.value)
-                            }
-                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                          >
-                            <option value="highest">Highest Priority</option>
-                            <option value="high">High Priority</option>
-                            <option value="medium">Medium Priority</option>
-                            <option value="low">Low Priority</option>
-                          </select>
-
-                          <select
-                            value={row.executionResult ?? "not-run"}
-                            onChange={(e) =>
-                              updateCell(index, "executionResult", e.target.value)
-                            }
-                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                          >
-                            <option value="not-run">Not Run</option>
-                            <option value="passed">Passed</option>
-                            <option value="failed">Failed</option>
-                            <option value="blocked">Blocked</option>
-                          </select>
-
-                          <select
-                            value={row.reviewStatus ?? "draft"}
-                            onChange={(e) =>
-                              updateCell(index, "reviewStatus", e.target.value)
-                            }
-                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                          >
-                            <option value="draft">Draft</option>
-                            <option value="in-review">In Review</option>
-                            <option value="approved">Approved</option>
-                            <option value="changes-requested">Changes Requested</option>
-                          </select>
-
-                          <input
-                            type="text"
-                            value={row.assignee ?? ""}
-                            onChange={(e) =>
-                              updateCell(index, "assignee", e.target.value)
-                            }
-                            placeholder="Assignee"
-                            className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                          />
-
-                          {userOptions.length > 0 ? (
+                        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                          <ReviewField label="Linked issue">
                             <select
-                              value={row.reviewOwner ?? ""}
-                              onChange={(e) =>
-                                updateCell(index, "reviewOwner", e.target.value)
-                              }
-                              className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                              value={row.issueId ?? ""}
+                              onChange={(e) => updateCell(index, "issueId", e.target.value)}
+                              className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
                             >
-                              <option value="">No review owner</option>
-                              {userOptions.map((user) => (
-                                <option key={user.id} value={user.name || user.email}>
-                                  {user.name} ({user.email})
+                              <option value="">
+                                {loadingIssueOptions ? "Loading issues..." : "No linked issue"}
+                              </option>
+                              {issueOptions.map((issue) => (
+                                <option key={issue.id} value={issue.id}>
+                                  {issue.issueKey} - {issue.summary}
                                 </option>
                               ))}
                             </select>
-                          ) : (
+                          </ReviewField>
+
+                          <ReviewField label="Workflow status">
+                            <select
+                              value={row.workflowStatus ?? "backlog"}
+                              onChange={(e) =>
+                                updateCell(index, "workflowStatus", e.target.value)
+                              }
+                              className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                            >
+                              <option value="backlog">Backlog</option>
+                              <option value="todo">To Do</option>
+                              <option value="in-progress">In Progress</option>
+                              <option value="blocked">Blocked</option>
+                              <option value="done">Done</option>
+                            </select>
+                          </ReviewField>
+
+                          <ReviewField label="Priority">
+                            <select
+                              value={row.priority ?? "medium"}
+                              onChange={(e) =>
+                                updateCell(index, "priority", e.target.value)
+                              }
+                              className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                            >
+                              <option value="highest">Highest Priority</option>
+                              <option value="high">High Priority</option>
+                              <option value="medium">Medium Priority</option>
+                              <option value="low">Low Priority</option>
+                            </select>
+                          </ReviewField>
+
+                          <ReviewField label="Execution result">
+                            <select
+                              value={row.executionResult ?? "not-run"}
+                              onChange={(e) =>
+                                updateCell(index, "executionResult", e.target.value)
+                              }
+                              className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                            >
+                              <option value="not-run">Not Run</option>
+                              <option value="passed">Passed</option>
+                              <option value="failed">Failed</option>
+                              <option value="blocked">Blocked</option>
+                            </select>
+                          </ReviewField>
+
+                          <ReviewField label="Review status">
+                            <select
+                              value={row.reviewStatus ?? "draft"}
+                              onChange={(e) =>
+                                updateCell(index, "reviewStatus", e.target.value)
+                              }
+                              className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                            >
+                              <option value="draft">Draft</option>
+                              <option value="in-review">In Review</option>
+                              <option value="approved">Approved</option>
+                              <option value="changes-requested">Changes Requested</option>
+                            </select>
+                          </ReviewField>
+
+                          <ReviewField label="Approval state">
+                            <select
+                              value={row.approvalState ?? "pending"}
+                              onChange={(e) =>
+                                updateCell(index, "approvalState", e.target.value)
+                              }
+                              className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                            >
+                              <option value="pending">{approvalStateLabels.pending}</option>
+                              <option value="approved">{approvalStateLabels.approved}</option>
+                              <option value="rejected">{approvalStateLabels.rejected}</option>
+                            </select>
+                          </ReviewField>
+
+                          <ReviewField label="Handoff state">
+                            <select
+                              value={row.handoffState ?? ""}
+                              onChange={(e) =>
+                                updateCell(index, "handoffState", e.target.value)
+                              }
+                              className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                            >
+                              <option value="">No handoff state</option>
+                              <option value="needs-qa-review">
+                                {handoffStateLabels["needs-qa-review"]}
+                              </option>
+                              <option value="needs-automation">
+                                {handoffStateLabels["needs-automation"]}
+                              </option>
+                              <option value="needs-product-signoff">
+                                {handoffStateLabels["needs-product-signoff"]}
+                              </option>
+                              <option value="release-blocking">
+                                {handoffStateLabels["release-blocking"]}
+                              </option>
+                            </select>
+                          </ReviewField>
+
+                          <ReviewField label="Assignee">
                             <input
                               type="text"
-                              value={row.reviewOwner ?? ""}
+                              value={row.assignee ?? ""}
                               onChange={(e) =>
-                                updateCell(index, "reviewOwner", e.target.value)
+                                updateCell(index, "assignee", e.target.value)
                               }
-                              placeholder="Review owner"
-                              className="min-h-[44px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                              placeholder="Add assignee name"
+                              className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
                             />
-                          )}
+                          </ReviewField>
+
+                          <ReviewField label="Review owner">
+                            {userOptions.length > 0 ? (
+                              <select
+                                value={row.reviewOwner ?? ""}
+                                onChange={(e) =>
+                                  updateCell(index, "reviewOwner", e.target.value)
+                                }
+                                className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                              >
+                                <option value="">No review owner</option>
+                                {userOptions.map((user) => (
+                                  <option key={user.id} value={user.name || user.email}>
+                                    {user.name} ({user.email})
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                value={row.reviewOwner ?? ""}
+                                onChange={(e) =>
+                                  updateCell(index, "reviewOwner", e.target.value)
+                                }
+                                placeholder="Add review owner"
+                                className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                              />
+                            )}
+                          </ReviewField>
                         </div>
                       </div>
+
+                      <WorkflowAuditSummaryCard
+                        row={row}
+                        reviewHistory={rowReviewHistory}
+                        projectRouteRef={projectRouteRef}
+                      />
 
                       <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
                         <div className="flex items-center justify-between gap-3">
@@ -1381,14 +1529,14 @@ export default function TestCaseTable({
                       <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
                               Approval Timeline
                             </p>
                             <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
                               Recent review ownership, note, and approval events
                             </p>
                           </div>
-                          <span className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                          <span className="max-w-full rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-center text-[11px] font-semibold leading-tight text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                             {rowReviewHistory.length} event{rowReviewHistory.length === 1 ? "" : "s"}
                           </span>
                         </div>
@@ -1423,7 +1571,7 @@ export default function TestCaseTable({
                       <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
                               Reviewer Attention
                             </p>
                             <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
@@ -1431,7 +1579,7 @@ export default function TestCaseTable({
                             </p>
                           </div>
                           <span
-                            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                            className={`max-w-full rounded-full border px-2.5 py-1 text-center text-[11px] font-semibold leading-tight ${
                               reviewerAttention?.unreadCount
                                 ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
                                 : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
@@ -1505,7 +1653,7 @@ export default function TestCaseTable({
                       </div>
 
                       <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
                           Reuse & Automation
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -1553,257 +1701,471 @@ export default function TestCaseTable({
                         ) : null}
                       </div>
 
-                      <CaseAutomationPanel
+                      <CaseAutomationLinkPanel
                         row={row}
+                        binding={automationBinding}
                         script={automationScript}
-                        steps={automationScriptSteps}
                         latestExecution={automationExecution}
-                        latestArtifacts={automationExecutionArtifacts}
                         projectRouteRef={projectRouteRef}
-                        onSave={onSaveAutomation}
-                        onRun={onRunAutomation}
-                        onRunWithOptions={onRunAutomationWithOptions}
-                        onDebugInBrowser={onDebugAutomationInBrowser}
+                        onRunAutomation={onRunAutomation}
                         onCreateIssueFromFailure={onCreateAutomationIssue}
                       />
 
-                      <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
-                              Version History
-                            </p>
-                            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-                              Recent saved edits for this case
-                            </p>
-                          </div>
-                          <span className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                            {rowVersionHistory.length} entry{rowVersionHistory.length === 1 ? "" : "ies"}
-                          </span>
-                        </div>
+                      <VersionHistorySummaryCard
+                        rowId={row.id}
+                        versionHistory={rowVersionHistory}
+                        projectRouteRef={projectRouteRef}
+                      />
+                      <EnvironmentSummaryCard
+                        environment={activeEnvironment}
+                        projectRouteRef={projectRouteRef}
+                        rowId={row.id}
+                      />
+                    </div>
+                    )}
+                  </td>
 
-                        {rowVersionHistory.length > 0 ? (
-                          <div className="mt-3 space-y-2">
-                            {selectedVersions.length === 2 && (
-                              <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-3 py-3 text-xs dark:border-sky-500/20 dark:bg-sky-500/10">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div>
-                                    <p className="font-semibold text-sky-900 dark:text-sky-100">
-                                      Version Compare View
-                                    </p>
-                                    <p className="mt-1 text-[11px] text-sky-800/80 dark:text-sky-200/80">
-                                      Comparing {selectedVersions[0]?.reason} and {selectedVersions[1]?.reason}
-                                    </p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => clearVersionCompareSelection(row.id)}
-                                    className="rounded-2xl border border-sky-200 bg-white px-3 py-2 text-[11px] font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-500/20 dark:bg-zinc-900 dark:text-sky-200 dark:hover:bg-zinc-800"
-                                  >
-                                    Clear Compare
-                                  </button>
-                                </div>
-                                <div className="mt-3 space-y-2">
-                                  {buildVersionComparisons(
-                                    selectedVersions[0].rowSnapshot,
-                                    selectedVersions[1].rowSnapshot
-                                  ).length > 0 ? (
-                                    buildVersionComparisons(
-                                      selectedVersions[0].rowSnapshot,
-                                      selectedVersions[1].rowSnapshot
-                                    ).map((field) => (
-                                      <div
-                                        key={field.label}
-                                        className="rounded-2xl border border-sky-200/70 bg-white px-3 py-2 dark:border-sky-500/20 dark:bg-zinc-950"
-                                      >
-                                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-700 dark:text-sky-300">
-                                          {field.label}
-                                        </p>
-                                        <div className="mt-2 grid gap-2 xl:grid-cols-2">
-                                          <div className="rounded-xl border border-zinc-200/80 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900">
-                                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
-                                              Older selection
-                                            </p>
-                                            <p className="mt-1 whitespace-pre-wrap break-words text-zinc-700 dark:text-zinc-200">
-                                              {field.left}
-                                            </p>
-                                          </div>
-                                          <div className="rounded-xl border border-zinc-200/80 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900">
-                                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
-                                              Newer selection
-                                            </p>
-                                            <p className="mt-1 whitespace-pre-wrap break-words text-zinc-700 dark:text-zinc-200">
-                                              {field.right}
-                                            </p>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <p className="rounded-2xl border border-dashed border-sky-200 px-3 py-3 text-sky-800/80 dark:border-sky-500/20 dark:text-sky-200/80">
-                                      These two saved versions match on the tracked comparison fields.
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                            {rowVersionHistory.slice(0, 4).map((version) => (
-                              <div
-                                key={version.id}
-                                className="rounded-2xl border border-zinc-200/80 bg-white px-3 py-2.5 text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
-                              >
-                                <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
-                                  <span>{version.actorName || version.actorEmail || "Reviewer"}</span>
-                                  <span>{formatUtcDate(version.createdAt)}</span>
-                                </div>
-                                <p className="mt-2 font-semibold text-zinc-800 dark:text-zinc-100">
-                                  {version.reason}
-                                </p>
-                                <p className="mt-1 line-clamp-2 leading-5 text-zinc-600 dark:text-zinc-400">
-                                  {version.rowSnapshot.title || version.rowSnapshot.expectedResult || "Snapshot stored"}
-                                </p>
-                                <p className="mt-2 rounded-2xl border border-zinc-200/80 bg-zinc-50 px-3 py-2 text-[11px] leading-5 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
-                                  {summarizeVersionDiff(version.rowSnapshot)}
-                                </p>
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      toggleVersionCompareSelection(row.id, version.id)
-                                    }
-                                    className={`rounded-2xl border px-3 py-2 text-[11px] font-semibold transition ${
-                                      selectedVersionIds.includes(version.id)
-                                        ? "border-sky-300 bg-sky-100 text-sky-900 hover:bg-sky-200 dark:border-sky-400/30 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:bg-sky-500/30"
-                                        : "border-sky-200 bg-white text-sky-800 hover:bg-sky-50 dark:border-sky-500/20 dark:bg-zinc-900 dark:text-sky-200 dark:hover:bg-zinc-800"
-                                    }`}
-                                  >
-                                    {selectedVersionIds.includes(version.id)
-                                      ? "Selected for Compare"
-                                      : "Select to Compare"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => onRestoreCaseVersion(row.id, version.id)}
-                                    className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20"
-                                  >
-                                    Restore This Version
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="mt-3 rounded-2xl border border-dashed border-zinc-200 px-3 py-3 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                            No versions captured yet. Once this case changes, a short edit history will appear here.
+                  <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
+                    {isHighlighted ? (
+                      <CompactPreviewField label="Title Preview" value={row.title} />
+                    ) : (
+                      <textarea
+                        className="min-h-[132px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                        rows={3}
+                        placeholder="Name the scenario and outcome in one clear line"
+                        value={row.title}
+                        onChange={(e) =>
+                          updateCell(index, "title", e.target.value)
+                        }
+                      />
+                    )}
+                  </td>
+
+                  <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
+                    {isHighlighted ? (
+                      <CompactPreviewField label="Preconditions Preview" value={row.preconditions} />
+                    ) : (
+                      <textarea
+                        className="min-h-[132px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                        rows={4}
+                        placeholder="List only setup, permissions, or starting data"
+                        value={row.preconditions}
+                        onChange={(e) =>
+                          updateCell(index, "preconditions", e.target.value)
+                        }
+                      />
+                    )}
+                  </td>
+
+                  <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
+                    {isHighlighted ? (
+                      <CompactPreviewField label="Steps Preview" value={row.steps} />
+                    ) : (
+                      <textarea
+                        className="min-h-[132px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                        rows={5}
+                        placeholder="Use action-oriented steps separated by semicolons"
+                        value={row.steps}
+                        onChange={(e) =>
+                          updateCell(index, "steps", e.target.value)
+                        }
+                      />
+                    )}
+                  </td>
+
+                  <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
+                    {isHighlighted ? (
+                      <CompactPreviewField label="Expected Result Preview" value={row.expectedResult} />
+                    ) : (
+                      <textarea
+                        className="min-h-[132px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                        rows={4}
+                        placeholder="Describe the final observable outcome"
+                        value={row.expectedResult}
+                        onChange={(e) =>
+                          updateCell(index, "expectedResult", e.target.value)
+                        }
+                      />
+                    )}
+                  </td>
+
+                  <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
+                    {isHighlighted ? (
+                      <CompactPreviewField label="Test Data Preview" value={row.testData ?? ""} />
+                    ) : (
+                      <textarea
+                        className="min-h-[132px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                        rows={4}
+                        placeholder="Capture sample values, payloads, or environment setup"
+                        value={row.testData ?? ""}
+                        onChange={(e) =>
+                          updateCell(index, "testData", e.target.value)
+                        }
+                      />
+                    )}
+                  </td>
+
+                  <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
+                    {isHighlighted ? (
+                      <div className="rounded-[20px] border border-zinc-200/80 bg-white/92 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/78">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
+                          Workspace Actions
+                        </p>
+                        <p className="mt-2 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+                          Full editing and secondary modules are open directly below.
+                        </p>
+                        <div className="mt-3 flex flex-col gap-2">
+                          <button
+                            onClick={() => regenerateRow(index)}
+                            disabled={loading || isRegenerating || !input.trim()}
+                            className="rounded-xl bg-[linear-gradient(135deg,_#d97706_0%,_#f59e0b_100%)] px-3 py-2.5 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(217,119,6,0.5)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isRegenerating
+                              ? "Working..."
+                              : draftRewriteTargets.length > 0
+                              ? "Improve Weak Draft"
+                              : "Refine Draft"}
+                          </button>
+                          <button
+                            onClick={() => deleteRow(index)}
+                            className="rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-500/30 dark:bg-zinc-950 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex min-w-[132px] flex-col gap-2">
+                        <button
+                          onClick={() => regenerateRow(index)}
+                          disabled={loading || isRegenerating || !input.trim()}
+                          className="rounded-xl bg-[linear-gradient(135deg,_#d97706_0%,_#f59e0b_100%)] px-3 py-2.5 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(217,119,6,0.5)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isRegenerating
+                            ? "Working..."
+                            : draftRewriteTargets.length > 0
+                            ? "Improve Weak Draft"
+                            : "Refine Draft"}
+                        </button>
+                        {draftReadinessSignals.length > 0 && (
+                          <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+                            {draftRewriteTargets.length > 0
+                              ? `Targets ${draftRewriteTargets.join(", ")}.`
+                              : "Best for wording cleanup before review handoff."}
                           </p>
                         )}
-                      </div>
-                    </div>
-                  </td>
+                        {canSendToReview && (
+                          <button
+                            onClick={() => updateCell(index, "reviewStatus", "in-review")}
+                            className="rounded-xl border border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-emerald-200 dark:hover:bg-emerald-500/10"
+                          >
+                            Send To Review
+                          </button>
+                        )}
+                        {canSendToReview && (
+                          <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+                            This draft is ready for reviewer handoff.
+                          </p>
+                        )}
 
-                  <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
-                    <textarea
-                      className="min-h-[132px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                      rows={3}
-                      placeholder="Name the scenario and outcome in one clear line"
-                      value={row.title}
-                      onChange={(e) =>
-                        updateCell(index, "title", e.target.value)
-                      }
-                    />
-                  </td>
-
-                  <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
-                    <textarea
-                      className="min-h-[132px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                      rows={4}
-                      placeholder="List only setup, permissions, or starting data"
-                      value={row.preconditions}
-                      onChange={(e) =>
-                        updateCell(index, "preconditions", e.target.value)
-                      }
-                    />
-                  </td>
-
-                  <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
-                    <textarea
-                      className="min-h-[132px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                      rows={5}
-                      placeholder="Use action-oriented steps separated by semicolons"
-                      value={row.steps}
-                      onChange={(e) =>
-                        updateCell(index, "steps", e.target.value)
-                      }
-                    />
-                  </td>
-
-                  <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
-                    <textarea
-                      className="min-h-[132px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                      rows={4}
-                      placeholder="Describe the final observable outcome"
-                      value={row.expectedResult}
-                      onChange={(e) =>
-                        updateCell(index, "expectedResult", e.target.value)
-                      }
-                    />
-                  </td>
-
-                  <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
-                    <textarea
-                      className="min-h-[132px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
-                      rows={4}
-                      placeholder="Capture sample values, payloads, or environment setup"
-                      value={row.testData ?? ""}
-                      onChange={(e) =>
-                        updateCell(index, "testData", e.target.value)
-                      }
-                    />
-                  </td>
-
-                  <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
-                    <div className="flex min-w-[132px] flex-col gap-2">
-                      <button
-                        onClick={() => regenerateRow(index)}
-                        disabled={loading || isRegenerating || !input.trim()}
-                        className="rounded-xl bg-[linear-gradient(135deg,_#d97706_0%,_#f59e0b_100%)] px-3 py-2.5 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(217,119,6,0.5)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isRegenerating
-                          ? "Working..."
-                          : draftRewriteTargets.length > 0
-                          ? "Improve Weak Draft"
-                          : "Refine Draft"}
-                      </button>
-                      {draftReadinessSignals.length > 0 && (
-                        <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                          {draftRewriteTargets.length > 0
-                            ? `Targets ${draftRewriteTargets.join(", ")}.`
-                            : "Best for wording cleanup before review handoff."}
-                        </p>
-                      )}
-                      {canSendToReview && (
                         <button
-                          onClick={() => updateCell(index, "reviewStatus", "in-review")}
-                          className="rounded-xl border border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-emerald-200 dark:hover:bg-emerald-500/10"
+                          onClick={() => deleteRow(index)}
+                          className="rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-500/30 dark:bg-zinc-950 dark:text-rose-300 dark:hover:bg-rose-500/10"
                         >
-                          Send To Review
+                          Delete
                         </button>
-                      )}
-                      {canSendToReview && (
-                        <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                          This draft is ready for reviewer handoff.
-                        </p>
-                      )}
-
-                      <button
-                        onClick={() => deleteRow(index)}
-                        className="rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-500/30 dark:bg-zinc-950 dark:text-rose-300 dark:hover:bg-rose-500/10"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                      </div>
+                    )}
                   </td>
                 </tr>
+                {isHighlighted ? (
+                  <tr className="bg-zinc-50/70 dark:bg-zinc-950/40">
+                    <td
+                      colSpan={totalColumnCount}
+                      className="border-b border-zinc-200/80 px-4 pb-6 pt-0 dark:border-zinc-800"
+                    >
+                      <div className="rounded-[30px] border border-zinc-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,244,245,0.94))] p-4 shadow-[0_28px_70px_-44px_rgba(15,23,42,0.4)] dark:border-zinc-700 dark:bg-[linear-gradient(180deg,rgba(24,24,27,0.96),rgba(9,9,11,0.92))] lg:p-5">
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                              Focused Case Workspace
+                            </p>
+                            <textarea
+                              className="mt-3 min-h-[88px] w-full resize-y overflow-auto rounded-[24px] border border-zinc-200/80 bg-white px-4 py-3 text-base font-semibold leading-7 text-zinc-900 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                              rows={2}
+                              placeholder="Name the scenario and outcome in one clear line"
+                              value={row.title}
+                              onChange={(e) => updateCell(index, "title", e.target.value)}
+                            />
+                            <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+                              {traceability?.requirementSentence?.trim() ||
+                                "No linked requirement summary yet. Keep the title and expected result aligned to the scenario you want reviewers to sign off."}
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${reviewTone[row.reviewStatus ?? "draft"]}`}>
+                                {reviewStatusLabels[row.reviewStatus ?? "draft"]}
+                              </span>
+                              <span className="inline-flex rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                                Automation {automationStatusLabels[row.automationStatus ?? "manual"]}
+                              </span>
+                              <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                                {row.riskLevel ? `${row.riskLevel} risk` : "Risk not set"}
+                              </span>
+                              <span className="inline-flex rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                                Last run {automationExecution?.startedAt ? formatUtcDate(automationExecution.startedAt) : executionResultLabels[row.executionResult ?? "not-run"]}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 xl:max-w-[24rem] xl:justify-end">
+                            <button
+                              type="button"
+                              onClick={() => regenerateRow(index)}
+                              disabled={loading || isRegenerating || !input.trim()}
+                              className="rounded-2xl bg-[linear-gradient(135deg,_#d97706_0%,_#f59e0b_100%)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(217,119,6,0.5)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isRegenerating
+                                ? "Working..."
+                                : draftRewriteTargets.length > 0
+                                ? "Improve Weak Draft"
+                                : "Refine Draft"}
+                            </button>
+                            {canSendToReview ? (
+                              <button
+                                type="button"
+                                onClick={() => updateCell(index, "reviewStatus", "in-review")}
+                                className="rounded-2xl border border-emerald-200 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-emerald-200 dark:hover:bg-emerald-500/10"
+                              >
+                                Send To Review
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => onCloneRow(row.id)}
+                              className="rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                            >
+                              Clone Case
+                            </button>
+                            {onGenerateAutomation ? (
+                              <button
+                                type="button"
+                                onClick={() => void onGenerateAutomation(row.id)}
+                                disabled={isGeneratingAutomation}
+                                className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
+                              >
+                                {isGeneratingAutomation ? "Opening..." : "Open In Automation"}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.75fr)_minmax(330px,0.95fr)]">
+                          <div className="space-y-5">
+                            <WorkspaceSection
+                              eyebrow="Core editor"
+                              title="Case steps and evidence"
+                              description="Keep the scenario, setup, execution steps, and expected outcome together so the main work surface stays above the fold."
+                            >
+                              <div className="grid gap-4 lg:grid-cols-2">
+                                <ReviewField label="Preconditions">
+                                  <textarea
+                                    className="min-h-[160px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                                    rows={6}
+                                    placeholder="List only setup, permissions, or starting data"
+                                    value={row.preconditions}
+                                    onChange={(e) => updateCell(index, "preconditions", e.target.value)}
+                                  />
+                                </ReviewField>
+                                <ReviewField label="Test Data">
+                                  <textarea
+                                    className="min-h-[160px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                                    rows={6}
+                                    placeholder="Capture sample values, payloads, or environment setup"
+                                    value={row.testData ?? ""}
+                                    onChange={(e) => updateCell(index, "testData", e.target.value)}
+                                  />
+                                </ReviewField>
+                              </div>
+                              <div className="mt-4">
+                                <ReviewField label="Steps">
+                                  <textarea
+                                    className="min-h-[220px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                                    rows={8}
+                                    placeholder="Use action-oriented steps separated by semicolons"
+                                    value={row.steps}
+                                    onChange={(e) => updateCell(index, "steps", e.target.value)}
+                                  />
+                                </ReviewField>
+                              </div>
+                              <div className="mt-4">
+                                <ReviewField label="Expected Result">
+                                  <textarea
+                                    className="min-h-[160px] w-full resize-y overflow-auto rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-3 text-sm leading-6 text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                                    rows={6}
+                                    placeholder="Describe the final observable outcome"
+                                    value={row.expectedResult}
+                                    onChange={(e) => updateCell(index, "expectedResult", e.target.value)}
+                                  />
+                                </ReviewField>
+                              </div>
+                            </WorkspaceSection>
+
+                            <WorkspaceSection
+                              eyebrow="Workflow"
+                              title="Review, status, and ownership"
+                              description="Related controls stay in a compact responsive grid instead of a long vertical stack."
+                            >
+                              <div className="grid gap-4 xl:grid-cols-2">
+                                <ReviewField label="Linked issue">
+                                  <select
+                                    value={row.issueId ?? ""}
+                                    onChange={(e) => updateCell(index, "issueId", e.target.value)}
+                                    className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                                  >
+                                    <option value="">{loadingIssueOptions ? "Loading issues..." : "No linked issue"}</option>
+                                    {issueOptions.map((issue) => (
+                                      <option key={issue.id} value={issue.id}>
+                                        {issue.issueKey} - {issue.summary}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </ReviewField>
+                                <ReviewField label="Workflow status">
+                                  <select
+                                    value={row.workflowStatus ?? "backlog"}
+                                    onChange={(e) => updateCell(index, "workflowStatus", e.target.value)}
+                                    className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                                  >
+                                    <option value="backlog">Backlog</option>
+                                    <option value="todo">To Do</option>
+                                    <option value="in-progress">In Progress</option>
+                                    <option value="blocked">Blocked</option>
+                                    <option value="done">Done</option>
+                                  </select>
+                                </ReviewField>
+                                <ReviewField label="Priority">
+                                  <select
+                                    value={row.priority ?? "medium"}
+                                    onChange={(e) => updateCell(index, "priority", e.target.value)}
+                                    className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                                  >
+                                    <option value="highest">Highest Priority</option>
+                                    <option value="high">High Priority</option>
+                                    <option value="medium">Medium Priority</option>
+                                    <option value="low">Low Priority</option>
+                                  </select>
+                                </ReviewField>
+                                <ReviewField label="Review owner">
+                                  {userOptions.length > 0 ? (
+                                    <select
+                                      value={row.reviewOwner ?? ""}
+                                      onChange={(e) => updateCell(index, "reviewOwner", e.target.value)}
+                                      className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                                    >
+                                      <option value="">No review owner</option>
+                                      {userOptions.map((user) => (
+                                        <option key={user.id} value={user.name || user.email}>
+                                          {user.name} ({user.email})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <input
+                                      type="text"
+                                      value={row.reviewOwner ?? ""}
+                                      onChange={(e) => updateCell(index, "reviewOwner", e.target.value)}
+                                      placeholder="Add review owner"
+                                      className="min-h-[48px] w-full rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-2.5 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                                    />
+                                  )}
+                                </ReviewField>
+                              </div>
+                            </WorkspaceSection>
+
+                            <WorkspaceSection
+                              eyebrow="Notes"
+                              title="Review thread"
+                              description={`Keep reviewer feedback and note-taking in the main work surface for ${activeReviewerLabel}.`}
+                            >
+                              <textarea
+                                value={caseCommentDrafts[row.id] ?? ""}
+                                onChange={(event) => onCaseCommentDraftChange(row.id, event.target.value)}
+                                rows={4}
+                                placeholder="Add a review note for this case..."
+                                className="min-h-[110px] w-full resize-y rounded-2xl border border-zinc-200/80 bg-white px-3 py-3 text-sm text-zinc-800 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => onAddCaseComment(row.id)}
+                                className="mt-3 inline-flex min-h-[42px] items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20"
+                              >
+                                Post Review Note
+                              </button>
+                            </WorkspaceSection>
+                          </div>
+
+                          <aside className="space-y-4 self-start xl:sticky xl:top-24">
+                            <InspectorSection title="Automation" description="Linked execution details and shortcuts.">
+                              <CaseAutomationLinkPanel
+                                row={row}
+                                binding={automationBinding}
+                                script={automationScript}
+                                latestExecution={automationExecution}
+                                projectRouteRef={projectRouteRef}
+                                onRunAutomation={onRunAutomation}
+                                onCreateIssueFromFailure={onCreateAutomationIssue}
+                              />
+                            </InspectorSection>
+                            <InspectorSection title="Environment" description="Active environment summary and navigation.">
+                              <EnvironmentSummaryCard
+                                environment={activeEnvironment}
+                                projectRouteRef={projectRouteRef}
+                                rowId={row.id}
+                              />
+                            </InspectorSection>
+                            <InspectorSection title="Activity and versions" description="Audit status and recent snapshots." defaultOpen={false}>
+                              <div className="space-y-4">
+                                <WorkflowAuditSummaryCard
+                                  row={row}
+                                  reviewHistory={rowReviewHistory}
+                                  projectRouteRef={projectRouteRef}
+                                />
+                                <VersionHistorySummaryCard
+                                  rowId={row.id}
+                                  versionHistory={rowVersionHistory}
+                                  projectRouteRef={projectRouteRef}
+                                />
+                              </div>
+                            </InspectorSection>
+                            <InspectorSection title="Metadata and reuse" description="Secondary controls stay grouped here." defaultOpen={false}>
+                              <div className="space-y-3">
+                                <CompactPreviewField
+                                  label="Watchers"
+                                  value={`${rowWatchers.length} follower${rowWatchers.length === 1 ? "" : "s"}${row.reviewOwner?.trim() ? `\nOwner: ${row.reviewOwner}` : ""}`}
+                                />
+                                <CompactPreviewField
+                                  label="Generation signals"
+                                  value={
+                                    draftReadinessSignals.length > 0
+                                      ? draftReadinessSignals.join("\n")
+                                      : "This draft is structured enough to move into review or approval."
+                                  }
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => onSaveTemplateFromRow(row)}
+                                  className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                                >
+                                  Save As Template
+                                </button>
+                              </div>
+                            </InspectorSection>
+                          </aside>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
               );
             })}
           </tbody>

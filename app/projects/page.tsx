@@ -5,8 +5,7 @@ import BarChart from "../../components/charts/BarChart";
 import TrendChart from "../../components/charts/TrendChart";
 import ResponsiveShell from "../../components/ResponsiveShell";
 import {
-  IssueServiceNotReadyError,
-  listProjectIssues,
+  listProjectIssuesForUi,
 } from "../../services/issue-service";
 import { readProjects } from "../../utils/project-store";
 import { formatUtcDate } from "../../utils/date-format";
@@ -72,12 +71,12 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
       let blockerIssueCount = 0;
 
       try {
-        const issues = await listProjectIssues(project.projectKey?.trim() || project.id);
+        const issues = await listProjectIssuesForUi(
+          project.projectKey?.trim() || project.id
+        );
         blockerIssueCount = issues.filter((issue) => issue.status === "blocked").length;
       } catch (error) {
-        if (!(error instanceof IssueServiceNotReadyError)) {
-          console.error("PROJECT LIBRARY ISSUE SIGNAL ERROR:", error);
-        }
+        console.error("PROJECT LIBRARY ISSUE SIGNAL ERROR:", error);
       }
 
       const failedCaseCount = (project.rows ?? []).filter(

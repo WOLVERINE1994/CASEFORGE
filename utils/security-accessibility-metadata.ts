@@ -140,6 +140,7 @@ export const enrichGeneratedRowsWithDomainMetadata = (
       ui: "ui",
       negative: "negative",
       edge: "edge",
+      salesforce: "functional",
     };
 
     return {

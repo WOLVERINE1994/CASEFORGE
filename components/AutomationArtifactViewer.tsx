@@ -39,6 +39,32 @@ export default function AutomationArtifactViewer({ execution, artifacts }: Props
             {execution.logSummary}
           </pre>
         ) : null}
+        {execution.stepResults?.length ? (
+          <div className="mt-3 space-y-2">
+            {execution.stepResults.map((stepResult) => (
+              <div
+                key={`${stepResult.stepId}-${stepResult.stepIndex}`}
+                className={`rounded-2xl border px-3 py-2 ${
+                  stepResult.status === "passed"
+                    ? "border-emerald-200/80 bg-emerald-50/70 text-emerald-900 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-100"
+                    : "border-rose-200/80 bg-rose-50/70 text-rose-900 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-100"
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-semibold">
+                    {stepResult.referenceLabel || stepResult.sourceStepId || stepResult.stepId}
+                  </p>
+                  <span className="rounded-full border border-current/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                    {stepResult.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-[11px] leading-5">
+                  {stepResult.failureReason || stepResult.message || "Step result recorded."}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
       {artifacts.length > 0 ? (
         <div className="space-y-2">

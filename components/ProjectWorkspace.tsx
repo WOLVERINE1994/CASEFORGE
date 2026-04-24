@@ -7,6 +7,8 @@ import { parseResultToRows, rowsToText } from "../utils/parser";
 import RequirementRiskHeatmap from "./RequirementRiskHeatmap";
 import BugPredictionPanel from "./BugPredictionPanel";
 import AcceptanceCriteriaPanel from "./AcceptanceCriteriaPanel";
+import CasesFilterToolbar from "./CasesFilterToolbar";
+import CasesSavedViewsSection from "./CasesSavedViewsSection";
 import SourceImportPanel from "./SourceImportPanel";
 import AmbiguityQuestionsPanel from "./AmbiguityQuestionsPanel";
 import CoverageGapDetector from "./CoverageGapDetector";
@@ -17,6 +19,12 @@ import ExecutionReadinessPanel from "./ExecutionReadinessPanel";
 import BusinessReportPanel from "./BusinessReportPanel";
 import CollaborationPanel from "./CollaborationPanel";
 import TrustCenterPanel from "./TrustCenterPanel";
+import WorkflowValuePath from "./WorkflowValuePath";
+import {
+  AdvancedFiltersPanel,
+  OverlayFormShell,
+  SecondaryMetadataPanel,
+} from "./FilterWorkspaceSections";
 import { downloadCSV, downloadExcel } from "../utils/export";
 import ProjectManager from "./ProjectManager";
 import TestCaseTable from "./TestCaseTable";
@@ -46,19 +54,30 @@ import { buildWorkspaceReportData } from "../utils/report-data";
 import { importSourceArtifact } from "../utils/source-imports";
 import { suggestTestData } from "../utils/test-data";
 import { buildTrustCenterAnalysis } from "../utils/trust-center";
+import { buildDefaultAutomationReuseLibrary } from "../utils/automation-reuse";
 import {
+  getAutomationArtifactsForExecution,
   getAutomationBindingForCase,
+  getAutomationExecutionsForCase,
   getAutomationScriptById,
+  normalizeAutomationRuntimeProvider,
 } from "../utils/automation";
+import { inferAutomationGenerationDomain } from "../utils/automation-step-generation";
 import {
   analyzeCoverageGaps,
   createManualGapDraft,
   getCoverageGapTitle,
 } from "../utils/coverage-gap-analysis";
 import {
+  buildGenerationFeedbackRecord,
+  buildGenerationQualitySignals,
+} from "../utils/generation-feedback";
+import {
+  approvalStateLabels,
   automationProviderOptions,
   formatTestCaseId,
   generationModeLabels,
+  handoffStateLabels,
   mergeRows,
   modePrimaryType,
   normalizeAutomationProvider,
@@ -72,6 +91,9 @@ import {
   type AutomationBinding,
   type AutomationExecution,
   type AutomationExecutionArtifact,
+  type AutomationEnvironmentBinding,
+  type AutomationReusableBlock,
+  type AutomationSelectorPreset,
   type AutomationScript,
   type AutomationStep,
   type CaseTemplate,
@@ -110,6 +132,23 @@ import {
 } from "../utils/reviewer-notification-preferences";
 
 const STORAGE_KEY = "tc_projects_v1";
+
+const parseAutomationApiResponse = async <T,>(response: Response): Promise<T> => {
+  const raw = await response.text();
+
+  try {
+    return raw ? (JSON.parse(raw) as T) : ({} as T);
+  } catch {
+    const trimmed = raw.trim();
+    if (/^<!doctype html>|^<html/i.test(trimmed)) {
+      throw new Error(
+        "The automation API returned an HTML error page instead of JSON. Check the server console for the underlying error."
+      );
+    }
+
+    throw new Error("The automation API returned an invalid response.");
+  }
+};
 
 const downloadJsonFile = (filename: string, value: unknown) => {
   const blob = new Blob([JSON.stringify(value, null, 2)], {
@@ -354,11 +393,36 @@ const hydrateProject = (project: Project): Project => ({
   automationBindings: project.automationBindings ?? [],
   automationExecutions: project.automationExecutions ?? [],
   automationArtifacts: project.automationArtifacts ?? [],
+  automationReusableBlocks: project.automationReusableBlocks ?? [],
+  automationSelectorPresets: project.automationSelectorPresets ?? [],
+  automationEnvironmentBindings: project.automationEnvironmentBindings ?? [],
+  activeAutomationEnvironmentId: project.activeAutomationEnvironmentId ?? "",
+  generationFeedbackLog: project.generationFeedbackLog ?? [],
   viewPreferences: project.viewPreferences ?? {},
   savedViews: project.savedViews ?? { cases: [], runs: [] },
   lastGeneratedChangeImpactSignature:
     project.lastGeneratedChangeImpactSignature ?? null,
 });
+
+const ensureAutomationReuseDefaults = (projectId: string, project?: Project | null) => {
+  if (
+    (project?.automationReusableBlocks?.length ?? 0) > 0 ||
+    (project?.automationSelectorPresets?.length ?? 0) > 0 ||
+    (project?.automationEnvironmentBindings?.length ?? 0) > 0
+  ) {
+    return {
+      blocks: project?.automationReusableBlocks ?? [],
+      selectorPresets: project?.automationSelectorPresets ?? [],
+      environments: project?.automationEnvironmentBindings ?? [],
+      activeEnvironmentId:
+        project?.activeAutomationEnvironmentId ||
+        project?.automationEnvironmentBindings?.find((item) => item.isDefault)?.id ||
+        "",
+    };
+  }
+
+  return buildDefaultAutomationReuseLibrary(projectId);
+};
 
 const wait = (ms: number) =>
   new Promise<void>((resolve) => {
@@ -585,12 +649,30 @@ export default function ProjectWorkspace({
   const [automationArtifacts, setAutomationArtifacts] = useState<
     AutomationExecutionArtifact[]
   >([]);
+  const [automationReusableBlocks, setAutomationReusableBlocks] = useState<
+    AutomationReusableBlock[]
+  >([]);
+  const [automationSelectorPresets, setAutomationSelectorPresets] = useState<
+    AutomationSelectorPreset[]
+  >([]);
+  const [automationEnvironmentBindings, setAutomationEnvironmentBindings] = useState<
+    AutomationEnvironmentBinding[]
+  >([]);
+  const [activeAutomationEnvironmentId, setActiveAutomationEnvironmentId] =
+    useState("");
+  const [generatingAutomationRowIds, setGeneratingAutomationRowIds] = useState<string[]>([]);
+  const [generationFeedbackLog, setGenerationFeedbackLog] = useState<
+    NonNullable<Project["generationFeedbackLog"]>
+  >([]);
   const generationModeHelperText = useMemo(() => {
     if (generationMode === "security") {
       return "Generate defensive manual validation for authentication, authorization, sessions, input validation, data protection, abuse resistance, and safe failure handling.";
     }
     if (generationMode === "accessibility") {
       return "Generate manual WCAG-oriented validation for keyboard flow, focus behavior, semantics, forms, screen readers, contrast, zoom and reflow, and status messaging.";
+    }
+    if (generationMode === "salesforce") {
+      return "Generate Salesforce-ready manual coverage for objects, permissions, Lightning flows, validations, approvals, reporting, and environment-aware business workflows.";
     }
     return "Advanced QA tools stay below so the first pass stays focused.";
   }, [generationMode]);
@@ -666,6 +748,12 @@ export default function ProjectWorkspace({
     caseAccessibilityCategoryFilter,
     setCaseAccessibilityCategoryFilter,
   ] = useState<NonNullable<TestCaseRow["accessibilityCategory"]> | "">("");
+  const [caseApprovalStateFilter, setCaseApprovalStateFilter] = useState<
+    NonNullable<TestCaseRow["approvalState"]> | ""
+  >("");
+  const [caseHandoffStateFilter, setCaseHandoffStateFilter] = useState<
+    NonNullable<TestCaseRow["handoffState"]> | ""
+  >("");
   const [caseLinkedFilter, setCaseLinkedFilter] = useState<"all" | "linked" | "unlinked">(
     "all"
   );
@@ -767,6 +855,7 @@ export default function ProjectWorkspace({
   const templateLibrarySectionRef = useRef<HTMLDivElement | null>(null);
   const generatedCasesSectionRef = useRef<HTMLElement | null>(null);
   const uncoveredRequirementSectionRef = useRef<HTMLDetailsElement | null>(null);
+  const savedViewsSectionRef = useRef<HTMLDivElement | null>(null);
 
   const hasRows = rows.length > 0;
   const isCasesSection = initialSection === "cases";
@@ -814,6 +903,14 @@ export default function ProjectWorkspace({
           behavior: "smooth",
           block: "start",
         });
+        return;
+      }
+
+      if (focusTarget === "saved-views") {
+        savedViewsSectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
       }
     }, 150);
 
@@ -841,6 +938,8 @@ export default function ProjectWorkspace({
     setCaseRiskLevelFilter("");
     setCaseSecurityCategoryFilter("");
     setCaseAccessibilityCategoryFilter("");
+    setCaseApprovalStateFilter("");
+    setCaseHandoffStateFilter("");
     setCaseCollaborationFilter("");
     setCaseSuiteFilter("");
     setCaseComponentFilter("");
@@ -870,25 +969,35 @@ export default function ProjectWorkspace({
     setCaseReviewHealthFilter("");
   }, []);
 
-  const applySavedCasesView = useCallback((view: CasesSavedView) => {
-    setCaseSearchQuery(view.filters.searchQuery);
-    setCaseAssigneeFilter(view.filters.assignee);
-    setCasePriorityFilter(view.filters.priority);
-    setCaseTestDomainFilter(view.filters.testDomain);
-    setCaseRiskLevelFilter(view.filters.riskLevel);
-    setCaseSecurityCategoryFilter(view.filters.securityCategory);
-    setCaseAccessibilityCategoryFilter(view.filters.accessibilityCategory);
-    setCaseLinkedFilter(view.filters.linked);
-    setCaseExecutionFilter(view.filters.execution);
-    setCaseReviewFilter(view.filters.review);
-    setCaseReviewHealthFilter(view.filters.reviewHealth);
-    setCaseCollaborationFilter(view.filters.collaboration);
-    setCaseSuiteFilter(view.filters.suite);
-    setCaseComponentFilter(view.filters.component);
-    setCaseAutomationFilter(view.filters.automation);
-    setCaseAutomationProviderFilter(view.filters.automationProvider);
-    setCaseArchivedFilter(view.filters.archived);
+  const applyCaseFilters = useCallback((filters: CasesSavedView["filters"]) => {
+    setCaseSearchQuery(filters.searchQuery);
+    setCaseAssigneeFilter(filters.assignee);
+    setCasePriorityFilter(filters.priority);
+    setCaseTestDomainFilter(filters.testDomain);
+    setCaseRiskLevelFilter(filters.riskLevel);
+    setCaseSecurityCategoryFilter(filters.securityCategory);
+    setCaseAccessibilityCategoryFilter(filters.accessibilityCategory);
+    setCaseApprovalStateFilter(filters.approvalState ?? "");
+    setCaseHandoffStateFilter(filters.handoffState ?? "");
+    setCaseLinkedFilter(filters.linked);
+    setCaseExecutionFilter(filters.execution);
+    setCaseReviewFilter(filters.review);
+    setCaseReviewHealthFilter(filters.reviewHealth);
+    setCaseCollaborationFilter(filters.collaboration);
+    setCaseSuiteFilter(filters.suite);
+    setCaseComponentFilter(filters.component);
+    setCaseAutomationFilter(filters.automation);
+    setCaseAutomationProviderFilter(filters.automationProvider);
+    setCaseArchivedFilter(filters.archived);
   }, []);
+
+  const applySavedCasesView = useCallback((view: CasesSavedView) => {
+    applyCaseFilters(view.filters);
+  }, [applyCaseFilters]);
+
+  const resetCaseFilters = useCallback(() => {
+    applyCasesPreset("default");
+  }, [applyCasesPreset]);
 
   useEffect(() => {
     if (!isCasesSection) {
@@ -902,6 +1011,8 @@ export default function ProjectWorkspace({
     const nextRiskLevel = searchParams.get("riskLevel");
     const nextSecurityCategory = searchParams.get("securityCategory");
     const nextAccessibilityCategory = searchParams.get("accessibilityCategory");
+    const nextApprovalState = searchParams.get("approvalState");
+    const nextHandoffState = searchParams.get("handoffState");
     const nextExecution = searchParams.get("execution");
     const nextLinked = searchParams.get("linked");
     const nextReview = searchParams.get("review");
@@ -968,6 +1079,21 @@ export default function ProjectWorkspace({
         ? nextAccessibilityCategory
         : ""
     );
+    setCaseApprovalStateFilter(
+      nextApprovalState === "pending" ||
+        nextApprovalState === "approved" ||
+        nextApprovalState === "rejected"
+        ? nextApprovalState
+        : ""
+    );
+    setCaseHandoffStateFilter(
+      nextHandoffState === "needs-qa-review" ||
+        nextHandoffState === "needs-automation" ||
+        nextHandoffState === "needs-product-signoff" ||
+        nextHandoffState === "release-blocking"
+        ? nextHandoffState
+        : ""
+    );
     setCaseExecutionFilter(
       nextExecution === "not-run" ||
         nextExecution === "passed" ||
@@ -1030,6 +1156,8 @@ export default function ProjectWorkspace({
       "riskLevel",
       "securityCategory",
       "accessibilityCategory",
+      "approvalState",
+      "handoffState",
       "linked",
       "execution",
       "review",
@@ -1132,6 +1260,18 @@ export default function ProjectWorkspace({
       nextParams.delete("accessibilityCategory");
     }
 
+    if (caseApprovalStateFilter) {
+      nextParams.set("approvalState", caseApprovalStateFilter);
+    } else {
+      nextParams.delete("approvalState");
+    }
+
+    if (caseHandoffStateFilter) {
+      nextParams.set("handoffState", caseHandoffStateFilter);
+    } else {
+      nextParams.delete("handoffState");
+    }
+
     if (caseLinkedFilter !== "all") {
       nextParams.set("linked", caseLinkedFilter);
     } else {
@@ -1204,8 +1344,10 @@ export default function ProjectWorkspace({
     });
   }, [
     caseAccessibilityCategoryFilter,
+    caseApprovalStateFilter,
     caseAssigneeFilter,
     caseExecutionFilter,
+    caseHandoffStateFilter,
     caseAutomationFilter,
     caseAutomationProviderFilter,
     caseArchivedFilter,
@@ -1505,7 +1647,7 @@ export default function ProjectWorkspace({
     }, 3500);
   };
 
-  const addAuditEntry = (action: string, detail: string) => {
+  const addAuditEntry = useCallback((action: string, detail: string) => {
     setAuditTrail((currentEntries) => [
       {
         id: crypto.randomUUID(),
@@ -1515,7 +1657,7 @@ export default function ProjectWorkspace({
       },
       ...currentEntries,
     ].slice(0, 40));
-  };
+  }, []);
 
   const appendCaseReviewHistory = useCallback(
     (rowId: string, action: string, detail: string) => {
@@ -2725,7 +2867,7 @@ export default function ProjectWorkspace({
     );
   };
 
-  const focusWorkspaceRow = (
+  const focusWorkspaceRow = useCallback((
     rowId: string,
     label = "Focused in workspace",
     commentId?: string | null
@@ -2742,7 +2884,7 @@ export default function ProjectWorkspace({
         target.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }, 80);
-  };
+  }, []);
 
   const focusRequirementEditor = () => {
     window.setTimeout(() => {
@@ -2815,6 +2957,11 @@ export default function ProjectWorkspace({
         automationBindings,
         automationExecutions,
         automationArtifacts,
+        automationReusableBlocks,
+        automationSelectorPresets,
+        automationEnvironmentBindings,
+        activeAutomationEnvironmentId,
+        generationFeedbackLog,
         viewPreferences: {
           ...(existingProject?.viewPreferences ?? {}),
           casesDefaultPreset,
@@ -2852,7 +2999,12 @@ export default function ProjectWorkspace({
       automationBindings,
       automationExecutions,
       automationArtifacts,
+      automationReusableBlocks,
+      automationSelectorPresets,
+      automationEnvironmentBindings,
+      activeAutomationEnvironmentId,
       coverageDepth,
+      generationFeedbackLog,
       generationMode,
       input,
       projectKey,
@@ -3073,6 +3225,12 @@ export default function ProjectWorkspace({
       setAutomationBindings(project.automationBindings ?? []);
       setAutomationExecutions(project.automationExecutions ?? []);
       setAutomationArtifacts(project.automationArtifacts ?? []);
+      const reuseLibrary = ensureAutomationReuseDefaults(project.id, project);
+      setAutomationReusableBlocks(reuseLibrary.blocks);
+      setAutomationSelectorPresets(reuseLibrary.selectorPresets);
+      setAutomationEnvironmentBindings(reuseLibrary.environments);
+      setActiveAutomationEnvironmentId(reuseLibrary.activeEnvironmentId);
+      setGenerationFeedbackLog(project.generationFeedbackLog ?? []);
       setCasesSavedViews(project.savedViews?.cases ?? []);
       setCasesDefaultPreset(project.viewPreferences?.casesDefaultPreset ?? "default");
       setCasesDefaultSavedViewId(project.viewPreferences?.casesDefaultSavedViewId ?? null);
@@ -3351,10 +3509,35 @@ export default function ProjectWorkspace({
 
   const parseGeneratedResult = (result: string) => {
     const parsedRows = parseResultToRows(result || "");
-    const preparedRows = enrichGeneratedRowsWithDomainMetadata(
+    const enrichedRows = enrichGeneratedRowsWithDomainMetadata(
       prepareGeneratedRows(parsedRows, generationMode),
       generationMode
     );
+    const preparedRows = enrichedRows.map((row) => {
+      const generatedBy = activeReviewer
+        ? {
+            id: activeReviewer.id,
+            name: activeReviewer.name,
+            email: activeReviewer.email,
+            at: Date.now(),
+          }
+        : undefined;
+      return {
+        ...row,
+        generationSource: "ai-generated" as const,
+        approvalState: row.approvalState ?? "pending",
+        generatedBy,
+        generationFeedback: buildGenerationFeedbackRecord({
+          row: {
+            ...row,
+            generationSource: "ai-generated",
+          },
+          sourceRequirement: input.trim(),
+          generationMode,
+          disposition: "accepted",
+        }),
+      };
+    });
 
     return {
       parsedRows,
@@ -3402,6 +3585,11 @@ export default function ProjectWorkspace({
       }
 
       setRows(preparedRows);
+      setGenerationFeedbackLog(
+        preparedRows
+          .map((row) => row.generationFeedback)
+          .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      );
       setSeenGapIds([]);
       setIgnoredQualityFindingIds([]);
       setIgnoredPredictionIds([]);
@@ -3573,6 +3761,12 @@ export default function ProjectWorkspace({
       field === "testDataSetId"
         ? testDataSets.find((set) => set.id === value) ?? null
         : null;
+    const previousComparableValue =
+      field === "labels"
+        ? (previousRow.labels ?? []).join(",")
+        : String(previousRow[field] ?? "");
+    const nextComparableValue =
+      field === "labels" ? parseLabels(value).join(",") : String(value ?? "");
 
     updated[index] = {
       ...nextRow,
@@ -3621,6 +3815,18 @@ export default function ProjectWorkspace({
         field === "automationReference"
           ? value
           : (nextRow.automationReference ?? ""),
+      generationSource:
+        field === "generationSource"
+          ? (value as TestCaseRow["generationSource"])
+          : nextRow.generationSource ?? "manual",
+      approvalState:
+        field === "approvalState"
+          ? (value as TestCaseRow["approvalState"])
+          : nextRow.approvalState ?? "pending",
+      handoffState:
+        field === "handoffState"
+          ? (value as TestCaseRow["handoffState"])
+          : nextRow.handoffState,
       archived:
         field === "archived"
           ? value === "true"
@@ -3638,6 +3844,53 @@ export default function ProjectWorkspace({
               ...nextRow,
               type: resolveTypeForMode(generationMode, nextRow, nextRow.type),
             }),
+      generationFeedback:
+        previousRow.generationFeedback || nextRow.generationSource === "ai-generated"
+          ? buildGenerationFeedbackRecord({
+              row: {
+                ...nextRow,
+                type: resolveTypeForMode(generationMode, nextRow, nextRow.type),
+                executionResult:
+                  field === "executionResult"
+                    ? (value as TestCaseRow["executionResult"])
+                    : nextRow.executionResult,
+              } as TestCaseRow,
+              existing: previousRow.generationFeedback,
+              sourceRequirement: input.trim(),
+              generationMode,
+            })
+          : undefined,
+      editedBy:
+        previousComparableValue !== nextComparableValue
+          ? {
+              id: activeReviewer?.id,
+              name: activeReviewer?.name,
+              email: activeReviewer?.email,
+              at: Date.now(),
+            }
+          : nextRow.editedBy,
+      approvedBy:
+        field === "approvalState" && value === "approved"
+          ? {
+              id: activeReviewer?.id,
+              name: activeReviewer?.name,
+              email: activeReviewer?.email,
+              at: Date.now(),
+            }
+          : field === "approvalState"
+          ? undefined
+          : nextRow.approvedBy,
+      rejectedBy:
+        field === "approvalState" && value === "rejected"
+          ? {
+              id: activeReviewer?.id,
+              name: activeReviewer?.name,
+              email: activeReviewer?.email,
+              at: Date.now(),
+            }
+          : field === "approvalState"
+          ? undefined
+          : nextRow.rejectedBy,
       updatedAt: Date.now(),
       createdAt: nextRow.createdAt ?? Date.now(),
     };
@@ -3659,21 +3912,15 @@ export default function ProjectWorkspace({
       "automationStatus",
       "automationProvider",
       "automationReference",
+      "generationSource",
+      "approvalState",
+      "handoffState",
       "archived",
       "assignee",
       "labels",
       "issueId",
       "id",
     ];
-    const previousComparableValue =
-      field === "labels"
-        ? (previousRow.labels ?? []).join(",")
-        : String(previousRow[field] ?? "");
-    const nextComparableValue =
-      field === "labels"
-        ? parseLabels(value).join(",")
-        : String(updated[index][field] ?? "");
-
     if (
       trackedFields.includes(field) &&
       previousComparableValue !== nextComparableValue
@@ -3687,6 +3934,11 @@ export default function ProjectWorkspace({
     }
 
     setRows(updated);
+    setGenerationFeedbackLog(
+      updated
+        .map((row) => row.generationFeedback)
+        .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    );
 
     if (
       field === "reviewOwner" &&
@@ -3716,90 +3968,200 @@ export default function ProjectWorkspace({
         `${updated[index]?.id || "Case"} review moved to ${value}.`
       );
     }
-  };
 
-  const saveAutomationForRow = ({
-    rowId,
-    mode,
-    provider,
-    executionMode,
-    name,
-    description,
-    steps,
-  }: {
-    rowId: string;
-    mode: "manual" | "automated" | "hybrid";
-    provider: "playwright" | "cypress" | "api" | "mobile";
-    executionMode: "headless" | "headed";
-    name: string;
-    description?: string;
-    steps: AutomationStep[];
-  }) => {
-    const now = Date.now();
-    const trimmedName = name.trim() || `Automation for ${rowId}`;
-    const existingBinding = getAutomationBindingForCase(automationBindings, rowId);
-    const existingScript = existingBinding
-      ? getAutomationScriptById(automationScripts, existingBinding.scriptId)
-      : null;
-    const scriptId = existingScript?.id ?? crypto.randomUUID();
-
-    const nextScript: AutomationScript = {
-      id: scriptId,
-      projectId: currentProjectIdRef.current ?? currentProjectId ?? "draft-project",
-      provider,
-      executionMode,
-      name: trimmedName,
-      description: description?.trim() || undefined,
-      createdBy: reviewerName?.trim() || undefined,
-      createdAt: existingScript?.createdAt ?? now,
-      updatedAt: now,
-    };
-
-    setAutomationScripts((currentScripts) => {
-      const otherScripts = currentScripts.filter((script) => script.id !== scriptId);
-      return [...otherScripts, nextScript];
-    });
-    setAutomationSteps((currentSteps) => ({
-      ...currentSteps,
-      [scriptId]: steps.map((step, index) => ({
-        ...step,
-        id: step.id || crypto.randomUUID(),
-        scriptId,
-        order: index,
-      })),
-    }));
-    setAutomationBindings((currentBindings) => {
-      const nextBinding: AutomationBinding = {
-        id: existingBinding?.id ?? crypto.randomUUID(),
-        testCaseId: rowId,
-        scriptId,
-        mode,
-      };
-      return [
-        ...currentBindings.filter((binding) => binding.testCaseId !== rowId),
-        nextBinding,
-      ];
-    });
-
-    const rowIndex = rows.findIndex((row) => row.id === rowId);
-    if (rowIndex >= 0) {
-      const providerLabel =
-        provider === "playwright"
-          ? "Playwright"
-          : provider === "cypress"
-            ? "Cypress"
-            : provider === "api"
-              ? "API Automation"
-              : "UI Automation";
-      updateCell(rowIndex, "automationProvider", providerLabel);
-      updateCell(rowIndex, "automationStatus", mode === "manual" ? "manual" : "automated");
-      updateCell(rowIndex, "automationReference", scriptId);
-      updateCell(rowIndex, "automationScriptId", scriptId);
-      updateCell(rowIndex, "automationBindingMode", mode);
+    if (field === "approvalState") {
+      appendCaseReviewHistory(
+        updated[index]?.id || rowId,
+        "Approval state changed",
+        `${updated[index]?.id || "Case"} moved to ${
+          approvalStateLabels[(value as TestCaseRow["approvalState"]) || "pending"]
+        }.`
+      );
+      addAuditEntry(
+        "Case approval updated",
+        `${updated[index]?.id || "Case"} approval moved to ${value}.`
+      );
     }
 
-    showWorkspaceNotice("success", `Saved automation steps for ${rowId}.`);
+    if (field === "handoffState") {
+      appendCaseReviewHistory(
+        updated[index]?.id || rowId,
+        "Handoff state changed",
+        value
+          ? `${updated[index]?.id || "Case"} moved to ${
+              handoffStateLabels[
+                value as NonNullable<TestCaseRow["handoffState"]>
+              ]
+            }.`
+          : `${updated[index]?.id || "Case"} handoff was cleared.`
+      );
+      addAuditEntry(
+        "Case handoff updated",
+        `${updated[index]?.id || "Case"} handoff moved to ${value || "cleared"}.`
+      );
+    }
   };
+
+  const applyGenerationFeedback = useCallback(
+    (
+      rowId: string,
+      signal:
+        | "useful"
+        | "needed-edits"
+        | "low-quality"
+        | "duplicate"
+        | "missing-important-scenario"
+    ) => {
+      const targetRow = rows.find((row) => row.id === rowId);
+      if (!targetRow) {
+        showWorkspaceNotice("error", "That generated case could not be found.");
+        return;
+      }
+
+      if (
+        targetRow.generationSource !== "ai-generated" &&
+        !targetRow.generationFeedback
+      ) {
+        showWorkspaceNotice(
+          "info",
+          "Generation feedback is only tracked for AI-generated draft cases."
+        );
+        return;
+      }
+
+      const nextDisposition =
+        signal === "duplicate"
+          ? "rejected"
+          : signal === "low-quality"
+          ? "regenerated"
+          : "accepted";
+
+      setRows((currentRows) => {
+        const updatedRows = currentRows.map((row) =>
+          row.id !== rowId
+            ? row
+            : {
+                ...row,
+                generationFeedback: buildGenerationFeedbackRecord({
+                  row,
+                  existing: row.generationFeedback,
+                  sourceRequirement: input.trim(),
+                  generationMode,
+                  signal,
+                  disposition: nextDisposition,
+                }),
+                updatedAt: Date.now(),
+              }
+        );
+
+        setGenerationFeedbackLog(
+          updatedRows
+            .map((row) => row.generationFeedback)
+            .filter((item): item is NonNullable<typeof item> => Boolean(item))
+        );
+
+        return updatedRows;
+      });
+
+      appendCaseReviewHistory(
+        rowId,
+        "Generation feedback updated",
+        `${rowId} was marked as ${signal.replaceAll("-", " ")}.`
+      );
+      addAuditEntry(
+        "Generation feedback captured",
+        `${rowId} was marked as ${signal.replaceAll("-", " ")} for prompt learning and review analytics.`
+      );
+      showWorkspaceNotice(
+        signal === "duplicate" || signal === "low-quality" ? "info" : "success",
+        `Captured generation feedback for ${rowId}: ${signal.replaceAll("-", " ")}.`
+      );
+    },
+    [addAuditEntry, appendCaseReviewHistory, generationMode, input, rows]
+  );
+
+  const generateAutomationForRow = useCallback(
+    async (rowId: string) => {
+      const row = rows.find((entry) => entry.id === rowId);
+      if (!row) {
+        showWorkspaceNotice("error", "That case could not be found for automation generation.");
+        return;
+      }
+
+      setGeneratingAutomationRowIds((current) => [...current, rowId]);
+      try {
+        const provider =
+          inferAutomationGenerationDomain(row) === "api"
+            ? "api"
+            : normalizeAutomationRuntimeProvider(row.automationProvider);
+        setRows((currentRows) =>
+          currentRows.map((entry) =>
+            entry.id === rowId
+              ? {
+                  ...entry,
+                  automationStatus:
+                    entry.automationStatus === "automated" ? entry.automationStatus : "candidate",
+                  automationProvider: provider,
+                  automationBindingMode: entry.automationBindingMode ?? "automated",
+                  updatedAt: Date.now(),
+                }
+              : entry
+          )
+        );
+        showWorkspaceNotice(
+          "info",
+          `Automation authoring has moved to the Automation workspace. Open ${rowId} there to generate, record, edit, and run the flow.`,
+          currentProjectId || projectKey.trim()
+            ? [
+                {
+                  label: "Open Automation",
+                  href: `/projects/${encodeURIComponent(
+                    projectKey.trim() || currentProjectId || "workspace"
+                  )}/automation/scripts?caseId=${encodeURIComponent(rowId)}`,
+                },
+              ]
+            : undefined
+        );
+        router.push(
+          `/projects/${encodeURIComponent(
+            projectKey.trim() || currentProjectId || "workspace"
+          )}/automation/scripts?caseId=${encodeURIComponent(rowId)}`
+        );
+      } catch (error) {
+        showWorkspaceNotice(
+          "error",
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : "Failed to generate automation."
+        );
+      } finally {
+        setGeneratingAutomationRowIds((current) => current.filter((entry) => entry !== rowId));
+      }
+    },
+    [currentProjectId, projectKey, router, rows]
+  );
+
+  const generateAutomationForSelectedRows = useCallback(async () => {
+    if (selectedRowIds.length === 0) {
+      showWorkspaceNotice("error", "Select at least one case before generating automation.");
+      return;
+    }
+
+    if (selectedRowIds.length > 1) {
+      showWorkspaceNotice(
+        "info",
+        "Bulk automation authoring now happens in the Automation workspace. Open one case there at a time to generate or record structured flows."
+      );
+      router.push(
+        `/projects/${encodeURIComponent(
+          projectKey.trim() || currentProjectId || "workspace"
+        )}/automation/scripts`
+      );
+      return;
+    }
+
+    await generateAutomationForRow(selectedRowIds[0]);
+  }, [currentProjectId, generateAutomationForRow, projectKey, router, selectedRowIds]);
 
   const runAutomationForRow = useCallback(
     async (
@@ -3893,11 +4255,11 @@ export default function ProjectWorkspace({
         }),
       });
 
-      const data = (await response.json()) as {
+      const data = await parseAutomationApiResponse<{
         error?: string;
         execution?: AutomationExecution;
         artifacts?: AutomationExecutionArtifact[];
-      };
+      }>(response);
 
       if (!response.ok || !data.execution) {
         const text = data.error || "Failed to execute automation.";
@@ -3958,53 +4320,6 @@ export default function ProjectWorkspace({
       return { tone, text };
     },
     [currentProjectId, persistProjects, projectKey, projectName, upsertProject]
-  );
-
-  const runAutomationForRowWithOptions = useCallback(
-    async (payload: {
-      rowId: string;
-      scriptId?: string;
-      executionMode: "headless" | "headed";
-    }) =>
-      runAutomationForRow(payload.rowId, {
-        scriptId: payload.scriptId,
-        executionMode: payload.executionMode,
-      }),
-    [runAutomationForRow]
-  );
-
-  const debugAutomationInBrowser = useCallback(
-    async (payload: {
-      rowId: string;
-      provider: "playwright" | "cypress" | "api" | "mobile";
-      scriptName: string;
-      steps: AutomationStep[];
-    }) => {
-      const response = await fetch("/api/automation/debug", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const data = (await response.json()) as {
-        error?: string;
-        message?: string;
-      };
-
-      if (!response.ok) {
-        const text = data.error || "Failed to start visible browser debug.";
-        showWorkspaceNotice("error", text);
-        return { tone: "error" as const, text };
-      }
-
-      const text =
-        data.message || "Visible browser debug started. Close the browser when done.";
-      showWorkspaceNotice("info", text);
-      return { tone: "info" as const, text };
-    },
-    []
   );
 
   const createAutomationIssueForRow = useCallback(
@@ -5150,6 +5465,20 @@ export default function ProjectWorkspace({
           return false;
         }
 
+        if (
+          caseApprovalStateFilter &&
+          (row.approvalState ?? "pending") !== caseApprovalStateFilter
+        ) {
+          return false;
+        }
+
+        if (
+          caseHandoffStateFilter &&
+          (row.handoffState ?? "") !== caseHandoffStateFilter
+        ) {
+          return false;
+        }
+
         if (caseLinkedFilter === "linked" && !row.issueId && !row.issueKey) {
           return false;
         }
@@ -5309,6 +5638,8 @@ export default function ProjectWorkspace({
       caseRiskLevelFilter,
       caseSecurityCategoryFilter,
       caseAccessibilityCategoryFilter,
+      caseApprovalStateFilter,
+      caseHandoffStateFilter,
       caseLinkedFilter,
       caseExecutionFilter,
       caseCollaborationFilter,
@@ -5633,6 +5964,8 @@ export default function ProjectWorkspace({
       riskLevel: caseRiskLevelFilter,
       securityCategory: caseSecurityCategoryFilter,
       accessibilityCategory: caseAccessibilityCategoryFilter,
+      approvalState: caseApprovalStateFilter,
+      handoffState: caseHandoffStateFilter,
       linked: caseLinkedFilter,
       execution: caseExecutionFilter,
       review: caseReviewFilter,
@@ -5662,6 +5995,8 @@ export default function ProjectWorkspace({
       caseSecurityCategoryFilter,
       caseSuiteFilter,
       caseTestDomainFilter,
+      caseApprovalStateFilter,
+      caseHandoffStateFilter,
     ]
   );
   const activeCasesPreset = useMemo(() => {
@@ -5673,6 +6008,8 @@ export default function ProjectWorkspace({
       !caseRiskLevelFilter &&
       !caseSecurityCategoryFilter &&
       !caseAccessibilityCategoryFilter &&
+      !caseApprovalStateFilter &&
+      !caseHandoffStateFilter &&
       caseLinkedFilter === "all" &&
       !caseExecutionFilter &&
       !caseReviewFilter &&
@@ -5695,6 +6032,8 @@ export default function ProjectWorkspace({
       !caseRiskLevelFilter &&
       !caseSecurityCategoryFilter &&
       !caseAccessibilityCategoryFilter &&
+      !caseApprovalStateFilter &&
+      !caseHandoffStateFilter &&
       caseLinkedFilter === "all" &&
       !caseExecutionFilter &&
       !caseReviewFilter &&
@@ -5717,6 +6056,8 @@ export default function ProjectWorkspace({
       !caseRiskLevelFilter &&
       !caseSecurityCategoryFilter &&
       !caseAccessibilityCategoryFilter &&
+      !caseApprovalStateFilter &&
+      !caseHandoffStateFilter &&
       caseLinkedFilter === "linked" &&
       caseExecutionFilter === "failed" &&
       !caseReviewFilter &&
@@ -5750,6 +6091,8 @@ export default function ProjectWorkspace({
     caseSecurityCategoryFilter,
     caseSuiteFilter,
     caseTestDomainFilter,
+    caseApprovalStateFilter,
+    caseHandoffStateFilter,
   ]);
   const activeSavedCasesView = useMemo(
     () =>
@@ -5767,6 +6110,71 @@ export default function ProjectWorkspace({
         return right.updatedAt - left.updatedAt;
       }),
     [casesSavedViews]
+  );
+  const hasCaseMetadataFiltersApplied = useMemo(
+    () =>
+      Boolean(
+        caseTestDomainFilter ||
+          caseRiskLevelFilter ||
+          caseSecurityCategoryFilter ||
+          caseAccessibilityCategoryFilter
+      ),
+    [
+      caseAccessibilityCategoryFilter,
+      caseRiskLevelFilter,
+      caseSecurityCategoryFilter,
+      caseTestDomainFilter,
+    ]
+  );
+  const activeCaseQuickFilterCount = useMemo(
+    () =>
+      [
+        caseAssigneeFilter,
+        caseLinkedFilter !== "all" ? caseLinkedFilter : "",
+        caseReviewHealthFilter,
+        caseCollaborationFilter,
+      ].filter(Boolean).length,
+    [
+      caseAssigneeFilter,
+      caseCollaborationFilter,
+      caseLinkedFilter,
+      caseReviewHealthFilter,
+    ]
+  );
+  const activeCaseAdvancedFilterCount = useMemo(
+    () =>
+      [
+        casePriorityFilter,
+        caseTestDomainFilter,
+        caseRiskLevelFilter,
+        caseExecutionFilter,
+        caseSuiteFilter,
+        caseComponentFilter,
+        caseAutomationFilter,
+        caseAutomationProviderFilter,
+        caseSecurityCategoryFilter,
+        caseAccessibilityCategoryFilter,
+        caseApprovalStateFilter,
+        caseHandoffStateFilter,
+        caseArchivedFilter !== "active" ? caseArchivedFilter : "",
+        caseReviewFilter,
+      ].filter((value) => String(value).trim().length > 0).length,
+    [
+      caseAccessibilityCategoryFilter,
+      caseApprovalStateFilter,
+      caseArchivedFilter,
+      caseAutomationFilter,
+      caseAutomationProviderFilter,
+      caseComponentFilter,
+      caseExecutionFilter,
+      caseHandoffStateFilter,
+      casePriorityFilter,
+      caseReviewFilter,
+      caseRiskLevelFilter,
+      caseSecurityCategoryFilter,
+      caseSuiteFilter,
+      caseTestDomainFilter,
+    ]
   );
   const orderedCaseTemplates = useMemo(
     () =>
@@ -6013,11 +6421,85 @@ export default function ProjectWorkspace({
       riskLevel: "",
       securityCategory: "",
       accessibilityCategory: "",
+      approvalState: "",
+      handoffState: "needs-qa-review" as const,
       linked: "all" as const,
       execution: "",
       review: "",
       reviewHealth: "open-notes" as const,
       collaboration: "mentioned" as const,
+      suite: "",
+      component: "",
+      automation: "",
+      automationProvider: "",
+      archived: "active" as const,
+    }),
+    []
+  );
+  const reviewQueueFilters = useMemo<CasesSavedView["filters"]>(
+    () => ({
+      searchQuery: "",
+      assignee: "",
+      priority: "",
+      testDomain: "",
+      riskLevel: "",
+      securityCategory: "",
+      accessibilityCategory: "",
+      approvalState: "pending" as const,
+      handoffState: "needs-qa-review" as const,
+      linked: "all" as const,
+      execution: "",
+      review: "in-review" as const,
+      reviewHealth: "open-notes" as const,
+      collaboration: "",
+      suite: "",
+      component: "",
+      automation: "",
+      automationProvider: "",
+      archived: "active" as const,
+    }),
+    []
+  );
+  const strongCandidateFilters = useMemo<CasesSavedView["filters"]>(
+    () => ({
+      searchQuery: "",
+      assignee: "",
+      priority: "",
+      testDomain: "",
+      riskLevel: "",
+      securityCategory: "",
+      accessibilityCategory: "",
+      approvalState: "",
+      handoffState: "needs-automation" as const,
+      linked: "all" as const,
+      execution: "",
+      review: "",
+      reviewHealth: "",
+      collaboration: "",
+      suite: "",
+      component: "",
+      automation: "candidate" as const,
+      automationProvider: "",
+      archived: "active" as const,
+    }),
+    []
+  );
+  const releaseBlockingFilters = useMemo<CasesSavedView["filters"]>(
+    () => ({
+      searchQuery: "",
+      assignee: "",
+      priority: "",
+      testDomain: "",
+      riskLevel: "",
+      securityCategory: "",
+      accessibilityCategory: "",
+      approvalState: "",
+      handoffState: "release-blocking" as const,
+      linked: "all" as const,
+      execution: "",
+      review: "",
+      reviewHealth: "",
+      collaboration: "",
       suite: "",
       component: "",
       automation: "",
@@ -6078,6 +6560,106 @@ export default function ProjectWorkspace({
       testDataSets,
     ]
   );
+  const generationQualitySignals = useMemo(
+    () =>
+      buildGenerationQualitySignals({
+        id: currentProjectId ?? "workspace-draft",
+        name: projectName || "Untitled Project",
+        input,
+        rows,
+        generationMode,
+        coverageDepth,
+        persona,
+        autosaveEnabled,
+        sourceArtifacts,
+        reviewerName,
+        reviewerNotes,
+        signoffStatus,
+        auditTrail,
+        caseComments,
+        caseWatchers,
+        notifications,
+        caseVersionHistory,
+        caseReviewHistory,
+        testDataSets,
+        caseTemplates,
+        automationScripts,
+        automationSteps,
+        automationBindings,
+        automationExecutions,
+        automationArtifacts,
+        automationReusableBlocks,
+        automationSelectorPresets,
+        automationEnvironmentBindings,
+        activeAutomationEnvironmentId,
+        generationFeedbackLog,
+        createdAt: lastSavedAt ?? Date.now(),
+        updatedAt: Date.now(),
+      } as Project),
+    [
+      activeAutomationEnvironmentId,
+      auditTrail,
+      autosaveEnabled,
+      automationArtifacts,
+      automationBindings,
+      automationEnvironmentBindings,
+      automationExecutions,
+      automationReusableBlocks,
+      automationScripts,
+      automationSelectorPresets,
+      automationSteps,
+      caseComments,
+      caseReviewHistory,
+      caseTemplates,
+      caseVersionHistory,
+      caseWatchers,
+      coverageDepth,
+      currentProjectId,
+      generationFeedbackLog,
+      generationMode,
+      input,
+      lastSavedAt,
+      notifications,
+      persona,
+      projectName,
+      reviewerName,
+      reviewerNotes,
+      rows,
+      signoffStatus,
+      sourceArtifacts,
+      testDataSets,
+    ]
+  );
+  const workflowValuePath = useMemo(() => {
+    const automatedCases = rows.filter((row) => row.automationStatus === "automated").length;
+    const activeRun =
+      (projectsRef.current
+        .find((project) => project.id === currentProjectId)
+        ?.runs?.find((run) => run.id === projectsRef.current.find((project) => project.id === currentProjectId)?.activeRunId)) ??
+      null;
+    const runResults = activeRun ? Object.values(activeRun.rowResults) : [];
+    const failedRuns = runResults.filter((item) => item === "failed" || item === "blocked").length;
+    const runHealthLabel =
+      runResults.length === 0
+        ? "No runs yet"
+        : failedRuns === 0
+        ? "Runs are healthy"
+        : `${failedRuns} failing or blocked`;
+    const releaseReadinessLabel =
+      failedRuns === 0 && rows.length > 0
+        ? "Ready with current evidence"
+        : failedRuns > 0
+        ? "Risk needs review"
+        : "Not assessed yet";
+
+    return {
+      requirementReady: Boolean(input.trim()),
+      generatedCases: rows.length,
+      automatedCases,
+      runHealthLabel,
+      releaseReadinessLabel,
+    };
+  }, [currentProjectId, input, rows]);
   const caseAutomationProviderOptions = useMemo(
     () =>
       Array.from(
@@ -6663,48 +7245,6 @@ export default function ProjectWorkspace({
     }
   };
 
-  const restoreCaseVersion = (rowId: string, versionId: string) => {
-    const currentRow = rows.find((row) => row.id === rowId);
-    const version = (caseVersionHistory[rowId] ?? []).find(
-      (entry) => entry.id === versionId
-    );
-
-    if (!currentRow || !version) {
-      showWorkspaceNotice(
-        "error",
-        "That case version could not be restored."
-      );
-      return;
-    }
-
-    recordCaseVersion(currentRow, "Case restored from version history");
-
-    setRows((currentRows) =>
-      currentRows.map((row) =>
-        row.id !== rowId
-          ? row
-          : {
-              ...version.rowSnapshot,
-              id: row.id,
-              createdAt: row.createdAt ?? version.rowSnapshot.createdAt ?? Date.now(),
-              updatedAt: Date.now(),
-            }
-      )
-    );
-
-    appendCaseReviewHistory(
-      rowId,
-      "Version restored",
-      `Restored case content from snapshot "${version.reason}".`
-    );
-    addAuditEntry(
-      "Case version restored",
-      `${rowId} was restored from version history.`
-    );
-    focusWorkspaceRow(rowId, "Restored from version history");
-    showWorkspaceNotice("success", `Restored ${rowId} from version history.`);
-  };
-
   const exportBusinessReportPdf = () => {
     downloadReportPdf(reportData, "business");
   };
@@ -6753,8 +7293,8 @@ export default function ProjectWorkspace({
     }
 
     didApplyFocusedRowRef.current = true;
-      focusWorkspaceRow(focusedRowId, "Linked from issue", focusedCommentId);
-    }, [focusedCommentId, focusedRowId, rows]);
+    focusWorkspaceRow(focusedRowId, "Linked from issue", focusedCommentId);
+  }, [focusWorkspaceRow, focusedCommentId, focusedRowId, rows]);
 
   const autosaveStatusText = !projectName.trim()
     ? "Disabled until project is named"
@@ -6946,10 +7486,10 @@ export default function ProjectWorkspace({
                 CaseForge
               </div>
               <h1 className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-zinc-950 sm:text-5xl xl:text-[3.45rem] dark:text-white">
-                Forge smarter test cases from every requirement.
+                Turn each requirement into coverage, automation, and release confidence.
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-600 sm:text-base dark:text-zinc-300">
-                Analyze ambiguity, surface risks, close coverage gaps, and build execution-ready QA in one intelligent workspace.
+                Generate review-ready cases, capture quality signals from edits, scale reusable automation, and keep ship risk visible in one QA workflow workspace.
               </p>
               <div className="mt-6 flex flex-wrap gap-2.5">
                 <span className="rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/75 dark:text-zinc-300">
@@ -7033,6 +7573,104 @@ export default function ProjectWorkspace({
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <WorkflowValuePath {...workflowValuePath} />
+
+        <section className="rounded-[24px] border border-zinc-200/80 bg-white/94 px-5 py-5 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] dark:border-zinc-800 dark:bg-zinc-900/92">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                Learning Loop
+              </p>
+              <h3 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+                See how generated coverage holds up after edits, execution, and release review.
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                These signals stay lightweight, but they show whether AI drafts were accepted, how heavily teams edited them, how often they convert into automation, and where risk is still showing up downstream.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                Acceptance rate {generationQualitySignals.acceptanceRate}%
+              </span>
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                Automation conversion {generationQualitySignals.automationConversionRate}%
+              </span>
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                Downstream failures {generationQualitySignals.downstreamFailureCorrelation}%
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-6">
+            <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/85 px-4 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                AI Drafts
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+                {generationQualitySignals.totalGenerated}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                generated cases tracked for feedback
+              </p>
+            </div>
+            <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/85 px-4 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                Edit Intensity
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+                {generationQualitySignals.editIntensity}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                average changed fields per edited draft
+              </p>
+            </div>
+            <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/85 px-4 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                Duplicate Removal
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+                {generationQualitySignals.duplicateRemovalRate}%
+              </p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                drafts marked duplicate or removed
+              </p>
+            </div>
+            <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/85 px-4 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                Regenerated
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+                {generationQualitySignals.regeneratedCount}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                drafts needing stronger generation
+              </p>
+            </div>
+            <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/85 px-4 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                Rejected
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+                {generationQualitySignals.rejectedCount}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                low-value or duplicate drafts filtered out
+              </p>
+            </div>
+            <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/85 px-4 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                Shared Blocks
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+                {automationReusableBlocks.length}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                reusable automation flows ready for scaling
+              </p>
             </div>
           </div>
         </section>
@@ -7600,7 +8238,11 @@ export default function ProjectWorkspace({
               </div>
             </div>
           </section>
-          <section className="sticky top-4 z-10 rounded-[20px] border border-zinc-200/80 bg-white/94 px-4 py-3 shadow-[0_18px_38px_-28px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94 dark:shadow-black/20">
+          <section
+            className={`rounded-[20px] border border-zinc-200/80 bg-white/94 px-4 py-3 shadow-[0_18px_38px_-28px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94 dark:shadow-black/20 ${
+              embedded && isCasesSection ? "" : "sticky top-4 z-10"
+            }`}
+          >
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="min-w-0 flex-1 xl:max-w-2xl">
                 <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
@@ -7995,6 +8637,515 @@ export default function ProjectWorkspace({
             )}
 
             {isCasesSection && (
+              <CasesFilterToolbar
+                filteredRowCount={filteredRows.length}
+                onResetCaseFilters={resetCaseFilters}
+                activeCaseQuickFilterCount={activeCaseQuickFilterCount}
+                caseSearchQuery={caseSearchQuery}
+                onCaseSearchQueryChange={setCaseSearchQuery}
+                caseAssigneeFilter={caseAssigneeFilter}
+                onCaseAssigneeFilterChange={setCaseAssigneeFilter}
+                caseAssigneeOptions={caseAssigneeOptions}
+                caseLinkedFilter={caseLinkedFilter}
+                onCaseLinkedFilterChange={setCaseLinkedFilter}
+                caseReviewHealthFilter={caseReviewHealthFilter}
+                onCaseReviewHealthFilterChange={setCaseReviewHealthFilter}
+                caseCollaborationFilter={caseCollaborationFilter}
+                onCaseCollaborationFilterChange={setCaseCollaborationFilter}
+                onOpenMyReviewQueue={() =>
+                  applyCaseFilters({ ...myReviewQueueFilters, archived: "active" })
+                }
+                onApplyFailedLinkedPreset={() => applyCasesPreset("failed-linked")}
+                onApplyReviewQueue={() => applyCaseFilters(reviewQueueFilters)}
+                onApplyStrongCandidates={() => applyCaseFilters(strongCandidateFilters)}
+                onApplyReleaseBlocking={() => applyCaseFilters(releaseBlockingFilters)}
+                myReviewAttentionCount={myReviewAttentionCount}
+                reviewerAttentionOnlyCount={reviewerAttentionOnlyCount}
+                mentionedCasesCount={mentionedCasesCount}
+                watchedCasesCount={watchedCasesCount}
+                casesWithOpenReviewNotesCount={casesWithOpenReviewNotesCount}
+                casesWithReviewHistoryCount={casesWithReviewHistoryCount}
+              />
+            )}
+
+            {isCasesSection && (
+              <div ref={savedViewsSectionRef}>
+                <CasesSavedViewsSection
+                  newCasesViewName={newCasesViewName}
+                  onNewCasesViewNameChange={setNewCasesViewName}
+                  onSaveCurrentCasesView={saveCurrentCasesView}
+                  onApplyDefaultView={() => applyCasesPreset("default")}
+                  onSetCurrentAsDefault={() =>
+                    setCasesDefaultPreset(
+                      activeCasesPreset === "custom" ? "default" : activeCasesPreset
+                    )
+                  }
+                  activePresetLabel={
+                    activeCasesPreset === "review-queue"
+                      ? "Review Queue"
+                      : activeCasesPreset === "failed-linked"
+                        ? "Failed Linked Cases"
+                        : activeCasesPreset === "default"
+                          ? "Default View"
+                          : "Custom"
+                  }
+                  defaultPresetLabel={
+                    casesDefaultPreset === "review-queue"
+                      ? "Review Queue"
+                      : casesDefaultPreset === "failed-linked"
+                        ? "Failed Linked Cases"
+                        : "Default View"
+                  }
+                  defaultSavedViewName={
+                    casesDefaultSavedViewId
+                      ? casesSavedViews.find((view) => view.id === casesDefaultSavedViewId)
+                          ?.name ?? "Missing view"
+                      : null
+                  }
+                  activeSavedViewName={activeSavedCasesView?.name ?? null}
+                  providerFocusedCandidateViews={providerFocusedCandidateViews}
+                  onSaveMyReviewQueue={() =>
+                    saveNamedCasesView("My Review Queue", myReviewQueueFilters, {
+                      pinned: true,
+                    })
+                  }
+                  onSetMyReviewQueueAsDefault={() =>
+                    saveNamedCasesView("My Review Queue", myReviewQueueFilters, {
+                      pinned: true,
+                      setAsDefault: true,
+                    })
+                  }
+                  onSaveStrongCandidates={() =>
+                    saveNamedCasesView("Strong Candidates", strongCandidateFilters, {
+                      pinned: true,
+                    })
+                  }
+                  onSetStrongCandidatesAsDefault={() =>
+                    saveNamedCasesView("Strong Candidates", strongCandidateFilters, {
+                      pinned: true,
+                      setAsDefault: true,
+                    })
+                  }
+                  onSaveSecurityHighRisk={() =>
+                    saveNamedCasesView(
+                      "Security High Risk",
+                      {
+                        searchQuery: "",
+                        assignee: "",
+                        priority: "",
+                        testDomain: "security",
+                        riskLevel: "high",
+                        securityCategory: "",
+                        accessibilityCategory: "",
+                        approvalState: "",
+                        handoffState: "",
+                        linked: "all",
+                        execution: "",
+                        review: "",
+                        reviewHealth: "",
+                        collaboration: "",
+                        suite: "",
+                        component: "",
+                        automation: "",
+                        automationProvider: "",
+                        archived: "active",
+                      },
+                      { pinned: true }
+                    )
+                  }
+                  onSaveAccessibilityReviewQueue={() =>
+                    saveNamedCasesView(
+                      "Accessibility Review Queue",
+                      {
+                        searchQuery: "",
+                        assignee: "",
+                        priority: "",
+                        testDomain: "accessibility",
+                        riskLevel: "",
+                        securityCategory: "",
+                        accessibilityCategory: "",
+                        approvalState: "pending",
+                        handoffState: "needs-qa-review",
+                        linked: "all",
+                        execution: "",
+                        review: "",
+                        reviewHealth: "open-notes",
+                        collaboration: "",
+                        suite: "",
+                        component: "",
+                        automation: "",
+                        automationProvider: "",
+                        archived: "active",
+                      },
+                      { pinned: true }
+                    )
+                  }
+                  onSaveProviderCandidates={(provider) =>
+                    saveNamedCasesView(
+                      `${provider} Candidates`,
+                      {
+                        searchQuery: "",
+                        assignee: "",
+                        priority: "",
+                        testDomain: "",
+                        riskLevel: "",
+                        securityCategory: "",
+                        accessibilityCategory: "",
+                        approvalState: "",
+                        handoffState: "",
+                        linked: "all",
+                        execution: "",
+                        review: "",
+                        reviewHealth: "",
+                        collaboration: "",
+                        suite: "",
+                        component: "",
+                        automation: "candidate",
+                        automationProvider: provider,
+                        archived: "active",
+                      },
+                      { pinned: true }
+                    )
+                  }
+                  onSetProviderCandidatesAsDefault={(provider) =>
+                    saveNamedCasesView(
+                      `${provider} Candidates`,
+                      {
+                        searchQuery: "",
+                        assignee: "",
+                        priority: "",
+                        testDomain: "",
+                        riskLevel: "",
+                        securityCategory: "",
+                        accessibilityCategory: "",
+                        approvalState: "",
+                        handoffState: "",
+                        linked: "all",
+                        execution: "",
+                        review: "",
+                        reviewHealth: "",
+                        collaboration: "",
+                        suite: "",
+                        component: "",
+                        automation: "candidate",
+                        automationProvider: provider,
+                        archived: "active",
+                      },
+                      {
+                        pinned: true,
+                        setAsDefault: true,
+                      }
+                    )
+                  }
+                  casesSavedViews={casesSavedViews}
+                  orderedCasesSavedViews={orderedCasesSavedViews}
+                  activeSavedCasesView={activeSavedCasesView}
+                  editingCasesViewId={editingCasesViewId}
+                  editingCasesViewName={editingCasesViewName}
+                  onEditingCasesViewNameChange={setEditingCasesViewName}
+                  onRenameCasesView={renameCasesView}
+                  onCancelEditingCasesView={cancelEditingCasesView}
+                  onApplySavedCasesView={applySavedCasesView}
+                  onTogglePinCasesView={togglePinCasesView}
+                  onSetDefaultCasesSavedView={setDefaultCasesSavedView}
+                  onStartEditingCasesView={startEditingCasesView}
+                  onDeleteCasesView={deleteCasesView}
+                />
+              </div>
+            )}
+
+            {isCasesSection && (
+              <SecondaryMetadataPanel
+                title="Domain and risk metadata"
+                description="Metadata-heavy filters are demoted from the main scan path. Use the expanded filter surface below for the full domain, risk, security, and accessibility controls."
+              >
+                <div className="flex flex-wrap gap-2">
+                  {caseTestDomainFilter ? (
+                    <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
+                      Domain: {caseTestDomainFilter}
+                    </span>
+                  ) : null}
+                  {caseRiskLevelFilter ? (
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                      Risk: {caseRiskLevelFilter}
+                    </span>
+                  ) : null}
+                  {caseSecurityCategoryFilter ? (
+                    <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                      Security: {caseSecurityCategoryFilter}
+                    </span>
+                  ) : null}
+                  {caseAccessibilityCategoryFilter ? (
+                    <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">
+                      Accessibility: {caseAccessibilityCategoryFilter}
+                    </span>
+                  ) : null}
+                  {!hasCaseMetadataFiltersApplied ? (
+                    <span className="rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
+                      No metadata filters active
+                    </span>
+                  ) : null}
+                </div>
+              </SecondaryMetadataPanel>
+            )}
+
+            {isCasesSection && (
+              <AdvancedFiltersPanel
+                title="Full case filters"
+                description="Lower-frequency filters stay available without forcing every control into the main scan row."
+                summary={
+                  <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
+                    {activeCaseAdvancedFilterCount} advanced active
+                  </span>
+                }
+                defaultOpen={activeCaseAdvancedFilterCount > 0}
+              >
+                <div className="grid gap-3 xl:grid-cols-4">
+                  <select
+                    value={casePriorityFilter}
+                    onChange={(event) =>
+                      setCasePriorityFilter(
+                        (event.target.value || "") as TestCaseRow["priority"] | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All priorities</option>
+                    <option value="highest">Highest</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                  <select
+                    value={caseTestDomainFilter}
+                    onChange={(event) =>
+                      setCaseTestDomainFilter(
+                        (event.target.value || "") as NonNullable<TestCaseRow["testDomain"]> | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All domains</option>
+                    <option value="functional">Functional</option>
+                    <option value="regression">Regression</option>
+                    <option value="api">API</option>
+                    <option value="ui">UI</option>
+                    <option value="negative">Negative</option>
+                    <option value="edge">Edge</option>
+                    <option value="security">Security</option>
+                    <option value="accessibility">Accessibility</option>
+                  </select>
+                  <select
+                    value={caseRiskLevelFilter}
+                    onChange={(event) =>
+                      setCaseRiskLevelFilter(
+                        (event.target.value || "") as NonNullable<TestCaseRow["riskLevel"]> | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All risk levels</option>
+                    <option value="low">Low risk</option>
+                    <option value="medium">Medium risk</option>
+                    <option value="high">High risk</option>
+                  </select>
+                  <select
+                    value={caseExecutionFilter}
+                    onChange={(event) =>
+                      setCaseExecutionFilter(
+                        (event.target.value || "") as TestCaseRow["executionResult"] | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All execution states</option>
+                    <option value="not-run">Not Run</option>
+                    <option value="passed">Passed</option>
+                    <option value="failed">Failed</option>
+                    <option value="blocked">Blocked</option>
+                  </select>
+                  <select
+                    value={caseSuiteFilter}
+                    onChange={(event) => setCaseSuiteFilter(event.target.value)}
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All suites</option>
+                    {caseSuiteOptions.map((suite) => (
+                      <option key={suite} value={suite}>
+                        {suite}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={caseComponentFilter}
+                    onChange={(event) => setCaseComponentFilter(event.target.value)}
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All components</option>
+                    {caseComponentOptions.map((component) => (
+                      <option key={component} value={component}>
+                        {component}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={caseAutomationFilter}
+                    onChange={(event) =>
+                      setCaseAutomationFilter(
+                        (event.target.value || "") as TestCaseRow["automationStatus"] | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All automation states</option>
+                    <option value="manual">Manual only</option>
+                    <option value="candidate">Strong candidates</option>
+                    <option value="automated">Automated</option>
+                  </select>
+                  <select
+                    value={caseAutomationProviderFilter}
+                    onChange={(event) => setCaseAutomationProviderFilter(event.target.value)}
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All automation providers</option>
+                    {automationProviderOptions.map((provider) => (
+                      <option key={provider} value={provider}>
+                        {provider}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={caseSecurityCategoryFilter}
+                    onChange={(event) =>
+                      setCaseSecurityCategoryFilter(
+                        (event.target.value || "") as NonNullable<TestCaseRow["securityCategory"]> | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All security focus</option>
+                    <option value="auth">Authentication</option>
+                    <option value="authorization">Authorization</option>
+                    <option value="session">Session</option>
+                    <option value="validation">Validation</option>
+                    <option value="data-protection">Data Protection</option>
+                    <option value="api-security">API Security</option>
+                    <option value="upload-safety">Upload Safety</option>
+                    <option value="business-logic">Business Logic</option>
+                    <option value="abuse-resistance">Abuse Resistance</option>
+                  </select>
+                  <select
+                    value={caseAccessibilityCategoryFilter}
+                    onChange={(event) =>
+                      setCaseAccessibilityCategoryFilter(
+                        (event.target.value || "") as NonNullable<TestCaseRow["accessibilityCategory"]> | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All accessibility focus</option>
+                    <option value="keyboard-navigation">Keyboard Navigation</option>
+                    <option value="focus-management">Focus Management</option>
+                    <option value="screen-reader">Screen Reader</option>
+                    <option value="forms">Forms</option>
+                    <option value="semantics">Semantics</option>
+                    <option value="contrast">Contrast</option>
+                    <option value="zoom-reflow">Zoom & Reflow</option>
+                    <option value="error-handling">Error Handling</option>
+                    <option value="media-content">Media Content</option>
+                  </select>
+                  <select
+                    value={caseApprovalStateFilter}
+                    onChange={(event) =>
+                      setCaseApprovalStateFilter(
+                        (event.target.value || "") as NonNullable<TestCaseRow["approvalState"]> | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All approval states</option>
+                    <option value="pending">{approvalStateLabels.pending}</option>
+                    <option value="approved">{approvalStateLabels.approved}</option>
+                    <option value="rejected">{approvalStateLabels.rejected}</option>
+                  </select>
+                  <select
+                    value={caseHandoffStateFilter}
+                    onChange={(event) =>
+                      setCaseHandoffStateFilter(
+                        (event.target.value || "") as NonNullable<TestCaseRow["handoffState"]> | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All handoff states</option>
+                    <option value="needs-qa-review">{handoffStateLabels["needs-qa-review"]}</option>
+                    <option value="needs-automation">{handoffStateLabels["needs-automation"]}</option>
+                    <option value="needs-product-signoff">{handoffStateLabels["needs-product-signoff"]}</option>
+                    <option value="release-blocking">{handoffStateLabels["release-blocking"]}</option>
+                  </select>
+                  <select
+                    value={caseArchivedFilter}
+                    onChange={(event) =>
+                      setCaseArchivedFilter(
+                        (event.target.value || "active") as "active" | "archived" | "all"
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="active">Active only</option>
+                    <option value="archived">Archived only</option>
+                    <option value="all">All cases</option>
+                  </select>
+                  <select
+                    value={caseReviewFilter}
+                    onChange={(event) =>
+                      setCaseReviewFilter(
+                        (event.target.value || "") as TestCaseRow["reviewStatus"] | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All review states</option>
+                    <option value="draft">Draft</option>
+                    <option value="in-review">In Review</option>
+                    <option value="approved">Approved</option>
+                    <option value="changes-requested">Changes Requested</option>
+                  </select>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {activeCaseAdvancedFilterCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCasePriorityFilter("");
+                        setCaseTestDomainFilter("");
+                        setCaseRiskLevelFilter("");
+                        setCaseExecutionFilter("");
+                        setCaseSuiteFilter("");
+                        setCaseComponentFilter("");
+                        setCaseAutomationFilter("");
+                        setCaseAutomationProviderFilter("");
+                        setCaseSecurityCategoryFilter("");
+                        setCaseAccessibilityCategoryFilter("");
+                        setCaseApprovalStateFilter("");
+                        setCaseHandoffStateFilter("");
+                        setCaseArchivedFilter("active");
+                        setCaseReviewFilter("");
+                      }}
+                      className="rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                    >
+                      Clear advanced filters
+                    </button>
+                  ) : (
+                    <span className="rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
+                      No advanced filters active
+                    </span>
+                  )}
+                </div>
+              </AdvancedFiltersPanel>
+            )}
+
+            {false && isCasesSection && (
               <section className="rounded-[24px] border border-zinc-200 bg-white/88 px-5 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/88">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
@@ -8015,6 +9166,8 @@ export default function ProjectWorkspace({
                         setCaseRiskLevelFilter("");
                         setCaseSecurityCategoryFilter("");
                         setCaseAccessibilityCategoryFilter("");
+                        setCaseApprovalStateFilter("");
+                        setCaseHandoffStateFilter("");
                         setCaseLinkedFilter("all");
                         setCaseExecutionFilter("");
                         setCaseReviewFilter("");
@@ -8222,6 +9375,35 @@ export default function ProjectWorkspace({
                     <option value="media-content">Media / content</option>
                   </select>
                   <select
+                    value={caseApprovalStateFilter}
+                    onChange={(event) =>
+                      setCaseApprovalStateFilter(
+                        (event.target.value || "") as NonNullable<TestCaseRow["approvalState"]> | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All approval states</option>
+                    <option value="pending">{approvalStateLabels.pending}</option>
+                    <option value="approved">{approvalStateLabels.approved}</option>
+                    <option value="rejected">{approvalStateLabels.rejected}</option>
+                  </select>
+                  <select
+                    value={caseHandoffStateFilter}
+                    onChange={(event) =>
+                      setCaseHandoffStateFilter(
+                        (event.target.value || "") as NonNullable<TestCaseRow["handoffState"]> | ""
+                      )
+                    }
+                    className="min-h-[44px] rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-emerald-500/60 dark:focus:ring-emerald-500/10"
+                  >
+                    <option value="">All handoff states</option>
+                    <option value="needs-qa-review">{handoffStateLabels["needs-qa-review"]}</option>
+                    <option value="needs-automation">{handoffStateLabels["needs-automation"]}</option>
+                    <option value="needs-product-signoff">{handoffStateLabels["needs-product-signoff"]}</option>
+                    <option value="release-blocking">{handoffStateLabels["release-blocking"]}</option>
+                  </select>
+                  <select
                     value={caseArchivedFilter}
                     onChange={(event) =>
                       setCaseArchivedFilter(
@@ -8303,6 +9485,16 @@ export default function ProjectWorkspace({
                         Accessibility: {caseAccessibilityCategoryFilter}
                       </span>
                     ) : null}
+                    {caseApprovalStateFilter ? (
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                        Approval: {approvalStateLabels[caseApprovalStateFilter as keyof typeof approvalStateLabels]}
+                      </span>
+                    ) : null}
+                    {caseHandoffStateFilter ? (
+                      <span className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-2 text-xs font-semibold text-fuchsia-700 dark:border-fuchsia-500/30 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
+                        Handoff: {handoffStateLabels[caseHandoffStateFilter as keyof typeof handoffStateLabels]}
+                      </span>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => {
@@ -8359,12 +9551,18 @@ export default function ProjectWorkspace({
                       setCaseSearchQuery("");
                       setCaseAssigneeFilter("");
                       setCasePriorityFilter("");
+                      setCaseTestDomainFilter("");
+                      setCaseRiskLevelFilter("");
+                      setCaseSecurityCategoryFilter("");
+                      setCaseAccessibilityCategoryFilter("");
+                      setCaseApprovalStateFilter("pending");
+                      setCaseHandoffStateFilter("needs-qa-review");
                       setCaseLinkedFilter("all");
                       setCaseExecutionFilter("");
-    setCaseReviewFilter("");
-    setCaseReviewHealthFilter("open-notes");
-    setCaseCollaborationFilter("");
-    setCaseSuiteFilter("");
+                      setCaseReviewFilter("in-review");
+                      setCaseReviewHealthFilter("open-notes");
+                      setCaseCollaborationFilter("");
+                      setCaseSuiteFilter("");
                       setCaseComponentFilter("");
                       setCaseAutomationFilter("");
                       setCaseAutomationProviderFilter("");
@@ -8380,12 +9578,18 @@ export default function ProjectWorkspace({
                       setCaseSearchQuery("");
                       setCaseAssigneeFilter("");
                       setCasePriorityFilter("");
+                      setCaseTestDomainFilter("");
+                      setCaseRiskLevelFilter("");
+                      setCaseSecurityCategoryFilter("");
+                      setCaseAccessibilityCategoryFilter("");
+                      setCaseApprovalStateFilter("");
+                      setCaseHandoffStateFilter("");
                       setCaseLinkedFilter("linked");
                       setCaseExecutionFilter("failed");
-    setCaseReviewFilter("");
-    setCaseReviewHealthFilter("");
-    setCaseCollaborationFilter("");
-    setCaseSuiteFilter("");
+                      setCaseReviewFilter("");
+                      setCaseReviewHealthFilter("");
+                      setCaseCollaborationFilter("");
+                      setCaseSuiteFilter("");
                       setCaseComponentFilter("");
                       setCaseAutomationFilter("");
                       setCaseAutomationProviderFilter("");
@@ -8401,6 +9605,12 @@ export default function ProjectWorkspace({
                       setCaseSearchQuery("");
                       setCaseAssigneeFilter("");
                       setCasePriorityFilter("");
+                      setCaseTestDomainFilter("");
+                      setCaseRiskLevelFilter("");
+                      setCaseSecurityCategoryFilter("");
+                      setCaseAccessibilityCategoryFilter("");
+                      setCaseApprovalStateFilter("");
+                      setCaseHandoffStateFilter("needs-automation");
                       setCaseLinkedFilter("all");
                       setCaseExecutionFilter("");
                       setCaseReviewFilter("");
@@ -8422,12 +9632,45 @@ export default function ProjectWorkspace({
                       setCaseSearchQuery("");
                       setCaseAssigneeFilter("");
                       setCasePriorityFilter("");
+                      setCaseTestDomainFilter("");
+                      setCaseRiskLevelFilter("");
+                      setCaseSecurityCategoryFilter("");
+                      setCaseAccessibilityCategoryFilter("");
+                      setCaseApprovalStateFilter("");
+                      setCaseHandoffStateFilter("release-blocking");
                       setCaseLinkedFilter("all");
                       setCaseExecutionFilter("");
-    setCaseReviewFilter("");
-    setCaseReviewHealthFilter("");
-    setCaseCollaborationFilter("");
-    setCaseSuiteFilter("");
+                      setCaseReviewFilter("");
+                      setCaseReviewHealthFilter("");
+                      setCaseCollaborationFilter("");
+                      setCaseSuiteFilter("");
+                      setCaseComponentFilter("");
+                      setCaseAutomationFilter("");
+                      setCaseAutomationProviderFilter("");
+                      setCaseArchivedFilter("active");
+                    }}
+                    className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+                  >
+                    Release Blocking
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCaseSearchQuery("");
+                      setCaseAssigneeFilter("");
+                      setCasePriorityFilter("");
+                      setCaseTestDomainFilter("");
+                      setCaseRiskLevelFilter("");
+                      setCaseSecurityCategoryFilter("");
+                      setCaseAccessibilityCategoryFilter("");
+                      setCaseApprovalStateFilter("");
+                      setCaseHandoffStateFilter("");
+                      setCaseLinkedFilter("all");
+                      setCaseExecutionFilter("");
+                      setCaseReviewFilter("");
+                      setCaseReviewHealthFilter("");
+                      setCaseCollaborationFilter("");
+                      setCaseSuiteFilter("");
                       setCaseComponentFilter("");
                       setCaseAutomationFilter("");
                       setCaseAutomationProviderFilter("");
@@ -8513,7 +9756,7 @@ export default function ProjectWorkspace({
                   )}
                   {activeSavedCasesView && (
                     <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">
-                      Active saved view: {activeSavedCasesView.name}
+                      Active saved view: {activeSavedCasesView?.name}
                     </span>
                   )}
                 </div>
@@ -8579,6 +9822,8 @@ export default function ProjectWorkspace({
                               riskLevel: "",
                               securityCategory: "",
                               accessibilityCategory: "",
+                              approvalState: "",
+                              handoffState: "needs-qa-review",
                               linked: "all",
                               execution: "",
                               review: "",
@@ -8612,6 +9857,8 @@ export default function ProjectWorkspace({
                               riskLevel: "",
                               securityCategory: "",
                               accessibilityCategory: "",
+                              approvalState: "",
+                              handoffState: "",
                               linked: "all",
                               execution: "",
                               review: "",
@@ -8646,6 +9893,8 @@ export default function ProjectWorkspace({
                               riskLevel: "high",
                               securityCategory: "",
                               accessibilityCategory: "",
+                              approvalState: "",
+                              handoffState: "",
                               linked: "all",
                               execution: "",
                               review: "",
@@ -8679,6 +9928,8 @@ export default function ProjectWorkspace({
                               riskLevel: "",
                               securityCategory: "",
                               accessibilityCategory: "",
+                              approvalState: "pending",
+                              handoffState: "needs-qa-review",
                               linked: "all",
                               execution: "",
                               review: "",
@@ -8709,12 +9960,14 @@ export default function ProjectWorkspace({
                               {
                                 searchQuery: "",
                                 assignee: "",
-                                priority: "",
-                                testDomain: "",
-                                riskLevel: "",
-                                securityCategory: "",
-                                accessibilityCategory: "",
-                                linked: "all",
+                              priority: "",
+                              testDomain: "",
+                              riskLevel: "",
+                              securityCategory: "",
+                              accessibilityCategory: "",
+                              approvalState: "",
+                              handoffState: "",
+                              linked: "all",
                                 execution: "",
                                 review: "",
                                 reviewHealth: "",
@@ -8744,12 +9997,14 @@ export default function ProjectWorkspace({
                               {
                                 searchQuery: "",
                                 assignee: "",
-                                priority: "",
-                                testDomain: "",
-                                riskLevel: "",
-                                securityCategory: "",
-                                accessibilityCategory: "",
-                                linked: "all",
+                              priority: "",
+                              testDomain: "",
+                              riskLevel: "",
+                              securityCategory: "",
+                              accessibilityCategory: "",
+                              approvalState: "",
+                              handoffState: "",
+                              linked: "all",
                                 execution: "",
                                 review: "",
                                 reviewHealth: "",
@@ -10607,7 +11862,15 @@ export default function ProjectWorkspace({
                     className="min-h-[44px] rounded-2xl bg-[linear-gradient(135deg,_#0f766e_0%,_#14532d_100%)] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_35px_-20px_rgba(5,150,105,0.65)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Apply Bulk Changes
-                    </button>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void generateAutomationForSelectedRows()}
+                    disabled={selectedRowIds.length === 0}
+                    className="min-h-[44px] rounded-2xl border border-sky-200 bg-sky-50 px-5 py-2.5 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
+                  >
+                    Generate Automation
+                  </button>
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -10657,10 +11920,10 @@ export default function ProjectWorkspace({
                 testDataSets={testDataSets}
               caseTemplates={caseTemplates}
               automationScripts={automationScripts}
-              automationSteps={automationSteps}
               automationBindings={automationBindings}
               automationExecutions={automationExecutions}
-              automationArtifacts={automationArtifacts}
+              automationEnvironmentBindings={automationEnvironmentBindings}
+              activeAutomationEnvironmentId={activeAutomationEnvironmentId}
               userOptions={userOptions}
               updateCell={updateFilteredCell}
               onCaseCommentDraftChange={updateCaseCommentDraft}
@@ -10668,15 +11931,14 @@ export default function ProjectWorkspace({
               onToggleCaseCommentResolved={toggleCaseCommentResolved}
               onDeleteCaseComment={deleteCaseComment}
               onToggleCaseWatch={toggleCaseWatch}
-                onCloneRow={cloneRowById}
-                onSaveTemplateFromRow={saveTemplateFromRow}
-                onRestoreCaseVersion={restoreCaseVersion}
-              onSaveAutomation={saveAutomationForRow}
+              onCloneRow={cloneRowById}
+              onSaveTemplateFromRow={saveTemplateFromRow}
+              onApplyGenerationFeedback={applyGenerationFeedback}
               onRunAutomation={runAutomationForRow}
-              onRunAutomationWithOptions={runAutomationForRowWithOptions}
-              onDebugAutomationInBrowser={debugAutomationInBrowser}
               onCreateAutomationIssue={createAutomationIssueForRow}
-                deleteRow={deleteFilteredRow}
+              onGenerateAutomation={generateAutomationForRow}
+              generatingAutomationRowIds={generatingAutomationRowIds}
+              deleteRow={deleteFilteredRow}
               regenerateRow={regenerateFilteredRow}
               regeneratingIndex={
                 regeneratingIndex !== null &&
@@ -10708,6 +11970,7 @@ export default function ProjectWorkspace({
               selectedRowIds={selectedRowIds}
               onToggleRowSelection={toggleRowSelection}
               onToggleSelectAll={toggleSelectAllFilteredRows}
+              stickyHeader={!(embedded && isCasesSection)}
             />
           </>
         ) : (

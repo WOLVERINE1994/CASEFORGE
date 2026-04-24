@@ -23,7 +23,9 @@
 # misc
 .DS_Store
 *.pem
+.codex-runtime/
 .artifacts/
+.codex-runtime/
 
 # debug
 npm-debug.log*

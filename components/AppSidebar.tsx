@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import CaseForgeBrand from "./CaseForgeBrand";
 import { useActiveReviewerSession } from "./useActiveReviewerSession";
 
 type AppSidebarProps = {
@@ -201,9 +202,7 @@ export default function AppSidebar({ projectCount = 0 }: AppSidebarProps) {
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
             App Shell
           </p>
-          <h2 className="mt-2 text-xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-            CaseForge
-          </h2>
+          <CaseForgeBrand size="md" className="mt-3 w-full" priority />
           <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
             Stable navigation for dashboard, library, workspace, and settings.
           </p>

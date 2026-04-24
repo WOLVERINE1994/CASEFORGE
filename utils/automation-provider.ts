@@ -1,7 +1,10 @@
 import type {
+  AutomationExecutionEvent,
   AutomationExecutionMode,
   AutomationExecutionArtifact,
   AutomationExecutionStatus,
+  AutomationStepResult,
+  AutomationValidationResult,
   AutomationProvider,
   AutomationStep,
 } from "./workspace";
@@ -11,14 +14,17 @@ export type AutomationExecutionContext = {
   projectKey?: string;
   runId: string;
   caseId: string;
+  suiteId?: string;
+  suiteName?: string;
+  scenarioId?: string;
+  scenarioName?: string;
+  dataSetId?: string;
+  dataSetName?: string;
+  dataSetVariables?: Record<string, string>;
   executionId: string;
   outputDir: string;
   executionMode: AutomationExecutionMode;
-};
-
-export type AutomationValidationResult = {
-  valid: boolean;
-  errors: string[];
+  onExecutionEvent?: (event: AutomationExecutionEvent) => void | Promise<void>;
 };
 
 export type AutomationExecutionArtifactDraft = Omit<
@@ -30,6 +36,8 @@ export type AutomationExecutionResult = {
   status: AutomationExecutionStatus;
   logs: string[];
   failureMessage?: string;
+  failureStepId?: string;
+  stepResults: AutomationStepResult[];
   artifacts: AutomationExecutionArtifactDraft[];
 };
 
