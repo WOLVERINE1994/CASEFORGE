@@ -227,7 +227,6 @@ const aggregateStepResult = (results: AutomationStepResult[]) => {
 export default function AutomationStepForm({
   steps,
   selectedStepId,
-  onSelectStep,
   onChange,
   onAddStep,
   onDeleteStep,

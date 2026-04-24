@@ -54,9 +54,6 @@ const shouldStop = async () => {
   }
 };
 
-const escapeAttr = (value) =>
-  String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-
 const sanitizeEvent = (event) => {
   const timestamp = typeof event?.timestamp === "number" ? event.timestamp : Date.now();
   const baseEvent = {

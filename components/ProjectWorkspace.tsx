@@ -22,7 +22,6 @@ import TrustCenterPanel from "./TrustCenterPanel";
 import WorkflowValuePath from "./WorkflowValuePath";
 import {
   AdvancedFiltersPanel,
-  OverlayFormShell,
   SecondaryMetadataPanel,
 } from "./FilterWorkspaceSections";
 import { downloadCSV, downloadExcel } from "../utils/export";
@@ -56,10 +55,6 @@ import { suggestTestData } from "../utils/test-data";
 import { buildTrustCenterAnalysis } from "../utils/trust-center";
 import { buildDefaultAutomationReuseLibrary } from "../utils/automation-reuse";
 import {
-  getAutomationArtifactsForExecution,
-  getAutomationBindingForCase,
-  getAutomationExecutionsForCase,
-  getAutomationScriptById,
   normalizeAutomationRuntimeProvider,
 } from "../utils/automation";
 import { inferAutomationGenerationDomain } from "../utils/automation-step-generation";

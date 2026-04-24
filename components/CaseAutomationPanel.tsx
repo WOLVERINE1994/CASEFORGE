@@ -360,7 +360,6 @@ const aggregateStepResults = (results: AutomationStepResult[]) => {
 };
 
 export default function CaseAutomationPanel({
-  context = "case",
   row,
   script,
   steps,
@@ -390,16 +389,14 @@ export default function CaseAutomationPanel({
   const latestExecutionIdRef = useRef<string | null>(null);
 
   const [draftName, setDraftName] = useState(script?.name ?? `${row.id} flow`);
-  const [draftDescription, setDraftDescription] = useState(script?.description ?? "");
+  const [draftDescription] = useState(script?.description ?? "");
   const [draftProvider, setDraftProvider] = useState<AutomationProvider>(
     script?.provider ?? "playwright"
   );
   const [draftExecutionMode, setDraftExecutionMode] = useState<AutomationExecutionMode>(
     script?.executionMode ?? "headless"
   );
-  const [draftMode, setDraftMode] = useState<AutomationBindingMode>(
-    row.automationBindingMode ?? "automated"
-  );
+  const [draftMode] = useState<AutomationBindingMode>(row.automationBindingMode ?? "automated");
   const [draftEnvironmentId, setDraftEnvironmentId] = useState(
     script?.environmentBindingId ?? activeEnvironmentId
   );
@@ -570,12 +567,17 @@ export default function CaseAutomationPanel({
   const activeArtifacts = liveExecution.artifacts.length
     ? liveExecution.artifacts
     : latestArtifacts;
-  const activeStepResults =
-    liveExecution.stepResults.length
-      ? liveExecution.stepResults
-      : debugSession?.stepResults.length
-      ? debugSession.stepResults
-      : activeExecution?.stepResults ?? [];
+  const activeStepResults = useMemo(() => {
+    if (liveExecution.stepResults.length > 0) {
+      return liveExecution.stepResults;
+    }
+
+    if (debugSession?.stepResults.length) {
+      return debugSession.stepResults;
+    }
+
+    return activeExecution?.stepResults ?? [];
+  }, [activeExecution?.stepResults, debugSession?.stepResults, liveExecution.stepResults]);
   const activeDebugStepId =
     debugSession?.currentSourceStepId ??
     liveExecution.currentSourceStepId ??
@@ -621,7 +623,7 @@ export default function CaseAutomationPanel({
 
   const replaySequence = useMemo(() => {
     const seen = new Set<string>();
-    return activeStepResults
+    return [...activeStepResults]
       .sort((left, right) => left.stepIndex - right.stepIndex)
       .filter((result) => {
         const key = result.sourceStepId ?? result.stepId;
@@ -859,8 +861,6 @@ export default function CaseAutomationPanel({
     (selectedStepId ? draftSteps.find((step) => step.id === selectedStepId) : null) ??
     draftSteps[0] ??
     null;
-  const selectedStepIssues =
-    (selectedStep ? validationIssuesByStepId.get(selectedStep.id) : undefined) ?? [];
   const validationIssueCount = validationResult?.issues.length ?? 0;
 
   const runHref = useMemo(() => {
