@@ -88,6 +88,7 @@ export default async function ProjectOverviewPage({
     cameFromRelease ? `${path}${path.includes("?") ? "&" : "?"}from=release` : path;
   const reportsSummary = buildProjectReportsSummary(project, issues);
   const projectRows: Project["rows"] = project?.rows ?? [];
+  const projectAuditTrail: Project["auditTrail"] = project?.auditTrail ?? [];
   const totalCases = project?.testCaseCount ?? projectRows.length;
   const automationProviderPressure = Array.from(
     buildAutomationCandidateInsights(projectRows).reduce((accumulator, entry) => {
@@ -155,13 +156,13 @@ export default async function ProjectOverviewPage({
   const doneIssues = issues.filter((issue) => issue.status === "done").length;
   const linkedCases = projectRows.filter((row) => row.issueId || row.issueKey).length;
   const unlinkedCases = Math.max(totalCases - linkedCases, 0);
-  const templateImportAuditEntries = (project?.auditTrail ?? []).filter(
+  const templateImportAuditEntries = projectAuditTrail.filter(
     (entry) => entry.action === "Case template pack imported"
   );
-  const templateExportAuditEntries = (project?.auditTrail ?? []).filter(
+  const templateExportAuditEntries = projectAuditTrail.filter(
     (entry) => entry.action === "Case template pack exported"
   );
-  const latestTemplateOperationEntry = [...(project?.auditTrail ?? [])]
+  const latestTemplateOperationEntry = [...projectAuditTrail]
     .filter(
       (entry) =>
         entry.action === "Case template pack imported" ||
@@ -243,7 +244,7 @@ export default async function ProjectOverviewPage({
     }))
     .sort((left, right) => right.count - left.count);
   const activeOwners = assigneeWorkload.filter((entry) => entry.assignee !== "unassigned").length;
-  const recentCaseActivity = [...(project?.rows ?? [])].slice(-5).reverse();
+  const recentCaseActivity = [...projectRows].slice(-5).reverse();
   const latestReleaseDecision = project?.releaseReview?.recordedDecision;
   const latestReleaseDecisionLabel =
     latestReleaseDecision === "safe"
