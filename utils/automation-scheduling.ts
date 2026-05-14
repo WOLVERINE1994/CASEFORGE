@@ -372,7 +372,8 @@ const persistScheduledRun = async ({
     ...project,
     automationExecutions: [...(project.automationExecutions ?? []), ...executions],
     automationArtifacts: [...(project.automationArtifacts ?? []), ...artifacts],
-    automationSchedules: (project.automationSchedules ?? []).map((item) =>
+    automationSchedules: (project.automationSchedules ?? []).map(
+      (item: AutomationSchedule) =>
       item.id === schedule.id
         ? {
             ...item,
@@ -433,8 +434,8 @@ export const runDueAutomationSchedules = async ({
       continue;
     }
 
-    const schedules = project.automationSchedules ?? [];
-    const dueSchedules = schedules.filter((schedule) => {
+    const schedules: AutomationSchedule[] = project.automationSchedules ?? [];
+    const dueSchedules = schedules.filter((schedule: AutomationSchedule) => {
       if (scheduleId && schedule.id !== scheduleId) {
         return false;
       }
@@ -454,14 +455,15 @@ export const runDueAutomationSchedules = async ({
     for (const dueSchedule of dueSchedules) {
       workingProject = {
         ...workingProject,
-        automationSchedules: (workingProject.automationSchedules ?? []).map((item) =>
+        automationSchedules: (workingProject.automationSchedules ?? []).map(
+          (item: AutomationSchedule) =>
           item.id === dueSchedule.id
             ? {
                 ...item,
                 status: "running",
                 lastCheckedAt: now,
                 updatedAt: now,
-              }
+            }
             : item
         ),
       };
