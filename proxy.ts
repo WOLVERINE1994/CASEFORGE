@@ -1,6 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 
 const isProtectedRoute = createRouteMatcher([
   "/projects(.*)",
@@ -28,7 +27,7 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
   }
 });
 
-function missingClerkConfigProxy(_request: NextRequest) {
+function missingClerkConfigProxy() {
   return NextResponse.next();
 }
 
