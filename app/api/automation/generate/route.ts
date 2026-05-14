@@ -1,14 +1,10 @@
-import Groq from "groq-sdk";
 import {
   inferAutomationGenerationDomain,
   mapGeneratedIntentsToAutomationSteps,
   type GeneratedAutomationIntent,
 } from "../../../../utils/automation-step-generation";
+import { getGroqClient } from "../../../../utils/groq-client";
 import type { TestCaseRow } from "../../../../utils/workspace";
-
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
 
 const buildDomainInstructions = (domain: string, row: TestCaseRow) => {
   if (domain === "api") {
@@ -35,7 +31,7 @@ export async function POST(req: Request) {
     const domain = inferAutomationGenerationDomain(row);
     const domainInstructions = buildDomainInstructions(domain, row);
 
-    const completion = await groq.chat.completions.create({
+    const completion = await getGroqClient().chat.completions.create({
       model: "llama-3.1-8b-instant",
       temperature: 0.2,
       messages: [
