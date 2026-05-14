@@ -30,15 +30,26 @@ Required variables:
 - `DATABASE_URL`
 - `DIRECT_URL`
 - `GROQ_API_KEY`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `CLERK_SECRET_KEY`
+
+Optional / upcoming variables:
+
+- `NEXT_PUBLIC_APP_URL`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `NEXT_PUBLIC_RAZORPAY_KEY_ID`
+- `RAZORPAY_KEY_SECRET`
+- `RAZORPAY_WEBHOOK_SECRET`
 
 ### Database URLs
 
-Use:
+Use Supabase Postgres connection strings:
 
 - `DATABASE_URL` for the runtime app connection
 - `DIRECT_URL` for Prisma CLI operations and migrations
 
-For Neon/PostgreSQL, prefer:
+For Supabase/PostgreSQL, prefer SSL-enabled URLs:
 
 ```env
 DATABASE_URL="postgresql://USER:PASSWORD@HOST/DB_NAME?sslmode=verify-full&channel_binding=require"
@@ -51,6 +62,34 @@ Why `verify-full`:
 - it preserves the stricter behavior that the current driver stack already applies
 
 After changing `.env`, restart the dev server.
+
+### Authentication
+
+CaseForge uses Clerk authentication, matching the NoteGenie project pattern:
+
+- `ClerkProvider` is wired in [`app/layout.tsx`](./app/layout.tsx)
+- sign-in, sign-up, and the user menu live in [`components/AuthTopbar.tsx`](./components/AuthTopbar.tsx)
+- protected workspace and API routes are guarded in [`proxy.ts`](./proxy.ts)
+
+The dashboard route keeps a signed-out welcome screen, then loads project data only after Clerk returns a signed-in user.
+
+### Vercel + Supabase Deployment
+
+Before deploying on Vercel:
+
+1. Create or choose a Supabase project.
+2. Copy the Supabase Postgres connection strings into Vercel as `DATABASE_URL` and `DIRECT_URL`.
+3. Add `GROQ_API_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, and `CLERK_SECRET_KEY` in Vercel project environment variables.
+4. Run Prisma migrations against Supabase:
+
+```bash
+npm run db:deploy
+npm run db:generate
+```
+
+5. Deploy the Next.js app on Vercel.
+
+Razorpay variables are reserved in [`.env.example`](./.env.example) for the later billing phase.
 
 ## Prisma
 
