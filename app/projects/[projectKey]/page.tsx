@@ -42,6 +42,8 @@ const releaseDecisionTone = {
     "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200",
 } as const;
 
+type ReleaseDecisionKey = keyof typeof releaseDecisionTone;
+
 const executionVisualTone = {
   passed: "bg-emerald-500",
   failed: "bg-rose-500",
@@ -246,12 +248,18 @@ export default async function ProjectOverviewPage({
   const activeOwners = assigneeWorkload.filter((entry) => entry.assignee !== "unassigned").length;
   const recentCaseActivity = [...projectRows].slice(-5).reverse();
   const latestReleaseDecision = project?.releaseReview?.recordedDecision;
+  const latestReleaseDecisionKey: ReleaseDecisionKey | null =
+    latestReleaseDecision === "safe" ||
+    latestReleaseDecision === "caution" ||
+    latestReleaseDecision === "blocked"
+      ? latestReleaseDecision
+      : null;
   const latestReleaseDecisionLabel =
-    latestReleaseDecision === "safe"
+    latestReleaseDecisionKey === "safe"
       ? "Safe to release"
-      : latestReleaseDecision === "caution"
+      : latestReleaseDecisionKey === "caution"
       ? "Release with caution"
-      : latestReleaseDecision === "blocked"
+      : latestReleaseDecisionKey === "blocked"
       ? "Not ready for release"
       : null;
   const latestReleaseDecisionNote = project?.releaseReview?.decisionNote?.trim() || "";
@@ -336,10 +344,10 @@ export default async function ProjectOverviewPage({
           </div>
         )}
 
-        {latestReleaseDecision && latestReleaseDecisionLabel && (
+        {latestReleaseDecisionKey && latestReleaseDecisionLabel && (
           <div
             className={`mt-6 rounded-[24px] border px-5 py-4 shadow-sm ${
-              releaseDecisionTone[latestReleaseDecision]
+              releaseDecisionTone[latestReleaseDecisionKey]
             }`}
           >
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -469,7 +477,7 @@ export default async function ProjectOverviewPage({
                 {latestReleaseDecisionLabel ?? "No decision yet"}
               </p>
               <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                {latestReleaseDecision ? "Manager call recorded" : "Decision still pending"}
+                {latestReleaseDecisionKey ? "Manager call recorded" : "Decision still pending"}
               </p>
             </div>
             <div className="rounded-[22px] border border-zinc-200/80 bg-white/85 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-950/70">
