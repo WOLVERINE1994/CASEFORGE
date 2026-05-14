@@ -3,6 +3,7 @@ import BarChart from "../../../components/charts/BarChart";
 import TrendChart from "../../../components/charts/TrendChart";
 import type { SharedIssueRecord } from "../../../components/ProjectIssueStateContext";
 import { readProjectByRef } from "../../../utils/project-store";
+import type { Project } from "../../../utils/workspace";
 import { formatUtcDateTime } from "../../../utils/date-format";
 import { buildProjectReportsSummary } from "../../../utils/project-reports";
 import { buildAutomationCandidateInsights } from "../../../utils/test-case-management";
@@ -57,6 +58,14 @@ type ProjectOverviewPageProps = {
   }>;
 };
 
+type ReleaseSnapshot = NonNullable<
+  NonNullable<Project["releaseReview"]>["snapshots"]
+>[number];
+
+type AutomationProviderSnapshotEntry = NonNullable<
+  ReleaseSnapshot["automationProviders"]
+>[number];
+
 export default async function ProjectOverviewPage({
   params,
   searchParams,
@@ -106,11 +115,15 @@ export default async function ProjectOverviewPage({
       Array.isArray(snapshot.automationProviders) &&
       snapshot.automationProviders.length > 0
   );
+  const latestAutomationProviders: AutomationProviderSnapshotEntry[] =
+    latestProviderSnapshot?.automationProviders ?? [];
+  const previousAutomationProviders: AutomationProviderSnapshotEntry[] =
+    previousProviderSnapshot?.automationProviders ?? [];
   const automationProviderTrendBars =
-    latestProviderSnapshot?.automationProviders
-      ?.map((entry) => {
+    latestAutomationProviders
+      .map((entry) => {
         const previousCount =
-          previousProviderSnapshot?.automationProviders?.find(
+          previousAutomationProviders.find(
             (previousEntry) => previousEntry.provider === entry.provider
           )?.count ?? 0;
         const delta = entry.count - previousCount;
@@ -123,7 +136,7 @@ export default async function ProjectOverviewPage({
         };
       })
       .sort((left, right) => right.value - left.value)
-      .slice(0, 4) ?? [];
+      .slice(0, 4);
   const executionCounts = (project?.rows ?? []).reduce<Record<string, number>>(
     (accumulator, row) => {
       const key = row.executionResult ?? "not-run";
