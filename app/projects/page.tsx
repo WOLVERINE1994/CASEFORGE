@@ -8,6 +8,7 @@ import {
   listProjectIssuesForUi,
 } from "../../services/issue-service";
 import { readProjects } from "../../utils/project-store";
+import type { Project } from "../../utils/workspace";
 import { formatUtcDate } from "../../utils/date-format";
 import { buildAutomationCandidateInsights } from "../../utils/test-case-management";
 
@@ -22,12 +23,63 @@ const releaseDecisionTone = {
     "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300",
 } as const;
 
+type ReleaseDecisionKey = keyof typeof releaseDecisionTone;
+
 const portfolioDistributionTone = {
   safe: "bg-emerald-500",
   caution: "bg-amber-500",
   blocked: "bg-rose-500",
   none: "bg-zinc-400",
 } as const;
+
+type ReleaseSnapshot = NonNullable<
+  NonNullable<Project["releaseReview"]>["snapshots"]
+>[number];
+
+type AutomationProviderSnapshotEntry = NonNullable<
+  ReleaseSnapshot["automationProviders"]
+>[number];
+
+type TemplateSourceCount = {
+  source: string;
+  count: number;
+};
+
+type ProjectNotificationSummary = {
+  total: number;
+  unread: number;
+  mentions: number;
+  watchAlerts: number;
+  templateAlerts: number;
+  templateImportAlerts: number;
+  templateExportAlerts: number;
+  highSeverityTemplateAlerts: number;
+  templateSources: Map<string, number>;
+  dominantTemplateSource: TemplateSourceCount | null;
+};
+
+type AutomationProviderPressure = {
+  provider: string;
+  count: number;
+};
+
+type ProjectWithSignals = Project & {
+  blockerIssueCount: number;
+  failedCaseCount: number;
+  blockedCaseCount: number;
+  automationProviderPressure: AutomationProviderPressure[];
+  notificationSummary: ProjectNotificationSummary;
+};
+
+const projectNotifications = (project: Project) => project.notifications ?? [];
+const projectAuditTrail = (project: Project) => project.auditTrail;
+const projectSnapshots = (project: Project): ReleaseSnapshot[] =>
+  project.releaseReview?.snapshots ?? [];
+
+const toReleaseDecisionKey = (
+  value: NonNullable<Project["releaseReview"]>["recordedDecision"]
+): ReleaseDecisionKey | null =>
+  value === "safe" || value === "caution" || value === "blocked" ? value : null;
 
 type ProjectsPageProps = {
   searchParams?: Promise<{
@@ -57,7 +109,7 @@ const escapeMarkdown = (value: string | number | null | undefined) =>
 
 export default async function ProjectsPage({ searchParams }: ProjectsPageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  let projects = [] as Awaited<ReturnType<typeof readProjects>>;
+  let projects: Project[] = [];
   let projectLoadError = false;
 
   try {
@@ -66,8 +118,10 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     projectLoadError = true;
     console.error("Failed to load project library projects:", error);
   }
-  const rawProjectsWithSignals = await Promise.all(
-    projects.map(async (project) => {
+  const rawProjectsWithSignals: ProjectWithSignals[] = await Promise.all(
+    projects.map(async (project): Promise<ProjectWithSignals> => {
+      const rows = project.rows;
+      const notifications = projectNotifications(project);
       let blockerIssueCount = 0;
 
       try {
@@ -79,14 +133,14 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         console.error("PROJECT LIBRARY ISSUE SIGNAL ERROR:", error);
       }
 
-      const failedCaseCount = (project.rows ?? []).filter(
+      const failedCaseCount = rows.filter(
         (row) => row.executionResult === "failed"
       ).length;
-      const blockedCaseCount = (project.rows ?? []).filter(
+      const blockedCaseCount = rows.filter(
         (row) => row.executionResult === "blocked"
       ).length;
       const automationProviderPressure = Array.from(
-        buildAutomationCandidateInsights(project.rows ?? []).reduce((accumulator, entry) => {
+        buildAutomationCandidateInsights(rows).reduce((accumulator, entry) => {
           if (entry.automationStatus === "automated" || !entry.isStrongCandidate) {
             return accumulator;
           }
@@ -105,7 +159,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         failedCaseCount,
         blockedCaseCount,
         automationProviderPressure,
-        notificationSummary: (project.notifications ?? []).reduce(
+        notificationSummary: notifications.reduce<ProjectNotificationSummary>(
           (summary, notification) => {
             if (notification.archivedAt) {
               return summary;
@@ -157,12 +211,13 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
             templateExportAlerts: 0,
             highSeverityTemplateAlerts: 0,
             templateSources: new Map<string, number>(),
+            dominantTemplateSource: null,
           }
         ),
       };
     })
   );
-  const projectsWithSignals = rawProjectsWithSignals.map((project) => ({
+  const projectsWithSignals: ProjectWithSignals[] = rawProjectsWithSignals.map((project) => ({
     ...project,
     notificationSummary: {
       ...project.notificationSummary,
@@ -237,16 +292,16 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     withBlockers: projectsWithSignals.filter((project) => project.blockerIssueCount > 0).length,
     withSourceGovernance: projectsWithSignals.filter(
       (project) =>
-        (project.notifications ?? []).some(
+        projectNotifications(project).some(
           (notification) =>
             !notification.archivedAt &&
             notification.type === "template-operation" &&
             notification.severityLifted
         ) ||
-        (project.auditTrail ?? []).some((entry) => entry.action === "Template alert suppressed")
+        projectAuditTrail(project).some((entry) => entry.action === "Template alert suppressed")
     ).length,
     withPrioritizedSources: projectsWithSignals.filter((project) =>
-      (project.notifications ?? []).some(
+      projectNotifications(project).some(
         (notification) =>
           !notification.archivedAt &&
           notification.type === "template-operation" &&
@@ -254,12 +309,12 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
       )
     ).length,
     withMutedSources: projectsWithSignals.filter((project) =>
-      (project.auditTrail ?? []).some((entry) => entry.action === "Template alert suppressed")
+      projectAuditTrail(project).some((entry) => entry.action === "Template alert suppressed")
     ).length,
     importedTemplatePacks: projectsWithSignals.reduce(
       (accumulator, project) =>
         accumulator +
-        (project.auditTrail ?? []).filter(
+        projectAuditTrail(project).filter(
           (entry) => entry.action === "Case template pack imported"
         ).length,
       0
@@ -267,7 +322,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     exportedTemplatePacks: projectsWithSignals.reduce(
       (accumulator, project) =>
         accumulator +
-        (project.auditTrail ?? []).filter(
+        projectAuditTrail(project).filter(
           (entry) => entry.action === "Case template pack exported"
         ).length,
       0
@@ -285,19 +340,20 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     .sort((left, right) => right.count - left.count || left.provider.localeCompare(right.provider))
     .slice(0, 4);
   const projectsWithProviderSnapshots = projectsWithSignals.filter((project) =>
-    (project.releaseReview?.snapshots ?? []).some(
+    projectSnapshots(project).some(
       (snapshot) => Array.isArray(snapshot.automationProviders) && snapshot.automationProviders.length > 0
     )
   );
   const portfolioProviderTrend = Array.from(
     projectsWithProviderSnapshots.reduce((accumulator, project) => {
-      const latestProviderSnapshot = [...(project.releaseReview?.snapshots ?? [])]
+      const snapshots = projectSnapshots(project);
+      const latestProviderSnapshot = [...snapshots]
         .sort((left, right) => right.decisionRecordedAt - left.decisionRecordedAt)
         .find(
           (snapshot) =>
             Array.isArray(snapshot.automationProviders) && snapshot.automationProviders.length > 0
         );
-      const previousProviderSnapshot = [...(project.releaseReview?.snapshots ?? [])]
+      const previousProviderSnapshot = [...snapshots]
         .sort((left, right) => right.decisionRecordedAt - left.decisionRecordedAt)
         .find(
           (snapshot) =>
@@ -306,9 +362,14 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
             snapshot.automationProviders.length > 0
         );
 
-      latestProviderSnapshot?.automationProviders?.forEach((entry) => {
+      const latestProviders: AutomationProviderSnapshotEntry[] =
+        latestProviderSnapshot?.automationProviders ?? [];
+      const previousProviders: AutomationProviderSnapshotEntry[] =
+        previousProviderSnapshot?.automationProviders ?? [];
+
+      latestProviders.forEach((entry) => {
         const previousCount =
-          previousProviderSnapshot?.automationProviders?.find(
+          previousProviders.find(
             (previousEntry) => previousEntry.provider === entry.provider
           )?.count ?? 0;
         const current = accumulator.get(entry.provider) ?? { latest: 0, previous: 0 };
@@ -349,7 +410,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
   }));
   const recentTemplateOperationEntries = projectsWithSignals
     .flatMap((project) =>
-      (project.auditTrail ?? [])
+      projectAuditTrail(project)
         .filter(
           (entry) =>
             entry.action === "Case template pack imported" ||
@@ -401,7 +462,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     .slice(0, 4);
   const prioritizedTemplateSourceCards = Array.from(
     projectsWithSignals.reduce((accumulator, project) => {
-      (project.notifications ?? []).forEach((notification) => {
+      projectNotifications(project).forEach((notification) => {
         if (
           notification.archivedAt ||
           notification.type !== "template-operation" ||
@@ -436,7 +497,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     .slice(0, 4);
   const mutedTemplateSourceCards = Array.from(
     projectsWithSignals.reduce((accumulator, project) => {
-      (project.auditTrail ?? []).forEach((entry) => {
+      projectAuditTrail(project).forEach((entry) => {
         if (entry.action !== "Template alert suppressed") {
           return;
         }
@@ -470,7 +531,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     .slice(0, 4);
   const portfolioTemplateSourceDashboards = Array.from(
     projectsWithSignals.reduce((accumulator, project) => {
-      (project.auditTrail ?? []).forEach((entry) => {
+      projectAuditTrail(project).forEach((entry) => {
         const sourceSegments = entry.detail.includes("Sources:")
           ? entry.detail
               .match(/Sources:\s([^.]*)/)?.[1]
@@ -515,7 +576,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         });
       });
 
-      (project.notifications ?? []).forEach((notification) => {
+      projectNotifications(project).forEach((notification) => {
         if (
           notification.archivedAt ||
           notification.type !== "template-operation" ||
@@ -541,7 +602,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         accumulator.set(sourceLabel, current);
       });
 
-      (project.auditTrail ?? []).forEach((entry) => {
+      projectAuditTrail(project).forEach((entry) => {
         if (entry.action !== "Template alert suppressed") {
           return;
         }
@@ -595,7 +656,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     .slice(0, 6);
   const portfolioSourceRuleTrendPoints = Array.from(
     projectsWithSignals.reduce((accumulator, project) => {
-      (project.notifications ?? []).forEach((notification) => {
+      projectNotifications(project).forEach((notification) => {
         if (
           notification.archivedAt ||
           notification.type !== "template-operation" ||
@@ -608,7 +669,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         current.prioritized += 1;
         accumulator.set(bucket, current);
       });
-      (project.auditTrail ?? []).forEach((entry) => {
+      projectAuditTrail(project).forEach((entry) => {
         if (entry.action !== "Template alert suppressed") {
           return;
         }
@@ -736,20 +797,20 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     }
 
     if (signalFilter === "source-governance") {
-      const hasPrioritizedTemplateSources = (project.notifications ?? []).some(
+      const hasPrioritizedTemplateSources = projectNotifications(project).some(
         (notification) =>
           !notification.archivedAt &&
           notification.type === "template-operation" &&
           notification.severityLifted
       );
-      const hasMutedTemplateSources = (project.auditTrail ?? []).some(
+      const hasMutedTemplateSources = projectAuditTrail(project).some(
         (entry) => entry.action === "Template alert suppressed"
       );
       return hasPrioritizedTemplateSources || hasMutedTemplateSources;
     }
 
     if (signalFilter === "source-prioritized") {
-      return (project.notifications ?? []).some(
+      return projectNotifications(project).some(
         (notification) =>
           !notification.archivedAt &&
           notification.type === "template-operation" &&
@@ -758,7 +819,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     }
 
     if (signalFilter === "source-muted") {
-      return (project.auditTrail ?? []).some(
+      return projectAuditTrail(project).some(
         (entry) => entry.action === "Template alert suppressed"
       );
     }
@@ -780,12 +841,12 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     }
 
     const hasUnreadSource = project.notificationSummary.templateSources.has(sourceFilter);
-    const hasSuppressedSource = (project.auditTrail ?? []).some(
+    const hasSuppressedSource = projectAuditTrail(project).some(
       (entry) =>
         entry.action === "Template alert suppressed" &&
         entry.detail.includes(`from ${sourceFilter} was suppressed`)
     );
-    const hasTemplateSourceActivity = (project.auditTrail ?? []).some(
+    const hasTemplateSourceActivity = projectAuditTrail(project).some(
       (entry) =>
         (entry.action === "Case template pack imported" ||
           entry.action === "Case template pack exported") &&
@@ -808,8 +869,8 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     }
 
     if (sortMode === "risk") {
-      const leftDecision = left.releaseReview?.recordedDecision ?? "none";
-      const rightDecision = right.releaseReview?.recordedDecision ?? "none";
+      const leftDecision = toReleaseDecisionKey(left.releaseReview?.recordedDecision) ?? "none";
+      const rightDecision = toReleaseDecisionKey(right.releaseReview?.recordedDecision) ?? "none";
       const decisionDelta = decisionRank[leftDecision] - decisionRank[rightDecision];
 
       if (decisionDelta !== 0) {
@@ -1604,7 +1665,9 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
             ) : (
               <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {sortedProjects.map((project) => {
-                  const releaseDecision = project.releaseReview?.recordedDecision;
+                  const releaseDecision = toReleaseDecisionKey(
+                    project.releaseReview?.recordedDecision
+                  );
                   const releaseDecisionNote = project.releaseReview?.decisionNote?.trim() ?? "";
                   const releaseDecisionLabel =
                     releaseDecision === "safe"
@@ -1614,6 +1677,17 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                       : releaseDecision === "blocked"
                       ? "Not Ready"
                       : null;
+                  const cardNotifications = projectNotifications(project);
+                  const cardAuditTrail = projectAuditTrail(project);
+                  const hasPrioritizedSources = cardNotifications.some(
+                    (notification) =>
+                      !notification.archivedAt &&
+                      notification.type === "template-operation" &&
+                      notification.severityLifted
+                  );
+                  const hasMutedSources = cardAuditTrail.some(
+                    (entry) => entry.action === "Template alert suppressed"
+                  );
 
                     const projectRouteHref = projectHref(project.projectKey, project.id);
                     const notificationsHref = `${projectRouteHref}/notifications`;
@@ -1790,22 +1864,9 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                               {project.notificationSummary.dominantTemplateSource.count === 1 ? "" : "s"}
                             </p>
                           ) : null}
-                          {((project.notifications ?? []).some(
-                            (notification) =>
-                              !notification.archivedAt &&
-                              notification.type === "template-operation" &&
-                              notification.severityLifted
-                          ) ||
-                            (project.auditTrail ?? []).some(
-                              (entry) => entry.action === "Template alert suppressed"
-                            )) ? (
+                          {hasPrioritizedSources || hasMutedSources ? (
                             <div className="mt-3 flex flex-wrap gap-2">
-                              {(project.notifications ?? []).some(
-                                (notification) =>
-                                  !notification.archivedAt &&
-                                  notification.type === "template-operation" &&
-                                  notification.severityLifted
-                              ) ? (
+                              {hasPrioritizedSources ? (
                                 <Link
                                   href={`${projectRouteHref}/reports?templateAction=all&focus=source-governance`}
                                   className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
@@ -1813,9 +1874,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                                   Prioritized Sources Active
                                 </Link>
                               ) : null}
-                              {(project.auditTrail ?? []).some(
-                                (entry) => entry.action === "Template alert suppressed"
-                              ) ? (
+                              {hasMutedSources ? (
                                 <Link
                                   href={`${projectRouteHref}/reports?templateAction=all&focus=source-governance`}
                                   className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
