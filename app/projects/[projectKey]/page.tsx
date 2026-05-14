@@ -87,9 +87,10 @@ export default async function ProjectOverviewPage({
   const buildProjectHref = (path: string) =>
     cameFromRelease ? `${path}${path.includes("?") ? "&" : "?"}from=release` : path;
   const reportsSummary = buildProjectReportsSummary(project, issues);
-  const totalCases = project?.testCaseCount ?? project?.rows.length ?? 0;
+  const projectRows: Project["rows"] = project?.rows ?? [];
+  const totalCases = project?.testCaseCount ?? projectRows.length;
   const automationProviderPressure = Array.from(
-    buildAutomationCandidateInsights(project?.rows ?? []).reduce((accumulator, entry) => {
+    buildAutomationCandidateInsights(projectRows).reduce((accumulator, entry) => {
       if (entry.automationStatus === "automated" || !entry.isStrongCandidate) {
         return accumulator;
       }
@@ -137,7 +138,7 @@ export default async function ProjectOverviewPage({
       })
       .sort((left, right) => right.value - left.value)
       .slice(0, 4);
-  const executionCounts = (project?.rows ?? []).reduce<Record<string, number>>(
+  const executionCounts = projectRows.reduce<Record<string, number>>(
     (accumulator, row) => {
       const key = row.executionResult ?? "not-run";
       accumulator[key] = (accumulator[key] ?? 0) + 1;
@@ -152,7 +153,7 @@ export default async function ProjectOverviewPage({
   const totalIssues = issues.length;
   const blockedIssues = issues.filter((issue) => issue.status === "blocked").length;
   const doneIssues = issues.filter((issue) => issue.status === "done").length;
-  const linkedCases = (project?.rows ?? []).filter((row) => row.issueId || row.issueKey).length;
+  const linkedCases = projectRows.filter((row) => row.issueId || row.issueKey).length;
   const unlinkedCases = Math.max(totalCases - linkedCases, 0);
   const templateImportAuditEntries = (project?.auditTrail ?? []).filter(
     (entry) => entry.action === "Case template pack imported"
