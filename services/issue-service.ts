@@ -78,6 +78,8 @@ type ProjectLookup = {
   key: string | null;
 };
 
+type IssueTransactionClient = Pick<typeof prisma, "$queryRaw">;
+
 const issueTypeToDb = (value: IssueType) =>
   value === "test-case"
     ? "test_case"
@@ -247,7 +249,7 @@ export const createProjectIssue = async (
 
     const projectRef = project.key?.trim() || project.id;
 
-    return prisma.$transaction(async (transaction) => {
+    return prisma.$transaction(async (transaction: IssueTransactionClient) => {
       const nextIssueNumberRows = await transaction.$queryRaw<{ nextNumber: number }[]>`
           SELECT COALESCE(MAX("issueNumber"), 0) + 1 AS "nextNumber"
           FROM "Issue"

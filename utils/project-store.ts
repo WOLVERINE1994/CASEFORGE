@@ -100,6 +100,11 @@ type AutomationProjectRecord = Awaited<
   >
 >;
 
+type ProjectStoreTransactionClient = Pick<
+  typeof prisma,
+  "changeComparison" | "project" | "requirement" | "testCase"
+>;
+
 const sanitizeJson = (value: unknown): StoredJson => {
   if (value === null) {
     return null as unknown as InputJsonValue;
@@ -3324,7 +3329,7 @@ export const writeProjects = async (projects: Project[]) => {
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: ProjectStoreTransactionClient) => {
         await tx.project.deleteMany({
           where: incomingProjectIds.length > 0 ? { id: { notIn: incomingProjectIds } } : {},
         });
