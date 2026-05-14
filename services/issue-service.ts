@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { Prisma } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 import { createActivityLog } from "./activity-service";
 
@@ -165,14 +164,14 @@ const withIssueReadiness = <T,>(operation: () => Promise<T>) =>
   });
 
 const findProjectByKey = async (projectKey: string) => {
-  const rows = await prisma.$queryRaw<ProjectLookup[]>(Prisma.sql`
+  const rows = await prisma.$queryRaw<ProjectLookup[]>`
     SELECT "id", "key"
     FROM "Project"
     WHERE LOWER(COALESCE("key", '')) = LOWER(${projectKey})
        OR LOWER("id") = LOWER(${projectKey})
        OR LOWER(COALESCE("rows"->'planning'->>'projectKey', '')) = LOWER(${projectKey})
     LIMIT 1
-  `);
+  `;
 
   return rows[0] ?? null;
 };
@@ -181,7 +180,7 @@ export const listProjectIssues = async (
   projectKey: string
 ): Promise<IssueRecord[]> =>
   withIssueReadiness(async () => {
-    const issues = await prisma.$queryRaw<IssueRow[]>(Prisma.sql`
+    const issues = await prisma.$queryRaw<IssueRow[]>`
       SELECT
         i."id",
         i."projectId",
@@ -205,7 +204,7 @@ export const listProjectIssues = async (
          OR LOWER(p."id") = LOWER(${projectKey})
          OR LOWER(COALESCE(p."rows"->'planning'->>'projectKey', '')) = LOWER(${projectKey})
       ORDER BY i."issueNumber" DESC
-    `);
+    `;
 
     return issues.map(mapIssueRecord);
   });
@@ -249,18 +248,16 @@ export const createProjectIssue = async (
     const projectRef = project.key?.trim() || project.id;
 
     return prisma.$transaction(async (transaction) => {
-      const nextIssueNumberRows = await transaction.$queryRaw<{ nextNumber: number }[]>(
-        Prisma.sql`
+      const nextIssueNumberRows = await transaction.$queryRaw<{ nextNumber: number }[]>`
           SELECT COALESCE(MAX("issueNumber"), 0) + 1 AS "nextNumber"
           FROM "Issue"
           WHERE "projectId" = ${project.id}
-        `
-      );
+        `;
       const issueNumber = nextIssueNumberRows[0]?.nextNumber ?? 1;
       const issueKey = `${projectRef}-${issueNumber}`;
       const issueId = randomUUID();
 
-      const createdRows = await transaction.$queryRaw<IssueRow[]>(Prisma.sql`
+      const createdRows = await transaction.$queryRaw<IssueRow[]>`
         INSERT INTO "Issue" (
           "id",
           "projectId",
@@ -312,7 +309,7 @@ export const createProjectIssue = async (
           "dueDate",
           "createdAt",
           "updatedAt"
-      `);
+      `;
 
       const createdIssue = mapIssueRecord(createdRows[0]);
       await createActivityLog({
@@ -338,7 +335,7 @@ export const updateIssue = async (
   actorId?: string | null
 ): Promise<IssueRecord> =>
   withIssueReadiness(async () => {
-    const existingRows = await prisma.$queryRaw<IssueRow[]>(Prisma.sql`
+    const existingRows = await prisma.$queryRaw<IssueRow[]>`
       SELECT
         i."id",
         i."projectId",
@@ -360,14 +357,14 @@ export const updateIssue = async (
       INNER JOIN "Project" p ON p."id" = i."projectId"
       WHERE i."id" = ${issueId}
       LIMIT 1
-    `);
+    `;
 
     const existing = existingRows[0];
     if (!existing) {
       throw new Error("Issue not found.");
     }
 
-    const updatedRows = await prisma.$queryRaw<IssueRow[]>(Prisma.sql`
+    const updatedRows = await prisma.$queryRaw<IssueRow[]>`
       UPDATE "Issue"
       SET
         "type" = ${issueTypeToDb(input.type ?? issueTypeFromDb(existing.type))}::"IssueType",
@@ -404,7 +401,7 @@ export const updateIssue = async (
         "dueDate",
         "createdAt",
         "updatedAt"
-    `);
+    `;
 
     const updatedIssue = mapIssueRecord(updatedRows[0]);
     await createActivityLog({

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { Prisma } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 import { createActivityLog } from "./activity-service";
 
@@ -75,7 +74,7 @@ const mapCommentRecord = (row: CommentRow): CommentRecord => ({
 
 export const listIssueComments = async (issueId: string): Promise<CommentRecord[]> =>
   withCommentReadiness(async () => {
-    const rows = await prisma.$queryRaw<CommentRow[]>(Prisma.sql`
+    const rows = await prisma.$queryRaw<CommentRow[]>`
       SELECT
         c."id",
         c."issueId",
@@ -89,7 +88,7 @@ export const listIssueComments = async (issueId: string): Promise<CommentRecord[
       INNER JOIN "User" u ON u."id" = c."authorId"
       WHERE c."issueId" = ${issueId}
       ORDER BY c."createdAt" DESC
-    `);
+    `;
 
     return rows.map(mapCommentRecord);
   });
@@ -104,29 +103,29 @@ export const createIssueComment = async (
       throw new Error("Comment body is required.");
     }
 
-    const issueRows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+    const issueRows = await prisma.$queryRaw<{ id: string }[]>`
       SELECT "id"
       FROM "Issue"
       WHERE "id" = ${issueId}
       LIMIT 1
-    `);
+    `;
 
     if (!issueRows[0]) {
       throw new Error("Issue not found.");
     }
 
-    const authorRows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+    const authorRows = await prisma.$queryRaw<{ id: string }[]>`
       SELECT "id"
       FROM "User"
       WHERE "id" = ${input.authorId}
       LIMIT 1
-    `);
+    `;
 
     if (!authorRows[0]) {
       throw new Error("Comment author not found.");
     }
 
-    const createdRows = await prisma.$queryRaw<CommentRow[]>(Prisma.sql`
+    const createdRows = await prisma.$queryRaw<CommentRow[]>`
       INSERT INTO "Comment" (
         "id",
         "issueId",
@@ -160,7 +159,7 @@ export const createIssueComment = async (
         "body",
         "createdAt",
         "updatedAt"
-    `);
+    `;
 
     const createdComment = mapCommentRecord(createdRows[0]);
     await createActivityLog({

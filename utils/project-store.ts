@@ -1,12 +1,17 @@
 import {
   CoverageDepth,
   GenerationMode,
-  Prisma,
   Persona,
   SignoffStatus,
   SourceType,
   TestCaseType,
 } from "@prisma/client";
+import type {
+  InputJsonArray,
+  InputJsonObject,
+  InputJsonValue,
+  JsonValue,
+} from "@prisma/client/runtime/client";
 import { cache } from "react";
 
 import { prisma } from "./prisma";
@@ -45,9 +50,9 @@ import {
   TestRunRecord,
 } from "./workspace";
 
-type StoredJson = Prisma.InputJsonValue | typeof Prisma.JsonNull;
+type StoredJson = InputJsonValue;
 
-const sanitizeJsonValue = (value: unknown): Prisma.InputJsonValue => {
+const sanitizeJsonValue = (value: unknown): InputJsonValue => {
   if (
     typeof value === "string" ||
     typeof value === "number" ||
@@ -59,7 +64,7 @@ const sanitizeJsonValue = (value: unknown): Prisma.InputJsonValue => {
   if (Array.isArray(value)) {
     return value.map((item) =>
       item === undefined ? null : sanitizeJsonValue(item)
-    ) as Prisma.InputJsonArray;
+    ) as InputJsonArray;
   }
 
   if (value && typeof value === "object") {
@@ -67,10 +72,10 @@ const sanitizeJsonValue = (value: unknown): Prisma.InputJsonValue => {
       Object.entries(value).flatMap(([key, entryValue]) =>
         entryValue === undefined ? [] : [[key, sanitizeJsonValue(entryValue)]]
       )
-    ) as Prisma.InputJsonObject;
+    ) as InputJsonObject;
   }
 
-  return null as unknown as Prisma.InputJsonValue;
+  return null as unknown as InputJsonValue;
 };
 
 type ProjectRecord = Awaited<
@@ -97,7 +102,7 @@ type AutomationProjectRecord = Awaited<
 
 const sanitizeJson = (value: unknown): StoredJson => {
   if (value === null) {
-    return Prisma.JsonNull;
+    return null as unknown as InputJsonValue;
   }
 
   return sanitizeJsonValue(value);
@@ -2994,7 +2999,7 @@ const toProjectShellSummary = (project: {
   id: string;
   key: string | null;
   name: string;
-  rows: Prisma.JsonValue;
+  rows: JsonValue;
   _count: {
     testCases: number;
   };
@@ -3113,14 +3118,14 @@ export const readProjectByRef = cache(async (projectRef: string) => {
     return directById;
   }
 
-  const directProjectRows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+  const directProjectRows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT "id"
     FROM "Project"
     WHERE LOWER("id") = LOWER(${projectRef})
        OR LOWER(COALESCE("key", '')) = LOWER(${projectRef})
        OR LOWER(COALESCE("rows"->'planning'->>'projectKey', '')) = LOWER(${projectRef})
     LIMIT 1
-  `);
+  `;
 
   const directProjectId = directProjectRows[0]?.id;
   if (directProjectId) {
@@ -3151,14 +3156,14 @@ export const readAutomationProjectByRef = cache(async (projectRef: string) => {
     return directById;
   }
 
-  const directProjectRows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+  const directProjectRows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT "id"
     FROM "Project"
     WHERE LOWER("id") = LOWER(${projectRef})
        OR LOWER(COALESCE("key", '')) = LOWER(${projectRef})
        OR LOWER(COALESCE("rows"->'planning'->>'projectKey', '')) = LOWER(${projectRef})
     LIMIT 1
-  `);
+  `;
 
   const directProjectId = directProjectRows[0]?.id;
   if (!directProjectId) {
@@ -3181,14 +3186,14 @@ export const readProjectShellByRef = cache(async (projectRef: string) => {
     return directById;
   }
 
-  const directProjectRows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+  const directProjectRows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT "id"
     FROM "Project"
     WHERE LOWER("id") = LOWER(${projectRef})
        OR LOWER(COALESCE("key", '')) = LOWER(${projectRef})
        OR LOWER(COALESCE("rows"->'planning'->>'projectKey', '')) = LOWER(${projectRef})
     LIMIT 1
-  `);
+  `;
 
   const directProjectId = directProjectRows[0]?.id;
   if (!directProjectId) {

@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 
 export type UserRecord = {
@@ -69,7 +68,7 @@ const mapUserRecord = (row: UserRow): UserRecord => ({
 
 export const listUsers = async (): Promise<UserRecord[]> =>
   withUserReadiness(async () => {
-    const rows = await prisma.$queryRaw<UserRow[]>(Prisma.sql`
+    const rows = await prisma.$queryRaw<UserRow[]>`
       SELECT
         "id",
         "name",
@@ -81,7 +80,7 @@ export const listUsers = async (): Promise<UserRecord[]> =>
         "updatedAt"
       FROM "User"
       ORDER BY "name" ASC
-    `);
+    `;
 
     return rows.map(mapUserRecord);
   });
