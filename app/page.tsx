@@ -6,6 +6,7 @@ import AppSidebar from "../components/AppSidebar";
 import TrendChart from "../components/charts/TrendChart";
 import ResponsiveShell from "../components/ResponsiveShell";
 import { readProjects } from "../utils/project-store";
+import type { Project } from "../utils/workspace";
 
 const projectHref = (projectKey: string | undefined, projectId: string) =>
   `/projects/${encodeURIComponent(projectKey?.trim() || projectId)}`;
@@ -86,7 +87,7 @@ export default async function HomePage() {
     return <SignedOutHome />;
   }
 
-  let projects = [] as Awaited<ReturnType<typeof readProjects>>;
+  let projects: Project[] = [];
   let projectLoadError = false;
 
   try {
