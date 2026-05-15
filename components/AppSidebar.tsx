@@ -197,14 +197,8 @@ export default function AppSidebar({ projectCount = 0 }: AppSidebarProps) {
         className="flex max-h-[calc(100vh-3rem)] flex-col gap-5 overflow-y-auto p-5 pr-4 [mask-image:linear-gradient(to_bottom,transparent_0,black_20px,black_calc(100%-20px),transparent_100%)] [scrollbar-gutter:stable]"
         style={{ scrollbarWidth: "thin" }}
       >
-        <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-950/70">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
-            App Shell
-          </p>
-          <CaseForgeBrand size="md" className="mt-3 w-full" priority />
-          <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-            Stable navigation for dashboard, library, workspace, and settings.
-          </p>
+        <div className="px-1">
+          <CaseForgeBrand size="md" priority />
         </div>
 
         <div className="rounded-[20px] border border-zinc-200/80 bg-white/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">

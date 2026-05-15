@@ -17,22 +17,13 @@ const markSizeClassName = {
 
 const wordmarkClassName = {
   sm: {
-    wrap: "gap-2.5",
     title: "text-base",
-    subtext: "text-[10px]",
-    showSubtext: false,
   },
   md: {
-    wrap: "gap-3",
     title: "text-lg",
-    subtext: "text-[10px]",
-    showSubtext: true,
   },
   lg: {
-    wrap: "gap-3.5",
     title: "text-[22px]",
-    subtext: "text-[11px]",
-    showSubtext: true,
   },
 } as const;
 
@@ -80,24 +71,16 @@ export default function CaseForgeBrand({
 
   return (
     <div
-      className={`pointer-events-none flex select-none items-center ${config.wrap} ${className}`.trim()}
+      className={`pointer-events-none select-none ${className}`.trim()}
       aria-label="caseForge"
     >
-      <BrandMark size={size} priority={priority} />
-      <div className="min-w-0">
-        <div
-          className={`truncate font-semibold tracking-tight text-slate-950 dark:text-slate-50 ${config.title}`}
-        >
-          <span>case</span>
-          <span className="bg-[linear-gradient(135deg,#2563EB_0%,#4F46E5_52%,#7C3AED_100%)] bg-clip-text text-transparent">
-            Forge
-          </span>
-        </div>
-        {config.showSubtext ? (
-          <p className={`mt-0.5 truncate font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 ${config.subtext}`}>
-            AI-powered QA workspace
-          </p>
-        ) : null}
+      <div
+        className={`truncate font-semibold tracking-tight text-slate-950 dark:text-slate-50 ${config.title}`}
+      >
+        <span>case</span>
+        <span className="bg-[linear-gradient(135deg,#2563EB_0%,#4F46E5_52%,#7C3AED_100%)] bg-clip-text text-transparent">
+          Forge
+        </span>
       </div>
     </div>
   );
