@@ -1,10 +1,11 @@
 import { SignInButton, SignUpButton } from "@clerk/nextjs";
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
 import ActiveReviewerBanner from "../components/ActiveReviewerBanner";
 import AppSidebar from "../components/AppSidebar";
 import TrendChart from "../components/charts/TrendChart";
 import ResponsiveShell from "../components/ResponsiveShell";
+import { syncAuthenticatedUser } from "../services/user-service";
 import { readProjects } from "../utils/project-store";
 import type { Project } from "../utils/workspace";
 
@@ -112,6 +113,25 @@ export default async function HomePage() {
 
   if (!userId) {
     return <SignedOutHome />;
+  }
+
+  try {
+    const user = await currentUser();
+    const email = user?.primaryEmailAddress?.emailAddress;
+
+    if (user && email) {
+      await syncAuthenticatedUser({
+        id: user.id,
+        name:
+          user.fullName ||
+          [user.firstName, user.lastName].filter(Boolean).join(" ") ||
+          email,
+        email,
+        avatarUrl: user.imageUrl,
+      });
+    }
+  } catch (error) {
+    console.error("Failed to sync authenticated user:", error);
   }
 
   let projects: Project[] = [];

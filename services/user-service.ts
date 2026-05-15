@@ -11,6 +11,13 @@ export type UserRecord = {
   updatedAt: string;
 };
 
+export type SyncAuthenticatedUserInput = {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string | null;
+};
+
 type UserRow = {
   id: string;
   name: string;
@@ -83,4 +90,56 @@ export const listUsers = async (): Promise<UserRecord[]> =>
     `;
 
     return rows.map(mapUserRecord);
+  });
+
+export const syncAuthenticatedUser = async (
+  input: SyncAuthenticatedUserInput
+): Promise<UserRecord | null> =>
+  withUserReadiness(async () => {
+    const email = input.email.trim().toLowerCase();
+
+    if (!input.id.trim() || !email) {
+      return null;
+    }
+
+    const name = input.name.trim() || email;
+    const rows = await prisma.$queryRaw<UserRow[]>`
+      INSERT INTO "User" (
+        "id",
+        "name",
+        "email",
+        "avatarUrl",
+        "role",
+        "isActive",
+        "createdAt",
+        "updatedAt"
+      )
+      VALUES (
+        ${input.id},
+        ${name},
+        ${email},
+        ${input.avatarUrl ?? null},
+        ${"reviewer"}::"UserRole",
+        true,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+      ON CONFLICT ("email") DO UPDATE
+      SET
+        "name" = EXCLUDED."name",
+        "avatarUrl" = EXCLUDED."avatarUrl",
+        "isActive" = true,
+        "updatedAt" = CURRENT_TIMESTAMP
+      RETURNING
+        "id",
+        "name",
+        "email",
+        "avatarUrl",
+        "role",
+        "isActive",
+        "createdAt",
+        "updatedAt"
+    `;
+
+    return rows[0] ? mapUserRecord(rows[0]) : null;
   });
