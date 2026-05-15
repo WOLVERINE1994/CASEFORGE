@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from "react";
 import { parseResultToRows, rowsToText } from "../utils/parser";
 import RequirementRiskHeatmap from "./RequirementRiskHeatmap";
 import BugPredictionPanel from "./BugPredictionPanel";
@@ -5132,6 +5132,29 @@ export default function ProjectWorkspace({
     activeProjectRouteRef === "new"
       ? "/projects/new"
       : `/projects/${activeProjectRouteRef}/issues`;
+  const handleProjectRouteClick = (
+    event: MouseEvent<HTMLAnchorElement>,
+    routeLabel: "Cases" | "Board" | "Issues"
+  ) => {
+    if (activeProjectRouteRef !== "new") {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (routeLabel === "Cases" && rows.length === 0) {
+      showWorkspaceNotice(
+        "info",
+        "Generate test cases first, then save the workspace before opening the Cases route."
+      );
+      return;
+    }
+
+    showWorkspaceNotice(
+      "info",
+      `Save this workspace as a project before opening ${routeLabel}. CaseForge needs a project key to build that route.`
+    );
+  };
   const requirementRiskAnalysis = useMemo(
     () => analyzeRequirementRisk(input, persona),
     [input, persona]
@@ -7440,6 +7463,7 @@ export default function ProjectWorkspace({
             </Link>
             <Link
               href={activeProjectCasesHref}
+              onClick={(event) => handleProjectRouteClick(event, "Cases")}
               className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
                 initialSection === "cases"
                   ? "border-emerald-300 bg-emerald-50 text-emerald-950 shadow-sm ring-1 ring-emerald-100 dark:border-emerald-400/40 dark:bg-emerald-400/15 dark:text-emerald-100 dark:ring-emerald-400/20"
@@ -7450,12 +7474,14 @@ export default function ProjectWorkspace({
             </Link>
             <Link
               href={activeProjectBoardHref}
+              onClick={(event) => handleProjectRouteClick(event, "Board")}
               className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
             >
               Board
             </Link>
             <Link
               href={activeProjectIssuesHref}
+              onClick={(event) => handleProjectRouteClick(event, "Issues")}
               className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
             >
               Issues
