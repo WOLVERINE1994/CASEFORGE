@@ -7,13 +7,13 @@ const getModeInstructions = (mode: string) => {
     case "edge":
       return "Focus on boundary values, unusual combinations, extreme conditions, empty states, limits, and rare but realistic scenarios.";
     case "ui":
-      return "Focus on UI behavior, field validation, labels, button states, visibility, usability, layout-related validation, and user interaction flows.";
+      return "Focus on UI behavior, field validation, labels, button states, visibility, usability, layout-related validation, user interaction flows, and practical accessibility checks where the UI is user-facing.";
     case "api":
       return "Focus on API request and response validation, required fields, status codes, invalid payloads, authentication, authorization, and schema checks.";
     case "security":
       return "Focus on defensive security validation for systems the user owns or is authorized to test. Cover authentication, authorization, session handling, input validation, sensitive data protection, secure error handling, upload safety, API boundary validation, abuse resistance, and business-logic misuse prevention. Do not produce exploit instructions, payload libraries, or offensive hacking content.";
     case "accessibility":
-      return "Focus on manual accessibility and WCAG-oriented validation. Cover keyboard navigation, visible focus order, focus management, semantic labels, form labels and error associations, alt text expectations, heading structure, color contrast review points, screen reader behavior, zoom and reflow, status announcements, clear link/button labels, and motion/accessibility considerations where relevant.";
+      return "Focus on manual accessibility and WCAG 2.2 AA-oriented validation. Cover WCAG POUR principles: perceivable content, operable keyboard flow, understandable labels/errors, and robust semantic structure. Include keyboard navigation, visible focus order, focus management, semantic labels, form labels and error associations, alt text expectations, heading structure, color contrast review points, screen reader behavior, zoom and reflow, status announcements, clear link/button labels, target size, and motion/accessibility considerations where relevant.";
     case "regression":
       return "Focus on core workflows that should remain stable after changes, including key business flows and previously working behaviors.";
     case "salesforce":
@@ -22,6 +22,22 @@ const getModeInstructions = (mode: string) => {
     default:
       return "Focus on core functional flows, expected user behavior, successful paths, and major business logic.";
   }
+};
+
+const wcagCoverageGuidance = (mode: string, coverage: string) => {
+  if (mode === "api" || mode === "security") {
+    return "Do not force WCAG UI cases for non-visual backend/API-only requirements unless the requirement explicitly includes a user-facing interface, notification, document, or media output.";
+  }
+
+  if (mode === "accessibility") {
+    return "Because accessibility mode is selected, most or all cases should be WCAG 2.2 AA-oriented UI/manual validation cases. Use UI as the Type, mention the relevant accessibility focus in the title or expected result, and cover keyboard, focus, semantics, forms/errors, contrast, zoom/reflow, screen reader announcements, and media/alternative text when relevant.";
+  }
+
+  if (mode === "ui" || coverage === "thorough") {
+    return "For user-facing UI requirements, include at least one WCAG 2.2 AA-oriented case when relevant. Use UI as the Type and ground it in observable behavior such as keyboard operation, focus visibility/order, accessible names, form error association, color contrast, zoom/reflow, screen reader announcements, or alt text.";
+  }
+
+  return "When the requirement clearly describes a user-facing UI, consider one practical WCAG 2.2 AA-oriented case if it adds meaningful coverage; do not add accessibility filler for backend-only or purely API behavior.";
 };
 
 const getCoverageInstructions = (coverage: string) => {
@@ -79,6 +95,7 @@ export async function POST(req: Request) {
     const modeInstructions = getModeInstructions(mode);
     const coverageInstructions = getCoverageInstructions(coverage);
     const personaInstructions = getPersonaInstructions(persona);
+    const accessibilityInstructions = wcagCoverageGuidance(mode, coverage);
 
     const chatCompletion = await getGroqClient().chat.completions.create({
       model: "llama-3.1-8b-instant",
@@ -113,6 +130,9 @@ ${coverageInstructions}
 
 Persona Guidance:
 ${personaInstructions}
+
+WCAG Accessibility Guidance:
+${accessibilityInstructions}
 
 IMPORTANT RULES:
 - Do NOT use markdown
@@ -154,7 +174,8 @@ IMPORTANT RULES:
 - Prefer one strong case over multiple shallow duplicates
 - If a negative or edge scenario is not supported by the requirement or selected mode, do not force it
 - For security mode, prefer realistic validation scenarios around access, protection, misuse resistance, and safe failure handling instead of attack walkthroughs
-- For accessibility mode, prefer practical WCAG-oriented manual checks with observable expected outcomes
+- For accessibility mode, prefer practical WCAG 2.2 AA-oriented manual checks with observable expected outcomes
+- For WCAG-oriented cases, use UI as the Type and mention observable accessibility evidence such as keyboard behavior, focus order, accessible names, form associations, contrast, zoom/reflow, screen reader announcements, captions, or alt text
 
 Format exactly like this:
 TC001 | Functional | Title | Preconditions item 1; Preconditions item 2 | Step 1; Step 2; Step 3 | Expected Result | Test Data item 1; Test Data item 2
