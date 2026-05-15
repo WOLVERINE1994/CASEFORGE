@@ -117,11 +117,10 @@ export default function AppSidebar({ projectCount = 0 }: AppSidebarProps) {
 
   const navItems = useMemo(
     () => [
-      { href: "/", label: "Dashboard", kind: "dashboard" as const, active: pathname === "/" },
       {
         href: "/projects",
-        label: "Project Library",
-        kind: "library" as const,
+        label: "Dashboard",
+        kind: "dashboard" as const,
         active: pathname === "/projects",
         count: projectCount,
       },
