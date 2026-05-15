@@ -46,16 +46,16 @@ export default function RootLayout({
   }
 
   return (
-    <ClerkProvider publishableKey={clerkPublishableKey}>
-      <html lang="en" className="dark" suppressHydrationWarning>
-        <body
-          suppressHydrationWarning
-          className="antialiased"
-        >
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <body
+        suppressHydrationWarning
+        className="antialiased"
+      >
+        <ClerkProvider publishableKey={clerkPublishableKey}>
           <AuthTopbar />
           {children}
-        </body>
-      </html>
-    </ClerkProvider>
+        </ClerkProvider>
+      </body>
+    </html>
   );
 }
