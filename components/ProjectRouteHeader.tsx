@@ -165,22 +165,29 @@ function RouteIcon({ kind }: RouteIconProps) {
 const routeBadgeClassName = (active: boolean) =>
   `mr-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1.5 text-[10px] font-bold uppercase tracking-[0.08em] ${
     active
-      ? "border-cyan-400/20 bg-slate-950/85 text-cyan-200"
-      : "border-slate-700 bg-slate-900/80 text-slate-400"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : "border-zinc-200 bg-zinc-50 text-zinc-500"
   }`;
 
 const linkClassName = (active: boolean) =>
   `group relative inline-flex items-center rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
     active
-      ? "border-transparent bg-[linear-gradient(135deg,#2563EB_0%,#4F46E5_52%,#7C3AED_100%)] text-white shadow-[0_18px_34px_-24px_rgba(79,70,229,0.72)]"
-      : "border-slate-700 bg-slate-900/80 text-slate-200 hover:bg-slate-800"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-950 shadow-sm ring-1 ring-emerald-100"
+      : "border-zinc-200 bg-white text-zinc-800 hover:border-emerald-200 hover:bg-emerald-50/70 hover:text-emerald-950"
   }`;
 
 const countClassName = (active: boolean) =>
   `ml-2 inline-flex min-w-6 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
     active
-      ? "bg-slate-950/85 text-cyan-200"
-      : "bg-slate-800 text-slate-300"
+      ? "bg-white text-emerald-800"
+      : "bg-zinc-100 text-zinc-600"
+  }`;
+
+const secondaryLinkClassName = (active = false) =>
+  `inline-flex items-center rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+    active
+      ? "border-emerald-200 bg-emerald-50 text-emerald-950 shadow-sm ring-1 ring-emerald-100"
+      : "border-zinc-200 bg-white text-zinc-800 hover:border-emerald-200 hover:bg-emerald-50/70 hover:text-emerald-950"
   }`;
 
 const isActiveRoute = (pathname: string, href: string) =>
@@ -547,27 +554,33 @@ export default function ProjectRouteHeader({
             <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
               Secondary Tools
             </span>
-            <Link href={workspaceHref} className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800">
+            <Link
+              href={workspaceHref}
+              className={secondaryLinkClassName(isActiveRoute(pathname, workspaceHref))}
+            >
               <RouteIcon kind="workspace" />
               Workspace
             </Link>
             <Link
               href={notificationsHref}
-              className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+              className={secondaryLinkClassName(isActiveRoute(pathname, notificationsHref))}
             >
               <RouteIcon kind="notifications" />
               Notifications
-              <span className="ml-2 rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">
+              <span className={countClassName(isActiveRoute(pathname, notificationsHref))}>
                 {unreadReviewerNotificationCount}
               </span>
             </Link>
-            <Link href={boardHref} className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800">
+            <Link
+              href={boardHref}
+              className={secondaryLinkClassName(isActiveRoute(pathname, boardHref))}
+            >
               <RouteIcon kind="board" />
               Board
             </Link>
             <Link
               href="/projects"
-              className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+              className={secondaryLinkClassName(pathname === "/projects")}
             >
               <RouteIcon kind="library" />
               Project Library
