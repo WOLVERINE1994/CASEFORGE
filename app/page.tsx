@@ -8,6 +8,8 @@ import ResponsiveShell from "../components/ResponsiveShell";
 import { readProjects } from "../utils/project-store";
 import type { Project } from "../utils/workspace";
 
+export const dynamic = "force-dynamic";
+
 const projectHref = (projectKey: string | undefined, projectId: string) =>
   `/projects/${encodeURIComponent(projectKey?.trim() || projectId)}`;
 
