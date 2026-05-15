@@ -73,6 +73,25 @@ function SignedOutHome() {
   );
 }
 
+function AuthRuntimeErrorHome() {
+  return (
+    <main className="flex min-h-[calc(100vh-4.5rem)] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.16),_transparent_30%),linear-gradient(180deg,_#08101d_0%,_#0b1220_54%,_#111827_100%)] px-6 text-slate-50">
+      <section className="w-full max-w-2xl rounded-[24px] border border-amber-200/20 bg-amber-100/[0.06] p-6 shadow-[0_28px_70px_-45px_rgba(2,6,23,0.95)] backdrop-blur">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-100">
+          Sign In Configuration
+        </p>
+        <h1 className="mt-4 text-3xl font-semibold tracking-tight">
+          We could not finish the sign-in handshake.
+        </h1>
+        <p className="mt-3 text-sm leading-7 text-amber-50/80">
+          Check that Vercel is using the matching Clerk publishable and secret
+          keys for this CaseForge Clerk application, then redeploy.
+        </p>
+      </section>
+    </main>
+  );
+}
+
 export default async function HomePage() {
   if (
     !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
@@ -81,7 +100,15 @@ export default async function HomePage() {
     return null;
   }
 
-  const { userId } = await auth();
+  let userId: string | null = null;
+
+  try {
+    const session = await auth();
+    userId = session.userId;
+  } catch (error) {
+    console.error("Failed to resolve Clerk auth state:", error);
+    return <AuthRuntimeErrorHome />;
+  }
 
   if (!userId) {
     return <SignedOutHome />;
