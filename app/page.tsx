@@ -1,4 +1,3 @@
-import { SignInButton, SignUpButton } from "@clerk/nextjs";
 import Link from "next/link";
 
 export default function HomePage() {
@@ -23,16 +22,12 @@ export default function HomePage() {
             >
               Open Workspace
             </Link>
-            <SignInButton>
-              <button className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-200/30 hover:bg-cyan-200/10">
-                Sign In
-              </button>
-            </SignInButton>
-            <SignUpButton>
-              <button className="rounded-xl border border-cyan-200/25 bg-cyan-200/10 px-5 py-3 text-sm font-semibold text-cyan-50 transition hover:border-cyan-100/45 hover:bg-cyan-200/15">
-                Sign Up
-              </button>
-            </SignUpButton>
+            <Link
+              href="/projects"
+              className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-200/30 hover:bg-cyan-200/10"
+            >
+              Sign In
+            </Link>
           </div>
         </div>
 
