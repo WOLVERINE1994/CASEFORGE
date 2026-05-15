@@ -23,7 +23,10 @@ const hasClerkServerConfig =
 
 const clerkProxy = clerkMiddleware(async (auth, request) => {
   if (isProtectedRoute(request)) {
-    await auth.protect();
+    await auth.protect({
+      unauthenticatedUrl: new URL("/sign-in", request.url).toString(),
+      unauthorizedUrl: new URL("/sign-in", request.url).toString(),
+    });
   }
 });
 
