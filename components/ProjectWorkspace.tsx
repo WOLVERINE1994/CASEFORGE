@@ -705,6 +705,7 @@ export default function ProjectWorkspace({
       href: string;
     }>;
   } | null>(null);
+  const [routeNotice, setRouteNotice] = useState<string | null>(null);
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
   const [bulkAssigneeValue, setBulkAssigneeValue] = useState("");
   const [bulkWorkflowStatus, setBulkWorkflowStatus] = useState<
@@ -5104,10 +5105,15 @@ export default function ProjectWorkspace({
 
     return parts.join(" | ");
   }, [projectKey, sprintName, releaseName, teamName]);
+  const isDraftWorkspaceRoute = !currentProjectId && !initialProjectRef;
   const activeProjectRouteRef = useMemo(() => {
+    if (isDraftWorkspaceRoute) {
+      return "new";
+    }
+
     const normalizedKey = projectKey.trim() || currentProjectId || initialProjectRef || "new";
     return encodeURIComponent(normalizedKey);
-  }, [currentProjectId, initialProjectRef, projectKey]);
+  }, [currentProjectId, initialProjectRef, isDraftWorkspaceRoute, projectKey]);
   const activeReviewerLabel = useMemo(
     () =>
       activeReviewer?.name ||
@@ -5136,13 +5142,14 @@ export default function ProjectWorkspace({
     event: MouseEvent<HTMLAnchorElement>,
     routeLabel: "Cases" | "Board" | "Issues"
   ) => {
-    if (activeProjectRouteRef !== "new") {
+    if (!isDraftWorkspaceRoute) {
       return;
     }
 
     event.preventDefault();
 
     if (routeLabel === "Cases" && rows.length === 0) {
+      setRouteNotice("Generate test cases first, then save the workspace before opening Cases.");
       showWorkspaceNotice(
         "info",
         "Generate test cases first, then save the workspace before opening the Cases route."
@@ -5150,6 +5157,7 @@ export default function ProjectWorkspace({
       return;
     }
 
+    setRouteNotice(`Save this workspace as a project before opening ${routeLabel}.`);
     showWorkspaceNotice(
       "info",
       `Save this workspace as a project before opening ${routeLabel}. CaseForge needs a project key to build that route.`
@@ -7492,6 +7500,11 @@ export default function ProjectWorkspace({
             >
               Project Library
             </Link>
+            {routeNotice ? (
+              <p className="basis-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                {routeNotice}
+              </p>
+            ) : null}
           </div>
         </section>
         )}
