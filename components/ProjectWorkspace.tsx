@@ -7432,7 +7432,7 @@ export default function ProjectWorkspace({
               href={activeProjectWorkspaceHref}
               className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
                 initialSection === "workspace"
-                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-white dark:bg-white dark:text-zinc-950"
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-950 shadow-sm ring-1 ring-emerald-100 dark:border-emerald-400/40 dark:bg-emerald-400/15 dark:text-emerald-100 dark:ring-emerald-400/20"
                   : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
               }`}
             >
@@ -7442,7 +7442,7 @@ export default function ProjectWorkspace({
               href={activeProjectCasesHref}
               className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
                 initialSection === "cases"
-                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-white dark:bg-white dark:text-zinc-950"
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-950 shadow-sm ring-1 ring-emerald-100 dark:border-emerald-400/40 dark:bg-emerald-400/15 dark:text-emerald-100 dark:ring-emerald-400/20"
                   : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
               }`}
             >
