@@ -1,5 +1,80 @@
 import { getGroqClient } from "../../../utils/groq-client";
 
+const cleanCell = (value: string) =>
+  value
+    .replace(/\|/g, "/")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const buildFallbackCases = (requirement: string, mode: string) => {
+  const requirementSummary = cleanCell(requirement).slice(0, 120) || "the requirement";
+  const modeType =
+    mode === "api"
+      ? "API"
+      : mode === "ui" || mode === "accessibility"
+      ? "UI"
+      : mode === "security"
+      ? "Security"
+      : mode === "edge"
+      ? "Edge"
+      : mode === "negative"
+      ? "Negative"
+      : "Functional";
+
+  const rows = [
+    [
+      "TC001",
+      modeType,
+      "Primary user completes required flow successfully",
+      `Requirement is available; User has access to ${requirementSummary}`,
+      "Open the relevant workflow; Enter the required information; Submit or complete the main action",
+      "The system completes the flow and shows the expected successful outcome.",
+      "Valid user inputs; Standard browser session",
+    ],
+    [
+      "TC002",
+      "Negative",
+      "Required validation prevents incomplete submission",
+      `Requirement is available; User is on the relevant form or workflow for ${requirementSummary}`,
+      "Open the relevant workflow; Leave required information missing; Submit the action",
+      "The system blocks completion and shows clear validation guidance.",
+      "Missing required values; Invalid or incomplete input",
+    ],
+    [
+      "TC003",
+      "Edge",
+      "Boundary input remains stable and understandable",
+      `Requirement is available; User can access the workflow for ${requirementSummary}`,
+      "Open the relevant workflow; Enter boundary or unusually long input; Complete the main action",
+      "The system handles the boundary input without data loss, layout breakage, or unclear feedback.",
+      "Long text value; Minimum or maximum allowed value",
+    ],
+    [
+      "TC004",
+      "UI",
+      "Keyboard and focus flow supports completion",
+      `User-facing interface exists; User can access the workflow for ${requirementSummary}`,
+      "Open the relevant screen; Navigate using keyboard only; Complete the main action",
+      "Focus order is visible and logical, and the user can complete the flow without a mouse.",
+      "Keyboard only; WCAG 2.2 AA focus visibility check",
+    ],
+  ];
+
+  return rows.map((row) => row.map(cleanCell).join(" | ")).join("\n");
+};
+
+const getGenerationErrorMessage = (error: unknown) => {
+  if (error instanceof Error) {
+    if (error.message.includes("GROQ_API_KEY")) {
+      return "GROQ_API_KEY is missing in the server environment. Add it in Vercel and redeploy.";
+    }
+
+    return "The AI provider could not generate test cases right now. Check the Groq key, model access, and server logs.";
+  }
+
+  return "The AI provider could not generate test cases right now. Check server logs.";
+};
+
 const getModeInstructions = (mode: string) => {
   switch (mode) {
     case "negative":
@@ -71,14 +146,16 @@ const getPersonaInstructions = (persona: string) => {
 };
 
 export async function POST(req: Request) {
+  let requirement = "";
+  let mode = "functional";
+
   try {
     const body = await req.json();
 
-    const requirement =
+    requirement =
       typeof body?.requirement === "string" ? body.requirement.trim() : "";
 
-    const mode =
-      typeof body?.mode === "string" ? body.mode : "functional";
+    mode = typeof body?.mode === "string" ? body.mode : "functional";
 
     const coverage =
       typeof body?.coverage === "string" ? body.coverage : "standard";
@@ -193,8 +270,15 @@ TC001 | Functional | Returning user signs in with valid credentials | User accou
   } catch (error) {
     console.error("AI ERROR:", error);
 
+    if (requirement) {
+      return Response.json({
+        result: buildFallbackCases(requirement, mode),
+        warning: getGenerationErrorMessage(error),
+      });
+    }
+
     return Response.json(
-      { result: "Error generating test cases. Check server logs." },
+      { result: getGenerationErrorMessage(error) },
       { status: 500 }
     );
   }

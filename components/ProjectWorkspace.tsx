@@ -3561,6 +3561,9 @@ export default function ProjectWorkspace({
 
       const res = await fetch("/api/generate", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           requirement: requirementToGenerate,
           mode: generationMode,
@@ -3570,6 +3573,15 @@ export default function ProjectWorkspace({
       });
 
       const data = await res.json();
+      if (!res.ok) {
+        const message =
+          typeof data?.result === "string" && data.result.trim()
+            ? data.result.trim()
+            : "Error generating test cases.";
+        showWorkspaceNotice("error", message);
+        return;
+      }
+
       const { preparedRows, duplicateCount } = parseGeneratedResult(data.result || "");
 
       if (preparedRows.length === 0) {
@@ -3603,8 +3615,10 @@ export default function ProjectWorkspace({
         focusGeneratedCasesSection();
       }, 120);
       showWorkspaceNotice(
-        "success",
-        duplicateCount > 0
+        data.warning ? "info" : "success",
+        typeof data.warning === "string" && data.warning.trim()
+          ? `Generated ${preparedRows.length} fallback cases because AI generation is unavailable. ${data.warning.trim()}`
+          : duplicateCount > 0
           ? `Generated ${preparedRows.length} structured cases. Removed ${duplicateCount} duplicate draft${duplicateCount === 1 ? "" : "s"} and moved you straight into review${generatedWorkspaceName ? ` under "${generatedWorkspaceName}".` : "."}`
           : `Generated ${preparedRows.length} structured cases. Review the draft below, tighten anything weak, then export or open the full cases route${generatedWorkspaceName ? ` under "${generatedWorkspaceName}".` : "."}`
       );
