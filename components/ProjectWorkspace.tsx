@@ -3542,6 +3542,68 @@ export default function ProjectWorkspace({
     };
   };
 
+  const buildLocalFallbackResult = (requirement: string) => {
+    const cleanCell = (value: string) =>
+      value
+        .replace(/\|/g, "/")
+        .replace(/\s+/g, " ")
+        .trim();
+    const requirementSummary =
+      cleanCell(requirement).slice(0, 120) || "the requirement";
+    const modeType =
+      generationMode === "api"
+        ? "API"
+        : generationMode === "ui" || generationMode === "accessibility"
+        ? "UI"
+        : generationMode === "security"
+        ? "Security"
+        : generationMode === "edge"
+        ? "Edge"
+        : generationMode === "negative"
+        ? "Negative"
+        : "Functional";
+    const rows = [
+      [
+        "TC001",
+        modeType,
+        "Primary user completes required flow successfully",
+        `Requirement is available; User has access to ${requirementSummary}`,
+        "Open the relevant workflow; Enter the required information; Submit or complete the main action",
+        "The system completes the flow and shows the expected successful outcome.",
+        "Valid user inputs; Standard browser session",
+      ],
+      [
+        "TC002",
+        "Negative",
+        "Required validation prevents incomplete submission",
+        `Requirement is available; User is on the relevant form or workflow for ${requirementSummary}`,
+        "Open the relevant workflow; Leave required information missing; Submit the action",
+        "The system blocks completion and shows clear validation guidance.",
+        "Missing required values; Invalid or incomplete input",
+      ],
+      [
+        "TC003",
+        "Edge",
+        "Boundary input remains stable and understandable",
+        `Requirement is available; User can access the workflow for ${requirementSummary}`,
+        "Open the relevant workflow; Enter boundary or unusually long input; Complete the main action",
+        "The system handles the boundary input without data loss, layout breakage, or unclear feedback.",
+        "Long text value; Minimum or maximum allowed value",
+      ],
+      [
+        "TC004",
+        "UI",
+        "Keyboard and focus flow supports completion",
+        `User-facing interface exists; User can access the workflow for ${requirementSummary}`,
+        "Open the relevant screen; Navigate using keyboard only; Complete the main action",
+        "Focus order is visible and logical, and the user can complete the flow without a mouse.",
+        "Keyboard only; WCAG 2.2 AA focus visibility check",
+      ],
+    ];
+
+    return rows.map((row) => row.map(cleanCell).join(" | ")).join("\n");
+  };
+
   const generateForRequirement = async (requirementOverride?: string) => {
     const requirementToGenerate = (requirementOverride ?? input).trim();
     if (!requirementToGenerate) {
@@ -3549,11 +3611,12 @@ export default function ProjectWorkspace({
       return;
     }
 
+    const generatedWorkspaceName = !projectName.trim()
+      ? deriveWorkspaceNameFromRequirement(requirementToGenerate)
+      : "";
+
     try {
       setLoading(true);
-      const generatedWorkspaceName = !projectName.trim()
-        ? deriveWorkspaceNameFromRequirement(requirementToGenerate)
-        : "";
 
       if (generatedWorkspaceName) {
         setProjectName(generatedWorkspaceName);
@@ -3623,7 +3686,45 @@ export default function ProjectWorkspace({
           : `Generated ${preparedRows.length} structured cases. Review the draft below, tighten anything weak, then export or open the full cases route${generatedWorkspaceName ? ` under "${generatedWorkspaceName}".` : "."}`
       );
     } catch {
-      showWorkspaceNotice("error", "Error generating test cases.");
+      const { preparedRows } = parseGeneratedResult(
+        buildLocalFallbackResult(requirementToGenerate)
+      );
+
+      if (preparedRows.length === 0) {
+        showWorkspaceNotice("error", "Error generating test cases.");
+        return;
+      }
+
+      if (generatedWorkspaceName) {
+        setProjectName(generatedWorkspaceName);
+      }
+
+      setRows(preparedRows);
+      setGenerationFeedbackLog(
+        preparedRows
+          .map((row) => row.generationFeedback)
+          .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      );
+      setSeenGapIds([]);
+      setIgnoredQualityFindingIds([]);
+      setIgnoredPredictionIds([]);
+      setFillingPredictionId(null);
+      setHighlightedRowId(null);
+      setHighlightedRowLabel(null);
+      setHighlightedCommentId(null);
+      setIsGeneratingChangeImpactCases(false);
+      setLastGeneratedChangeImpactSignature(null);
+      addAuditEntry(
+        "Suite generated",
+        `Generated local fallback coverage for ${personaLabels[persona]}.`
+      );
+      window.setTimeout(() => {
+        focusGeneratedCasesSection();
+      }, 120);
+      showWorkspaceNotice(
+        "info",
+        `Generated ${preparedRows.length} fallback cases locally because the AI request failed. Check Vercel env for GROQ_API_KEY, then regenerate for richer coverage.`
+      );
     } finally {
       setLoading(false);
     }
