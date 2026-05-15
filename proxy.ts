@@ -21,7 +21,16 @@ const hasClerkServerConfig =
   Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) &&
   Boolean(process.env.CLERK_SECRET_KEY);
 
+const allowPublicWorkspace =
+  process.env.CASEFORGE_PUBLIC_WORKSPACE === "true" ||
+  (process.env.VERCEL === "1" &&
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.startsWith("pk_test_"));
+
 const clerkProxy = clerkMiddleware(async (auth, request) => {
+  if (allowPublicWorkspace && request.nextUrl.pathname.startsWith("/projects")) {
+    return;
+  }
+
   if (isProtectedRoute(request)) {
     await auth.protect({
       unauthenticatedUrl: new URL("/sign-in", request.url).toString(),
