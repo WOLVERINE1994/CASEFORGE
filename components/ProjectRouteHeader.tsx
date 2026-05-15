@@ -578,13 +578,6 @@ export default function ProjectRouteHeader({
               <RouteIcon kind="board" />
               Board
             </Link>
-            <Link
-              href="/projects"
-              className={secondaryLinkClassName(pathname === "/projects")}
-            >
-              <RouteIcon kind="library" />
-              Project Library
-            </Link>
             </div>
           </div>
         ) : null}
