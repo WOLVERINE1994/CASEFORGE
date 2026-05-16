@@ -1510,6 +1510,29 @@ export default function ProjectWorkspace({
 
   const persistProjects = useCallback(
     async (updatedProjects: Project[]) => {
+      const readProjectsResponse = async (response: Response) => {
+        const contentType = response.headers.get("content-type") ?? "";
+        const responseText = await response.text();
+
+        if (!contentType.includes("application/json")) {
+          const isHtml = responseText.trimStart().startsWith("<");
+          throw new Error(
+            isHtml
+              ? "Project autosave received a sign-in or error page instead of JSON. Check Clerk access for /api/projects and redeploy."
+              : "Project autosave received an unexpected server response."
+          );
+        }
+
+        try {
+          return JSON.parse(responseText) as {
+            projects?: Project[];
+            error?: string;
+          };
+        } catch {
+          throw new Error("Project autosave returned invalid JSON.");
+        }
+      };
+
       const runPersist = async () => {
         const persistStartedAt = Date.now();
         const payloadSize = JSON.stringify({ projects: updatedProjects }).length;
@@ -1563,9 +1586,14 @@ export default function ProjectWorkspace({
         }
 
         if (!response.ok) {
-          const errorPayload = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const errorPayload = await readProjectsResponse(response).catch(
+            (error) => ({
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Failed to persist projects.",
+            })
+          );
 
           if (process.env.NODE_ENV !== "production") {
             console.error("[workspace autosave] POST /api/projects response failed", {
@@ -1584,7 +1612,7 @@ export default function ProjectWorkspace({
           );
         }
 
-        const data = (await response.json()) as { projects?: Project[] };
+        const data = await readProjectsResponse(response);
         const savedProjects = Array.isArray(data.projects)
           ? data.projects.map(hydrateProject)
           : updatedProjects.map(hydrateProject);
