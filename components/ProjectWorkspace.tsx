@@ -67,6 +67,7 @@ import {
   buildGenerationFeedbackRecord,
   buildGenerationQualitySignals,
 } from "../utils/generation-feedback";
+import { buildCognitiveOrchestrationPlan } from "../utils/cognitive-orchestration";
 import {
   approvalStateLabels,
   automationProviderOptions,
@@ -3660,6 +3661,7 @@ export default function ProjectWorkspace({
           mode: generationMode,
           coverage: coverageDepth,
           persona,
+          orchestration: cognitiveOrchestrationPlan.promptDirective,
         }),
       });
 
@@ -5326,6 +5328,38 @@ export default function ProjectWorkspace({
     () => analyzeCoverageGaps(rows, generationMode, persona),
     [rows, generationMode, persona]
   );
+  const cognitiveOrchestrationPlan = useMemo(
+    () =>
+      buildCognitiveOrchestrationPlan({
+        requirement: input,
+        rows,
+        generationMode,
+        coverageDepth,
+        persona,
+        requirementRiskAnalysis,
+        ambiguityQuestionAnalysis,
+        coverageGapAnalysis,
+      }),
+    [
+      input,
+      rows,
+      generationMode,
+      coverageDepth,
+      persona,
+      requirementRiskAnalysis,
+      ambiguityQuestionAnalysis,
+      coverageGapAnalysis,
+    ]
+  );
+  const applyCognitiveOrchestrationPlan = () => {
+    setGenerationMode(cognitiveOrchestrationPlan.recommendedMode);
+    setCoverageDepth(cognitiveOrchestrationPlan.recommendedCoverage);
+    setPersona(cognitiveOrchestrationPlan.recommendedPersona);
+    showWorkspaceNotice(
+      "info",
+      "Applied cognitive orchestration recommendations to generation settings."
+    );
+  };
   const traceabilityAnalysis = useMemo(
     () =>
       analyzeTraceability(
@@ -7750,17 +7784,17 @@ export default function ProjectWorkspace({
 
         <WorkflowValuePath {...workflowValuePath} />
 
-        <section className="rounded-[24px] border border-zinc-200/80 bg-white/94 px-5 py-5 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] dark:border-zinc-800 dark:bg-zinc-900/92">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <details className="group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] dark:border-zinc-800 dark:bg-zinc-900/92">
+          <summary className="flex cursor-pointer list-none flex-col gap-4 px-5 py-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
-                Learning Loop
+                Secondary Telemetry
               </p>
-              <h3 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-                See how generated coverage holds up after edits, execution, and release review.
+              <h3 className="mt-2 text-lg font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+                Learning loop metrics
               </h3>
               <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                These signals stay lightweight, but they show whether AI drafts were accepted, how heavily teams edited them, how often they convert into automation, and where risk is still showing up downstream.
+                Open only when you need model feedback, edit intensity, or automation conversion telemetry.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -7773,10 +7807,13 @@ export default function ProjectWorkspace({
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                 Downstream failures {generationQualitySignals.downstreamFailureCorrelation}%
               </span>
+              <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+                Expand
+              </span>
             </div>
-          </div>
+          </summary>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-6">
+          <div className="grid gap-3 border-t border-zinc-200/80 px-5 py-5 sm:grid-cols-2 2xl:grid-cols-6 dark:border-zinc-800">
             <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/85 px-4 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
                 AI Drafts
@@ -7844,7 +7881,7 @@ export default function ProjectWorkspace({
               </p>
             </div>
           </div>
-        </section>
+        </details>
 
         <details className="group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
@@ -7915,25 +7952,57 @@ export default function ProjectWorkspace({
           </div>
 
           <div className="p-6">
-            <div className="mb-5 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="rounded-[18px] border border-emerald-200/80 bg-emerald-50/75 px-4 py-4 text-sm shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/10">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">
-                  Start Here
-                </p>
-                <p className="mt-2 leading-6 text-emerald-900 dark:text-emerald-100">
-                  1. Paste one requirement or user story. 2. Click <span className="font-semibold">Generate Test Cases</span>.
-                  3. Review the AI draft below and tighten anything weak.
-                </p>
+            <div className="mb-5 rounded-[22px] border border-cyan-200/80 bg-cyan-50/80 px-5 py-5 shadow-sm dark:border-cyan-500/20 dark:bg-cyan-500/10">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="max-w-3xl">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-300">
+                    Cognitive Orchestration
+                  </p>
+                  <h3 className="mt-2 text-lg font-semibold text-cyan-950 dark:text-cyan-50">
+                    {cognitiveOrchestrationPlan.headline}
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-cyan-900/85 dark:text-cyan-100/85">
+                    {cognitiveOrchestrationPlan.summary}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="rounded-full border border-white/80 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-900 shadow-sm dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-100">
+                      {generationModeLabels[cognitiveOrchestrationPlan.recommendedMode]}
+                    </span>
+                    <span className="rounded-full border border-white/80 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-900 shadow-sm dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-100">
+                      {cognitiveOrchestrationPlan.recommendedCoverage} coverage
+                    </span>
+                    <span className="rounded-full border border-white/80 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-900 shadow-sm dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-100">
+                      {personaLabels[cognitiveOrchestrationPlan.recommendedPersona]}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={applyCognitiveOrchestrationPlan}
+                  className="inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-xl border border-cyan-300 bg-white px-4 py-2.5 text-sm font-semibold text-cyan-900 shadow-sm transition hover:bg-cyan-50 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-100 dark:hover:bg-cyan-500/20"
+                >
+                  Apply Plan
+                </button>
               </div>
-              <div className="rounded-[18px] border border-zinc-200/80 bg-zinc-50/75 px-4 py-4 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
-                  Recommended First Pass
-                </p>
-                <p className="mt-2 leading-6 text-zinc-700 dark:text-zinc-300">
-                  <span className="font-semibold">{generationMode}</span> mode with{" "}
-                  <span className="font-semibold">{coverageDepth}</span> coverage for{" "}
-                  <span className="font-semibold">{personaLabels[persona].toLowerCase()}</span>.
-                </p>
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="rounded-[18px] border border-white/80 bg-white/80 px-4 py-3 dark:border-cyan-500/20 dark:bg-zinc-950/40">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-300">
+                    Focus
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-cyan-900/85 dark:text-cyan-100/85">
+                    {cognitiveOrchestrationPlan.focusAreas.length
+                      ? cognitiveOrchestrationPlan.focusAreas.join("; ")
+                      : "Main flow, validations, observable outcome, and review-ready test data."}
+                  </p>
+                </div>
+                <div className="rounded-[18px] border border-white/80 bg-white/80 px-4 py-3 dark:border-cyan-500/20 dark:bg-zinc-950/40">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-300">
+                    Next Action
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-cyan-900/85 dark:text-cyan-100/85">
+                    {cognitiveOrchestrationPlan.nextActions[0]}
+                  </p>
+                </div>
               </div>
             </div>
             <textarea

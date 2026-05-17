@@ -161,6 +161,8 @@ export async function POST(req: Request) {
       typeof body?.coverage === "string" ? body.coverage : "standard";
     const persona =
       typeof body?.persona === "string" ? body.persona : "all";
+    const orchestration =
+      typeof body?.orchestration === "string" ? body.orchestration.trim() : "";
 
     if (!requirement) {
       return Response.json(
@@ -208,6 +210,9 @@ ${coverageInstructions}
 Persona Guidance:
 ${personaInstructions}
 
+Cognitive Orchestration:
+${orchestration || "No orchestration override was provided. Infer the best QA mix from the requirement, mode, coverage, and persona."}
+
 WCAG Accessibility Guidance:
 ${accessibilityInstructions}
 
@@ -243,6 +248,7 @@ IMPORTANT RULES:
 - Decide the appropriate number of test cases based on requirement scope and complexity
 - The selected coverage depth should influence how broad or deep the output is
 - The selected persona should materially influence permissions, starting state, and expected behavior
+- Follow the Cognitive Orchestration guidance when deciding the mix of functional, negative, edge, WCAG, security, regression, and automation-ready cases
 - Smaller requirements should produce fewer cases
 - Broader requirements should produce more cases
 - Do not create padded or repetitive rows just to increase quantity
