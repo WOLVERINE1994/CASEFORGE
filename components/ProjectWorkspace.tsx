@@ -848,6 +848,7 @@ export default function ProjectWorkspace({
   const didResolveInitialProjectRef = useRef(false);
   const didApplyFocusedRowRef = useRef(false);
   const didApplyCasesDefaultPresetRef = useRef(false);
+  const didShowBrowserFallbackNoticeRef = useRef(false);
   const templateImportInputRef = useRef<HTMLInputElement | null>(null);
   const templateLibrarySectionRef = useRef<HTMLDivElement | null>(null);
   const generatedCasesSectionRef = useRef<HTMLElement | null>(null);
@@ -3066,6 +3067,27 @@ export default function ProjectWorkspace({
     [buildUpdatedProject]
   );
 
+  const saveProjectsToBrowserFallback = useCallback(
+    (updatedProjects: Project[]) => {
+      const savedProjects = updatedProjects.map(hydrateProject);
+
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(savedProjects));
+      setProjects(savedProjects);
+
+      const activeProject =
+        savedProjects.find(
+          (project) => project.id === currentProjectIdRef.current
+        ) ?? savedProjects[0] ?? null;
+
+      if (activeProject) {
+        projectDataState?.setProject(activeProject);
+      }
+
+      return savedProjects;
+    },
+    [projectDataState]
+  );
+
   useEffect(() => {
     if (!didLoadProjectsRef.current) {
       return;
@@ -3116,13 +3138,38 @@ export default function ProjectWorkspace({
           setSaveStatus("saved");
         } catch (error) {
           console.error("Autosave project error:", error);
-          setSaveStatus("error");
-          showWorkspaceNotice(
-            "error",
-            error instanceof Error && error.message.trim()
-              ? `Autosave failed: ${error.message}`
-              : "Autosave failed. Your current edits are still open in the workspace."
-          );
+          try {
+            const { updatedProject, updatedProjects } = upsertProject(
+              projectsRef.current,
+              projectName.trim()
+            );
+            const savedProjects = saveProjectsToBrowserFallback(updatedProjects);
+            const resolvedProject =
+              savedProjects.find((project) => project.id === updatedProject.id) ??
+              updatedProject;
+
+            setResolvedProjectId(resolvedProject.id);
+            projectDataState?.setProject(resolvedProject);
+            setLastSavedAt(resolvedProject.updatedAt);
+            setSaveStatus("saved");
+
+            if (!didShowBrowserFallbackNoticeRef.current) {
+              didShowBrowserFallbackNoticeRef.current = true;
+              showWorkspaceNotice(
+                "info",
+                "Autosave is using browser storage because the project API is blocked by Clerk. Your edits are still saved on this browser."
+              );
+            }
+          } catch (fallbackError) {
+            console.error("Browser autosave fallback error:", fallbackError);
+            setSaveStatus("error");
+            showWorkspaceNotice(
+              "error",
+              fallbackError instanceof Error && fallbackError.message.trim()
+                ? `Autosave failed: ${fallbackError.message}`
+                : "Autosave failed. Your current edits are still open in the workspace."
+            );
+          }
         }
       };
 
@@ -3152,6 +3199,7 @@ export default function ProjectWorkspace({
     lastGeneratedChangeImpactSignature,
     projectDataState,
     persistProjects,
+    saveProjectsToBrowserFallback,
     upsertProject,
   ]);
 
@@ -3190,13 +3238,34 @@ export default function ProjectWorkspace({
       );
     } catch (error) {
       console.error("Save project error:", error);
-      setSaveStatus("error");
-      showWorkspaceNotice(
-        "error",
-        error instanceof Error && error.message.trim()
-          ? `Project save failed: ${error.message}`
-          : "Project save failed. Your current edits are still open in the workspace."
-      );
+      try {
+        const { updatedProject, updatedProjects } = upsertProject(
+          projectsRef.current,
+          trimmedName
+        );
+        const savedProjects = saveProjectsToBrowserFallback(updatedProjects);
+        const resolvedProject =
+          savedProjects.find((project) => project.id === updatedProject.id) ??
+          updatedProject;
+
+        setResolvedProjectId(resolvedProject.id);
+        projectDataState?.setProject(resolvedProject);
+        setLastSavedAt(resolvedProject.updatedAt);
+        setSaveStatus("saved");
+        showWorkspaceNotice(
+          "info",
+          `"${resolvedProject.name}" was saved in this browser because the project API is blocked by Clerk.`
+        );
+      } catch (fallbackError) {
+        console.error("Browser save fallback error:", fallbackError);
+        setSaveStatus("error");
+        showWorkspaceNotice(
+          "error",
+          fallbackError instanceof Error && fallbackError.message.trim()
+            ? `Project save failed: ${fallbackError.message}`
+            : "Project save failed. Your current edits are still open in the workspace."
+        );
+      }
     }
   };
 
