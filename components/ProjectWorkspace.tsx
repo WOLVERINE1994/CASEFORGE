@@ -7549,7 +7549,7 @@ export default function ProjectWorkspace({
       setHighlightedRowId(null);
       setHighlightedRowLabel(null);
       setHighlightedCommentId(null);
-    }, 4000);
+    }, 30000);
 
     return () => clearTimeout(timeout);
   }, [highlightedRowId]);
@@ -12262,6 +12262,7 @@ export default function ProjectWorkspace({
                 highlightedRowId={highlightedRowId}
                 highlightedRowLabel={highlightedRowLabel}
                 highlightedCommentId={highlightedCommentId}
+                onFocusRow={focusWorkspaceRow}
                 draggedIndex={workspaceFilter === "all" ? draggedIndex : null}
               dragOverIndex={workspaceFilter === "all" ? dragOverIndex : null}
               onDragStart={

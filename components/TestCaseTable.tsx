@@ -197,6 +197,7 @@ type Props = {
   highlightedRowId: string | null;
   highlightedRowLabel: string | null;
   highlightedCommentId?: string | null;
+  onFocusRow?: (rowId: string, label?: string, commentId?: string | null) => void;
   draggedIndex: number | null;
   dragOverIndex: number | null;
   onDragStart: (index: number) => void;
@@ -378,6 +379,7 @@ export default function TestCaseTable({
   highlightedRowId,
   highlightedRowLabel,
   highlightedCommentId = null,
+  onFocusRow,
   draggedIndex,
   dragOverIndex,
   onDragStart,
@@ -470,7 +472,7 @@ export default function TestCaseTable({
             {enableSelection && <col className="w-[72px]" />}
             <col className="w-[280px]" />
             <col className="w-[190px]" />
-            <col className="w-[240px]" />
+            <col className="w-[190px]" />
             <col className="w-[280px]" />
             <col className="w-[230px]" />
             <col className="w-[280px]" />
@@ -756,6 +758,56 @@ export default function TestCaseTable({
                   </td>
 
                   <td className="border-b border-zinc-200/80 p-4 align-top dark:border-zinc-800">
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${reviewTone[row.reviewStatus ?? "draft"]}`}
+                        >
+                          {reviewStatusLabels[row.reviewStatus ?? "draft"]}
+                        </span>
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                            readyForApproval
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                              : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+                          }`}
+                        >
+                          {readyForApproval ? "Ready" : "Needs work"}
+                        </span>
+                      </div>
+                      <div className="rounded-2xl border border-zinc-200/80 bg-zinc-50/90 px-3 py-2 text-xs leading-5 text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70 dark:text-zinc-300">
+                        <p>
+                          <span className="font-semibold text-zinc-700 dark:text-zinc-100">Owner:</span>{" "}
+                          {row.reviewOwner?.trim() || "None"}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-zinc-700 dark:text-zinc-100">Notes:</span>{" "}
+                          {openReviewNotesCount} open
+                        </p>
+                        <p>
+                          <span className="font-semibold text-zinc-700 dark:text-zinc-100">Issue:</span>{" "}
+                          {row.issueKey?.trim() || "None"}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onFocusRow?.(row.id, "Review workspace")}
+                          className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-emerald-200 dark:hover:bg-emerald-500/10"
+                        >
+                          Open Review
+                        </button>
+                        {projectRouteRef ? (
+                          <Link
+                            href={`/projects/${encodeURIComponent(projectRouteRef)}/cases?rowId=${encodeURIComponent(row.id)}`}
+                            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-center text-xs font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                          >
+                            Focus Page
+                          </Link>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="hidden">
                     {isHighlighted ? (
                       <div className="space-y-3">
                         <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
@@ -1721,8 +1773,9 @@ export default function TestCaseTable({
                         projectRouteRef={projectRouteRef}
                         rowId={row.id}
                       />
-                    </div>
+                      </div>
                     )}
+                    </div>
                   </td>
 
                   <td className="border-b border-zinc-200/80 p-4 dark:border-zinc-800">
