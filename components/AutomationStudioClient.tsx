@@ -522,13 +522,16 @@ export default function AutomationStudioClient({
                 <Link
                   key={item.key}
                   href={`/projects/${encodedProjectKey}/automation/${item.href}`}
-                  className={`block rounded-xl px-3 py-2 text-sm font-medium transition ${
+                  className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium transition ${
                     active
-                      ? "bg-zinc-950 text-white"
+                      ? "bg-zinc-950 !text-white shadow-sm"
                       : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
                   }`}
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  {active ? (
+                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                  ) : null}
                 </Link>
               );
             })}
