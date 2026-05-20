@@ -11,8 +11,11 @@ export default function AuthTopbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/72 px-4 py-3 shadow-[0_18px_50px_-35px_rgba(2,6,23,0.9)] backdrop-blur-2xl sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1520px] items-center justify-between gap-4">
-        <Link href="/" className="min-w-0">
-          <CaseForgeBrand size="sm" tone="onDark" priority />
+        <Link
+          href="/"
+          className="min-w-0 rounded-2xl border border-white/75 bg-white/92 px-3 py-2 shadow-[0_16px_34px_-26px_rgba(15,23,42,0.72)] backdrop-blur transition hover:bg-white"
+        >
+          <CaseForgeBrand size="sm" priority />
         </Link>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
