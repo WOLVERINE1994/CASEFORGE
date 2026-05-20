@@ -1109,7 +1109,7 @@ export const modePrimaryType: Record<GenerationMode, TestCaseRow["type"]> = {
 };
 
 const allowedTypesByMode: Record<GenerationMode, TestCaseRow["type"][]> = {
-  functional: ["Functional", "Negative", "Edge"],
+  functional: ["Functional", "Negative", "Edge", "API", "UI", "Integration", "Performance"],
   negative: ["Negative", "Edge"],
   edge: ["Edge", "Negative"],
   ui: ["UI", "Negative", "Edge"],
