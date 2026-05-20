@@ -726,6 +726,132 @@ export type AutomationRecorderSession = {
   startUrl?: string;
 };
 
+export type AutomationV2CommandType =
+  | "navigate"
+  | "click"
+  | "fill"
+  | "select"
+  | "hover"
+  | "press"
+  | "assert-text"
+  | "assert-image"
+  | "assert-a11y"
+  | "assert-label"
+  | "assert-focus"
+  | "run-action";
+
+export type AutomationV2ScenarioStatus =
+  | "draft"
+  | "ready"
+  | "active"
+  | "paused";
+
+export type AutomationV2RunStatus =
+  | "not-run"
+  | "passed"
+  | "failed"
+  | "blocked";
+
+export type AutomationV2CommandStatus =
+  | "pending"
+  | "passed"
+  | "failed"
+  | "blocked";
+
+export type AutomationV2Locator = {
+  strategy:
+    | "role"
+    | "text"
+    | "label"
+    | "placeholder"
+    | "testid"
+    | "css"
+    | "xpath"
+    | "image"
+    | "a11y";
+  value: string;
+  stable?: string;
+  cssPath?: string;
+  label?: string;
+  role?: string;
+  tagName?: string;
+  text?: string;
+};
+
+export type AutomationV2Command = {
+  id: string;
+  scenarioId: string;
+  order: number;
+  type: AutomationV2CommandType;
+  name: string;
+  description?: string;
+  locator?: AutomationV2Locator;
+  inputValue?: string;
+  expectedValue?: string;
+  url?: string;
+  key?: string;
+  actionId?: string;
+  status?: AutomationV2CommandStatus;
+  createdAt: number;
+  updatedAt: number;
+  meta?: Record<string, unknown>;
+};
+
+export type AutomationV2Scenario = {
+  id: string;
+  projectId: string;
+  suiteId?: string;
+  name: string;
+  description?: string;
+  tags: string[];
+  status: AutomationV2ScenarioStatus;
+  startUrl?: string;
+  commands: AutomationV2Command[];
+  createdAt: number;
+  updatedAt: number;
+  lastRunAt?: number;
+};
+
+export type AutomationV2ActionParameter = {
+  id: string;
+  name: string;
+  defaultValue?: string;
+  required?: boolean;
+};
+
+export type AutomationV2Action = {
+  id: string;
+  projectId: string;
+  name: string;
+  description?: string;
+  tags: string[];
+  parameters: AutomationV2ActionParameter[];
+  commands: AutomationV2Command[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AutomationV2RunCommandResult = {
+  commandId: string;
+  commandName: string;
+  commandType: AutomationV2CommandType;
+  status: AutomationV2CommandStatus;
+  message?: string;
+  startedAt?: number;
+  finishedAt?: number;
+};
+
+export type AutomationV2Run = {
+  id: string;
+  scenarioId: string;
+  scenarioName: string;
+  status: AutomationV2RunStatus;
+  startedAt: number;
+  finishedAt?: number;
+  logs: string[];
+  commandResults: AutomationV2RunCommandResult[];
+};
+
 export type AutomationExecution = {
   id: string;
   runId: string;
@@ -1075,6 +1201,10 @@ export type Project = {
   automationEnvironmentBindings?: AutomationEnvironmentBinding[];
   automationSchedules?: AutomationSchedule[];
   activeAutomationEnvironmentId?: string;
+  automationV2Scenarios?: AutomationV2Scenario[];
+  automationV2Actions?: AutomationV2Action[];
+  automationV2Runs?: AutomationV2Run[];
+  activeAutomationV2ScenarioId?: string;
   generationFeedbackLog?: GenerationFeedbackRecord[];
   activeRunId?: string;
   lastGeneratedChangeImpactSignature?: string | null;

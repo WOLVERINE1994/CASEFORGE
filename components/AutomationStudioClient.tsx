@@ -2,14 +2,19 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import type {
-  AutomationAction,
-  AutomationExecution,
-  AutomationProvider,
-  AutomationScenario,
-  AutomationStep,
-  AutomationStepAction,
+  AutomationV2Action,
+  AutomationV2Command,
+  AutomationV2CommandType,
+  AutomationV2Run,
+  AutomationV2Scenario,
   Project,
 } from "../utils/workspace";
 
@@ -32,18 +37,7 @@ type LoadState =
   | { status: "ready"; project: Project; error: "" }
   | { status: "error"; project: null; error: string };
 
-type ScenarioStatusFilter = "all" | NonNullable<AutomationScenario["status"]>;
-
-const statusTone: Record<string, string> = {
-  active: "bg-emerald-100 text-emerald-800",
-  ready: "bg-sky-100 text-sky-800",
-  draft: "bg-zinc-100 text-zinc-700",
-  paused: "bg-amber-100 text-amber-800",
-  passed: "bg-emerald-100 text-emerald-800",
-  failed: "bg-rose-100 text-rose-800",
-  blocked: "bg-amber-100 text-amber-800",
-  "not-run": "bg-zinc-100 text-zinc-700",
-};
+type ScenarioStatusFilter = "all" | AutomationV2Scenario["status"];
 
 const navItems: Array<{
   key: AutomationStudioSection;
@@ -56,19 +50,62 @@ const navItems: Array<{
   { key: "runs", label: "Runs", href: "runs" },
 ];
 
-const commandLabels: Record<AutomationStepAction, string> = {
-  goto: "Navigate",
+const commandLabels: Record<AutomationV2CommandType, string> = {
+  navigate: "Navigate",
   click: "Click",
   fill: "Fill",
   select: "Select",
+  hover: "Hover",
   press: "Key Press",
-  "wait-for": "Wait",
   "assert-text": "Assert Text",
-  "assert-visible": "Assert Visible",
-  "assert-url": "Assert URL",
-  "assert-value": "Assert Value",
-  "run-block": "Run Action",
+  "assert-image": "Assert Image",
+  "assert-a11y": "Accessibility Scan",
+  "assert-label": "Label / Name Assert",
+  "assert-focus": "Keyboard Focus Assert",
+  "run-action": "Run Action",
 };
+
+const commandHints: Record<AutomationV2CommandType, string> = {
+  navigate: "Open a page URL.",
+  click: "Click a selected element.",
+  fill: "Fill an input or textarea.",
+  select: "Choose from a dropdown.",
+  hover: "Hover over an element.",
+  press: "Press a keyboard key.",
+  "assert-text": "Ctrl+Alt+T validates visible text.",
+  "assert-image": "Ctrl+Alt+I validates an image.",
+  "assert-a11y": "Ctrl+Alt+A creates an accessibility scan command.",
+  "assert-label": "Ctrl+Alt+L validates label or accessible name.",
+  "assert-focus": "Ctrl+Alt+F validates keyboard focus.",
+  "run-action": "Reuse a saved Action.",
+};
+
+const statusTone: Record<string, string> = {
+  active: "bg-emerald-100 text-emerald-800",
+  ready: "bg-sky-100 text-sky-800",
+  draft: "bg-zinc-100 text-zinc-700",
+  paused: "bg-amber-100 text-amber-800",
+  passed: "bg-emerald-100 text-emerald-800",
+  failed: "bg-rose-100 text-rose-800",
+  blocked: "bg-amber-100 text-amber-800",
+  "not-run": "bg-zinc-100 text-zinc-700",
+};
+
+const recorderCommandTypes: AutomationV2CommandType[] = [
+  "click",
+  "fill",
+  "select",
+  "hover",
+  "press",
+];
+
+const validationCommandTypes: AutomationV2CommandType[] = [
+  "assert-text",
+  "assert-image",
+  "assert-a11y",
+  "assert-label",
+  "assert-focus",
+];
 
 const readJson = async <T,>(response: Response): Promise<T> => {
   const raw = await response.text();
@@ -86,61 +123,135 @@ const readJson = async <T,>(response: Response): Promise<T> => {
 const formatDate = (timestamp?: number) =>
   timestamp ? new Date(timestamp).toLocaleString() : "Not saved";
 
-const getScenarioRuntimeId = (scenario: Pick<AutomationScenario, "id" | "scriptId">) =>
-  scenario.scriptId ?? scenario.id;
-
-const getScenarioSteps = (project: Project, scenario: AutomationScenario) =>
-  project.automationSteps?.[getScenarioRuntimeId(scenario)] ?? [];
-
 const getTagsText = (tags?: string[]) => (tags?.length ? tags.join(", ") : "No tags");
 
-const buildStep = (
-  scriptId: string,
-  action: AutomationStepAction,
+const getDefaultLocator = (type: AutomationV2CommandType) => {
+  if (type === "assert-text") {
+    return {
+      strategy: "text" as const,
+      value: "Expected text",
+      text: "Expected text",
+    };
+  }
+  if (type === "assert-image") {
+    return {
+      strategy: "image" as const,
+      value: "image alt text or src",
+    };
+  }
+  if (type === "assert-a11y") {
+    return {
+      strategy: "a11y" as const,
+      value: "page",
+    };
+  }
+  if (type === "assert-label") {
+    return {
+      strategy: "label" as const,
+      value: "Accessible label",
+      label: "Accessible label",
+    };
+  }
+  return {
+    strategy: "css" as const,
+    value: "[data-testid=\"target\"]",
+    cssPath: "[data-testid=\"target\"]",
+  };
+};
+
+const buildCommand = (
+  scenarioId: string,
+  type: AutomationV2CommandType,
   order: number,
   url: string
-): AutomationStep => {
-  const id = crypto.randomUUID();
-  const common = {
-    id,
-    scriptId,
-    order,
-    action,
-    timeoutMs: 10000,
-  };
-
-  if (action === "goto") {
+): AutomationV2Command => {
+  const now = Date.now();
+  if (type === "navigate") {
     return {
-      ...common,
-      targetType: "url",
-      targetValue: url || "https://example.com",
-      inputValue: url || "https://example.com",
-    };
-  }
-
-  if (action === "fill") {
-    return {
-      ...common,
-      targetType: "selector",
-      targetValue: "[data-testid=\"input\"]",
-      inputValue: "{{value}}",
-    };
-  }
-
-  if (action === "assert-text") {
-    return {
-      ...common,
-      targetType: "text",
-      targetValue: "Expected text",
-      expectedValue: "Expected text",
+      id: crypto.randomUUID(),
+      scenarioId,
+      order,
+      type,
+      name: commandLabels[type],
+      url: url || "https://example.com",
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
     };
   }
 
   return {
-    ...common,
-    targetType: "selector",
-    targetValue: "[data-testid=\"target\"]",
+    id: crypto.randomUUID(),
+    scenarioId,
+    order,
+    type,
+    name: commandLabels[type],
+    description: commandHints[type],
+    locator: getDefaultLocator(type),
+    inputValue: type === "fill" ? "{{value}}" : undefined,
+    expectedValue: type.startsWith("assert") ? getDefaultLocator(type).value : undefined,
+    key: type === "press" ? "Enter" : undefined,
+    status: "pending",
+    createdAt: now,
+    updatedAt: now,
+    meta:
+      type === "assert-a11y"
+        ? {
+            wcag: ["keyboard", "labels", "contrast", "focus-order"],
+          }
+        : undefined,
   };
+};
+
+const buildPlaywrightSpec = (scenario: AutomationV2Scenario) => {
+  const lines = [
+    "import { test, expect } from '@playwright/test';",
+    "",
+    `test(${JSON.stringify(scenario.name)}, async ({ page }) => {`,
+  ];
+
+  scenario.commands
+    .slice()
+    .sort((left, right) => left.order - right.order)
+    .forEach((command) => {
+      const locatorValue = command.locator?.value || "[data-testid=\"target\"]";
+      if (command.type === "navigate") {
+        lines.push(`  await page.goto(${JSON.stringify(command.url || scenario.startUrl || "/")});`);
+      } else if (command.type === "click") {
+        lines.push(`  await page.locator(${JSON.stringify(locatorValue)}).click();`);
+      } else if (command.type === "fill") {
+        lines.push(
+          `  await page.locator(${JSON.stringify(locatorValue)}).fill(${JSON.stringify(command.inputValue || "")});`
+        );
+      } else if (command.type === "select") {
+        lines.push(
+          `  await page.locator(${JSON.stringify(locatorValue)}).selectOption(${JSON.stringify(command.inputValue || "")});`
+        );
+      } else if (command.type === "hover") {
+        lines.push(`  await page.locator(${JSON.stringify(locatorValue)}).hover();`);
+      } else if (command.type === "press") {
+        lines.push(`  await page.keyboard.press(${JSON.stringify(command.key || "Enter")});`);
+      } else if (command.type === "assert-text") {
+        lines.push(
+          `  await expect(page.getByText(${JSON.stringify(command.expectedValue || locatorValue)})).toBeVisible();`
+        );
+      } else if (command.type === "assert-image") {
+        lines.push(`  await expect(page.locator(${JSON.stringify(locatorValue)})).toBeVisible();`);
+      } else if (command.type === "assert-label") {
+        lines.push(
+          `  await expect(page.getByLabel(${JSON.stringify(command.expectedValue || locatorValue)})).toBeVisible();`
+        );
+      } else if (command.type === "assert-focus") {
+        lines.push(`  await expect(page.locator(${JSON.stringify(locatorValue)})).toBeFocused();`);
+      } else if (command.type === "assert-a11y") {
+        lines.push("  // Accessibility scan command captured; axe/playwright integration lands in Phase 2.");
+      } else if (command.type === "run-action") {
+        lines.push(`  // Reusable Action: ${command.actionId || command.name}`);
+      }
+    });
+
+  lines.push("});");
+  return lines.join("\n");
 };
 
 export default function AutomationStudioClient({
@@ -158,14 +269,14 @@ export default function AutomationStudioClient({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ScenarioStatusFilter>("all");
   const [tagFilter, setTagFilter] = useState("");
-  const [message, setMessage] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   const [targetUrl, setTargetUrl] = useState("https://example.com");
-  const [selectedStepIds, setSelectedStepIds] = useState<string[]>([]);
-  const [activeStepId, setActiveStepId] = useState<string | null>(null);
+  const [selectedCommandIds, setSelectedCommandIds] = useState<string[]>([]);
+  const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState("");
   const [consoleLines, setConsoleLines] = useState<string[]>([
-    "Recorder ready. Open a URL, then turn Record on.",
+    "Automation v2 recorder ready. Ctrl+Alt+T/I/A/L/F creates validation commands.",
   ]);
 
   const loadProject = useCallback(async () => {
@@ -216,31 +327,28 @@ export default function AutomationStudioClient({
   const project = state.project;
   const scenarios = useMemo(
     () =>
-      [...(project?.automationScenarios ?? [])].sort(
+      [...(project?.automationV2Scenarios ?? [])].sort(
         (left, right) => right.updatedAt - left.updatedAt
       ),
-    [project?.automationScenarios]
-  );
-  const suites = useMemo(
-    () =>
-      [...(project?.automationSuites ?? [])].sort(
-        (left, right) => right.updatedAt - left.updatedAt
-      ),
-    [project?.automationSuites]
+    [project?.automationV2Scenarios]
   );
   const actions = useMemo(
     () =>
-      [...(project?.automationActions ?? [])].sort(
+      [...(project?.automationV2Actions ?? [])].sort(
         (left, right) => right.updatedAt - left.updatedAt
       ),
-    [project?.automationActions]
+    [project?.automationV2Actions]
   );
   const runs = useMemo(
     () =>
-      [...(project?.automationExecutions ?? [])].sort(
+      [...(project?.automationV2Runs ?? [])].sort(
         (left, right) => right.startedAt - left.startedAt
       ),
-    [project?.automationExecutions]
+    [project?.automationV2Runs]
+  );
+  const suites = useMemo(
+    () => project?.automationSuites ?? [],
+    [project?.automationSuites]
   );
   const suiteById = useMemo(
     () => Object.fromEntries(suites.map((suite) => [suite.id, suite.name])),
@@ -248,258 +356,316 @@ export default function AutomationStudioClient({
   );
   const selectedScenario =
     scenarios.find((scenario) => scenario.id === scenarioId) ??
+    scenarios.find((scenario) => scenario.id === project?.activeAutomationV2ScenarioId) ??
     (section === "recorder" ? scenarios[0] : null);
-  const selectedSteps =
-    project && selectedScenario ? getScenarioSteps(project, selectedScenario) : [];
-  const activeStep =
-    selectedSteps.find((step) => step.id === activeStepId) ??
-    selectedSteps[0] ??
+  const selectedCommands = useMemo(
+    () =>
+      selectedScenario
+        ? [...selectedScenario.commands].sort((left, right) => left.order - right.order)
+        : [],
+    [selectedScenario]
+  );
+  const activeCommand =
+    selectedCommands.find((command) => command.id === activeCommandId) ??
+    selectedCommands[0] ??
     null;
 
-  const persistProject = async (nextProject: Project) => {
-    setIsSaving(true);
-    try {
-      const response = await fetch("/api/projects", { cache: "no-store" });
-      const payload = await readJson<{ projects?: Project[]; error?: string }>(
-        response
-      );
-      if (!response.ok || !Array.isArray(payload.projects)) {
-        throw new Error(payload.error || "Failed to load projects.");
+  const pushConsole = useCallback((line: string) => {
+    setConsoleLines((lines) => [
+      `${new Date().toLocaleTimeString()} ${line}`,
+      ...lines,
+    ]);
+  }, []);
+
+  const persistProject = useCallback(
+    async (nextProject: Project) => {
+      setIsSaving(true);
+      try {
+        const response = await fetch("/api/projects", { cache: "no-store" });
+        const payload = await readJson<{ projects?: Project[]; error?: string }>(
+          response
+        );
+        if (!response.ok || !Array.isArray(payload.projects)) {
+          throw new Error(payload.error || "Failed to load projects.");
+        }
+
+        const projectFound = payload.projects.some(
+          (entry) =>
+            entry.id === nextProject.id ||
+            entry.projectKey?.trim().toLowerCase() ===
+              projectKey.trim().toLowerCase()
+        );
+        const nextProjects = projectFound
+          ? payload.projects.map((entry) =>
+              entry.id === nextProject.id ||
+              entry.projectKey?.trim().toLowerCase() ===
+                projectKey.trim().toLowerCase()
+                ? nextProject
+                : entry
+            )
+          : [nextProject, ...payload.projects];
+
+        const saveResponse = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projects: nextProjects }),
+        });
+        const savePayload = await readJson<{ projects?: Project[]; error?: string }>(
+          saveResponse
+        );
+        if (!saveResponse.ok || !Array.isArray(savePayload.projects)) {
+          throw new Error(savePayload.error || "Failed to save project.");
+        }
+
+        const savedProject =
+          savePayload.projects.find((entry) => entry.id === nextProject.id) ??
+          nextProject;
+        setState({ status: "ready", project: savedProject, error: "" });
+        setMessage("Saved");
+        return savedProject;
+      } finally {
+        setIsSaving(false);
       }
+    },
+    [projectKey]
+  );
 
-      const nextProjects = payload.projects.map((entry) =>
-        entry.id === nextProject.id ||
-        entry.projectKey?.trim().toLowerCase() === projectKey.trim().toLowerCase()
-          ? nextProject
-          : entry
-      );
-      const saveResponse = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projects: nextProjects }),
-      });
-      const savePayload = await readJson<{ projects?: Project[]; error?: string }>(
-        saveResponse
-      );
-      if (!saveResponse.ok || !Array.isArray(savePayload.projects)) {
-        throw new Error(savePayload.error || "Failed to save project.");
-      }
-
-      const savedProject =
-        savePayload.projects.find((entry) => entry.id === nextProject.id) ??
-        nextProject;
-      setState({ status: "ready", project: savedProject, error: "" });
-      setMessage("Saved");
-      return savedProject;
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const createScenario = async () => {
+  const createScenario = useCallback(async () => {
     if (!project) return;
     const now = Date.now();
     const id = crypto.randomUUID();
-    const scenario: AutomationScenario = {
+    const scenario: AutomationV2Scenario = {
       id,
       projectId: project.id,
-      provider: "playwright",
       name: `Scenario ${scenarios.length + 1}`,
-      description: "Recorded browser workflow.",
+      description: "Recorder-first Playwright workflow.",
       tags: ["draft"],
-      priority: "medium",
       status: "draft",
-      sourceType: "standalone",
-      testDataSetIds: [],
-      parameterizationMode: "default-only",
+      startUrl: targetUrl,
+      commands: [],
       createdAt: now,
       updatedAt: now,
     };
+
     await persistProject({
       ...project,
-      automationScenarios: [scenario, ...(project.automationScenarios ?? [])],
-      automationSteps: {
-        ...(project.automationSteps ?? {}),
-        [id]: [],
-      },
+      automationV2Scenarios: [scenario, ...(project.automationV2Scenarios ?? [])],
+      activeAutomationV2ScenarioId: id,
       updatedAt: now,
     });
     router.push(`/projects/${encodedProjectKey}/automation/scenarios/${id}`);
-  };
+  }, [encodedProjectKey, persistProject, project, router, scenarios.length, targetUrl]);
 
-  const updateScenarioSteps = async (nextSteps: AutomationStep[]) => {
-    if (!project || !selectedScenario) return;
-    const now = Date.now();
-    const scriptId = getScenarioRuntimeId(selectedScenario);
-    const normalizedSteps = nextSteps.map((step, index) => ({
-      ...step,
-      scriptId,
-      order: index,
-    }));
+  const updateScenario = useCallback(
+    async (nextScenario: AutomationV2Scenario) => {
+      if (!project) return;
+      const now = Date.now();
+      await persistProject({
+        ...project,
+        automationV2Scenarios: (project.automationV2Scenarios ?? []).map((scenario) =>
+          scenario.id === nextScenario.id
+            ? { ...nextScenario, updatedAt: now }
+            : scenario
+        ),
+        activeAutomationV2ScenarioId: nextScenario.id,
+        updatedAt: now,
+      });
+    },
+    [persistProject, project]
+  );
 
-    await persistProject({
-      ...project,
-      automationScenarios: scenarios.map((scenario) =>
-        scenario.id === selectedScenario.id
-          ? { ...scenario, updatedAt: now }
-          : scenario
-      ),
-      automationSteps: {
-        ...(project.automationSteps ?? {}),
-        [scriptId]: normalizedSteps,
-      },
-      updatedAt: now,
-    });
-  };
+  const updateScenarioCommands = useCallback(
+    async (nextCommands: AutomationV2Command[]) => {
+      if (!selectedScenario) return;
+      const now = Date.now();
+      await updateScenario({
+        ...selectedScenario,
+        commands: nextCommands.map((command, index) => ({
+          ...command,
+          scenarioId: selectedScenario.id,
+          order: index,
+          updatedAt: now,
+        })),
+        updatedAt: now,
+      });
+    },
+    [selectedScenario, updateScenario]
+  );
 
-  const addCommand = async (action: AutomationStepAction) => {
+  const addCommand = useCallback(
+    async (type: AutomationV2CommandType) => {
+      if (!selectedScenario) return;
+      const nextCommand = buildCommand(
+        selectedScenario.id,
+        type,
+        selectedCommands.length,
+        targetUrl
+      );
+      await updateScenarioCommands([...selectedCommands, nextCommand]);
+      setActiveCommandId(nextCommand.id);
+      pushConsole(`captured ${commandLabels[type]}`);
+    },
+    [pushConsole, selectedCommands, selectedScenario, targetUrl, updateScenarioCommands]
+  );
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || !event.altKey || event.repeat) {
+        return;
+      }
+
+      const shortcutMap: Partial<Record<string, AutomationV2CommandType>> = {
+        t: "assert-text",
+        i: "assert-image",
+        a: "assert-a11y",
+        l: "assert-label",
+        f: "assert-focus",
+      };
+      const commandType = shortcutMap[event.key.toLowerCase()];
+      if (!commandType) {
+        return;
+      }
+
+      event.preventDefault();
+      void addCommand(commandType);
+    };
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [addCommand]);
+
+  const updateActiveCommand = useCallback(
+    async (updates: Partial<AutomationV2Command>) => {
+      if (!activeCommand) return;
+      await updateScenarioCommands(
+        selectedCommands.map((command) =>
+          command.id === activeCommand.id
+            ? {
+                ...command,
+                ...updates,
+                locator: updates.locator
+                  ? { ...command.locator, ...updates.locator }
+                  : command.locator,
+              }
+            : command
+        )
+      );
+    },
+    [activeCommand, selectedCommands, updateScenarioCommands]
+  );
+
+  const saveScenario = useCallback(async () => {
     if (!selectedScenario) return;
-    const scriptId = getScenarioRuntimeId(selectedScenario);
-    const nextStep = buildStep(scriptId, action, selectedSteps.length, targetUrl);
-    await updateScenarioSteps([...selectedSteps, nextStep]);
-    setActiveStepId(nextStep.id);
-    setConsoleLines((lines) => [
-      `${new Date().toLocaleTimeString()} captured ${commandLabels[action]}`,
-      ...lines,
-    ]);
-  };
+    await updateScenario({ ...selectedScenario, status: "ready" });
+    pushConsole("scenario saved as ready");
+  }, [pushConsole, selectedScenario, updateScenario]);
 
-  const updateActiveStep = async (updates: Partial<AutomationStep>) => {
-    if (!activeStep) return;
-    await updateScenarioSteps(
-      selectedSteps.map((step) =>
-        step.id === activeStep.id ? { ...step, ...updates } : step
-      )
-    );
-  };
-
-  const saveScenario = async () => {
+  const runScenario = useCallback(async () => {
     if (!project || !selectedScenario) return;
     const now = Date.now();
-    await persistProject({
-      ...project,
-      automationScenarios: scenarios.map((scenario) =>
-        scenario.id === selectedScenario.id
-          ? { ...scenario, status: "ready", updatedAt: now }
-          : scenario
-      ),
-      updatedAt: now,
-    });
-  };
-
-  const runScenario = async () => {
-    if (!project || !selectedScenario) return;
-    const now = Date.now();
-    const execution: AutomationExecution = {
+    const results = selectedCommands.map((command, index) => ({
+      commandId: command.id,
+      commandName: command.name,
+      commandType: command.type,
+      status: "passed" as const,
+      message: `${commandLabels[command.type]} validated.`,
+      startedAt: now + index * 100,
+      finishedAt: now + index * 100 + 80,
+    }));
+    const run: AutomationV2Run = {
       id: crypto.randomUUID(),
-      runId: `RUN-${String(runs.length + 1).padStart(3, "0")}`,
-      caseId: selectedScenario.linkedCaseIds?.[0] ?? selectedScenario.id,
-      scriptId: getScenarioRuntimeId(selectedScenario),
       scenarioId: selectedScenario.id,
       scenarioName: selectedScenario.name,
-      provider: selectedScenario.provider,
-      status: selectedSteps.length ? "passed" : "blocked",
+      status: selectedCommands.length ? "passed" : "blocked",
       startedAt: now,
-      finishedAt: now + 900,
-      logSummary: selectedSteps.length
-        ? `Executed ${selectedSteps.length} command(s).`
-        : "No commands exist yet.",
-      artifactIds: [],
-      stepResults: selectedSteps.map((step, index) => ({
-        stepId: step.id,
-        sourceStepId: step.id,
-        stepIndex: index,
-        action: step.action,
-        status: "passed",
-        targetValue: step.targetValue,
-        message: `${commandLabels[step.action]} completed.`,
-        startedAt: now + index * 100,
-        finishedAt: now + index * 100 + 80,
-        durationMs: 80,
-      })),
+      finishedAt: now + Math.max(200, selectedCommands.length * 120),
+      logs: selectedCommands.length
+        ? [
+            `Replay started for ${selectedScenario.name}`,
+            `Executed ${selectedCommands.length} command(s)`,
+            "Playwright API wiring is prepared for Phase 2 execution.",
+          ]
+        : ["Run blocked because the scenario has no commands."],
+      commandResults: results,
     };
+
     await persistProject({
       ...project,
-      automationExecutions: [execution, ...(project.automationExecutions ?? [])],
+      automationV2Scenarios: (project.automationV2Scenarios ?? []).map((scenario) =>
+        scenario.id === selectedScenario.id
+          ? { ...scenario, lastRunAt: now, updatedAt: now }
+          : scenario
+      ),
+      automationV2Runs: [run, ...(project.automationV2Runs ?? [])],
       updatedAt: now,
     });
-    setConsoleLines((lines) => [
-      `${new Date().toLocaleTimeString()} run finished: ${execution.status}`,
-      ...lines,
-    ]);
-  };
+    pushConsole(`run finished: ${run.status}`);
+  }, [persistProject, project, pushConsole, selectedCommands, selectedScenario]);
 
-  const convertSelectionToAction = async () => {
-    if (!project || !selectedScenario || selectedStepIds.length === 0) return;
-    const groupedSteps = selectedSteps.filter((step) =>
-      selectedStepIds.includes(step.id)
+  const convertSelectionToAction = useCallback(async () => {
+    if (!project || !selectedScenario || selectedCommandIds.length === 0) return;
+    const groupedCommands = selectedCommands.filter((command) =>
+      selectedCommandIds.includes(command.id)
     );
-    if (!groupedSteps.length) return;
+    if (!groupedCommands.length) return;
 
     const now = Date.now();
     const actionId = crypto.randomUUID();
-    const action: AutomationAction = {
+    const action: AutomationV2Action = {
       id: actionId,
       projectId: project.id,
       name:
-        groupedSteps.length === 3
+        groupedCommands.length === 3
           ? "Login Action"
           : `Reusable Action ${actions.length + 1}`,
-      description: `Created from ${groupedSteps.length} recorded command(s).`,
+      description: `Created from ${groupedCommands.length} selected command(s).`,
       tags: ["reusable"],
-      provider: selectedScenario.provider as AutomationProvider,
       parameters: [],
-      steps: groupedSteps.map((step, index) => ({
-        ...step,
+      commands: groupedCommands.map((command, index) => ({
+        ...command,
         id: crypto.randomUUID(),
-        scriptId: actionId,
+        scenarioId: actionId,
         order: index,
+        updatedAt: now,
       })),
-      outputs: [],
-      backingBlockId: actionId,
       createdAt: now,
       updatedAt: now,
     };
 
     await persistProject({
       ...project,
-      automationActions: [action, ...(project.automationActions ?? [])],
-      automationReusableBlocks: [
-        {
-          id: actionId,
-          name: action.name,
-          description: action.description,
-          provider: action.provider,
-          steps: action.steps,
-          createdAt: now,
-          updatedAt: now,
-        },
-        ...(project.automationReusableBlocks ?? []),
-      ],
+      automationV2Actions: [action, ...(project.automationV2Actions ?? [])],
       updatedAt: now,
     });
-    setSelectedStepIds([]);
-    setConsoleLines((lines) => [
-      `${new Date().toLocaleTimeString()} converted ${groupedSteps.length} command(s) into ${action.name}`,
-      ...lines,
-    ]);
-  };
+    setSelectedCommandIds([]);
+    pushConsole(`converted ${groupedCommands.length} command(s) into ${action.name}`);
+  }, [
+    actions.length,
+    persistProject,
+    project,
+    pushConsole,
+    selectedCommandIds,
+    selectedCommands,
+    selectedScenario,
+  ]);
 
   const filteredScenarios = scenarios.filter((scenario) => {
     const haystack = [
       scenario.name,
       suiteById[scenario.suiteId ?? ""],
       ...(scenario.tags ?? []),
-      scenario.status ?? "draft",
+      scenario.status,
     ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
-    const searchMatch = !search.trim() || haystack.includes(search.trim().toLowerCase());
-    const statusMatch = statusFilter === "all" || (scenario.status ?? "draft") === statusFilter;
+    const searchMatch =
+      !search.trim() || haystack.includes(search.trim().toLowerCase());
+    const statusMatch =
+      statusFilter === "all" || scenario.status === statusFilter;
     const tagMatch =
       !tagFilter.trim() ||
-      (scenario.tags ?? []).some((tag) =>
+      scenario.tags.some((tag) =>
         tag.toLowerCase().includes(tagFilter.trim().toLowerCase())
       );
     return searchMatch && statusMatch && tagMatch;
@@ -517,7 +683,9 @@ export default function AutomationStudioClient({
           </Link>
           <nav className="mt-4 space-y-1">
             {navItems.map((item) => {
-              const active = section === item.key;
+              const active =
+                section === item.key ||
+                (section === "recorder" && item.key === "scenarios");
               return (
                 <Link
                   key={item.key}
@@ -529,9 +697,7 @@ export default function AutomationStudioClient({
                   }`}
                 >
                   <span>{item.label}</span>
-                  {active ? (
-                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                  ) : null}
+                  {active ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
                 </Link>
               );
             })}
@@ -570,11 +736,15 @@ export default function AutomationStudioClient({
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-            Automation Studio
+            Automation v2
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight">
             Recorder-first automation workbench
           </h1>
+          <p className="mt-2 max-w-2xl text-sm text-zinc-600">
+            Scenarios now start in the recorder. Commands become reusable
+            Actions, and runs stay lightweight.
+          </p>
         </div>
         <button
           type="button"
@@ -651,6 +821,7 @@ export default function AutomationStudioClient({
                 <th className="px-4 py-3 font-semibold">Name</th>
                 <th className="px-4 py-3 font-semibold">Suite</th>
                 <th className="px-4 py-3 font-semibold">Tags</th>
+                <th className="px-4 py-3 font-semibold">Commands</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 font-semibold">Updated</th>
               </tr>
@@ -670,9 +841,10 @@ export default function AutomationStudioClient({
                     {suiteById[scenario.suiteId ?? ""] ?? "Unassigned"}
                   </td>
                   <td className="px-4 py-3 text-zinc-600">{getTagsText(scenario.tags)}</td>
+                  <td className="px-4 py-3 text-zinc-600">{scenario.commands.length}</td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone[scenario.status ?? "draft"]}`}>
-                      {scenario.status ?? "draft"}
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone[scenario.status]}`}>
+                      {scenario.status}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-zinc-500">{formatDate(scenario.updatedAt)}</td>
@@ -680,8 +852,8 @@ export default function AutomationStudioClient({
               ))}
               {filteredScenarios.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
-                    No scenarios yet. Start with + New Scenario.
+                  <td colSpan={6} className="px-4 py-10 text-center text-zinc-500">
+                    No v2 scenarios yet. Start with + New Scenario.
                   </td>
                 </tr>
               ) : null}
@@ -694,13 +866,11 @@ export default function AutomationStudioClient({
 
   const renderActions = () => (
     <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Actions</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Reusable command groups converted from recorder timelines.
-          </p>
-        </div>
+      <div className="mb-4">
+        <h1 className="text-2xl font-semibold">Actions</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Reusable command groups converted from selected timeline commands.
+        </p>
       </div>
       <div className="overflow-hidden rounded-2xl bg-white">
         <table className="min-w-full text-left text-sm">
@@ -716,7 +886,7 @@ export default function AutomationStudioClient({
             {actions.map((action) => (
               <tr key={action.id} className="border-t border-zinc-100">
                 <td className="px-4 py-3 font-semibold">{action.name}</td>
-                <td className="px-4 py-3 text-zinc-600">{action.steps.length}</td>
+                <td className="px-4 py-3 text-zinc-600">{action.commands.length}</td>
                 <td className="px-4 py-3 text-zinc-600">{getTagsText(action.tags)}</td>
                 <td className="px-4 py-3 text-zinc-500">{formatDate(action.updatedAt)}</td>
               </tr>
@@ -736,34 +906,41 @@ export default function AutomationStudioClient({
 
   const renderRuns = () => (
     <div className="p-6">
-      <h1 className="text-2xl font-semibold">Runs</h1>
-      <div className="mt-4 overflow-hidden rounded-2xl bg-white">
+      <div className="mb-4">
+        <h1 className="text-2xl font-semibold">Runs</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Lightweight replay history and command-level logs.
+        </p>
+      </div>
+      <div className="overflow-hidden rounded-2xl bg-white">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-zinc-50 text-xs uppercase tracking-[0.14em] text-zinc-500">
             <tr>
               <th className="px-4 py-3 font-semibold">Run</th>
               <th className="px-4 py-3 font-semibold">Scenario</th>
               <th className="px-4 py-3 font-semibold">Status</th>
+              <th className="px-4 py-3 font-semibold">Logs</th>
               <th className="px-4 py-3 font-semibold">Started</th>
             </tr>
           </thead>
           <tbody>
             {runs.map((run) => (
               <tr key={run.id} className="border-t border-zinc-100">
-                <td className="px-4 py-3 font-semibold">{run.runId}</td>
-                <td className="px-4 py-3 text-zinc-600">{run.scenarioName ?? "Scenario"}</td>
+                <td className="px-4 py-3 font-semibold">{run.id.slice(0, 8)}</td>
+                <td className="px-4 py-3 text-zinc-600">{run.scenarioName}</td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone[run.status]}`}>
                     {run.status}
                   </span>
                 </td>
+                <td className="px-4 py-3 text-zinc-600">{run.logs[0] ?? "No logs"}</td>
                 <td className="px-4 py-3 text-zinc-500">{formatDate(run.startedAt)}</td>
               </tr>
             ))}
             {runs.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-zinc-500">
-                  Run a scenario to create playback and reporting history.
+                <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
+                  Run a scenario to create replay logs.
                 </td>
               </tr>
             ) : null}
@@ -798,7 +975,7 @@ export default function AutomationStudioClient({
             {suites.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-4 py-10 text-center text-zinc-500">
-                  Suites will group scenarios once your automation library grows.
+                  Suites will group v2 scenarios as the library grows.
                 </td>
               </tr>
             ) : null}
@@ -829,6 +1006,8 @@ export default function AutomationStudioClient({
       );
     }
 
+    const specPreview = buildPlaywrightSpec(selectedScenario);
+
     return (
       <div className="grid h-[calc(100vh-72px)] grid-rows-[56px_minmax(0,1fr)_150px] overflow-hidden">
         <header className="flex min-w-0 items-center gap-2 border-b border-zinc-200 bg-white px-4">
@@ -840,8 +1019,8 @@ export default function AutomationStudioClient({
           />
           <button
             type="button"
-            onClick={() => void addCommand("goto")}
-            className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold"
+            onClick={() => void addCommand("navigate")}
+            className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-950"
           >
             Open Browser
           </button>
@@ -849,10 +1028,7 @@ export default function AutomationStudioClient({
             type="button"
             onClick={() => {
               setIsRecording((value) => !value);
-              setConsoleLines((lines) => [
-                `${new Date().toLocaleTimeString()} record ${isRecording ? "off" : "on"}`,
-                ...lines,
-              ]);
+              pushConsole(`record ${isRecording ? "off" : "on"}`);
             }}
             className={`h-10 rounded-xl px-3 text-sm font-semibold ${
               isRecording ? "bg-rose-600 text-white" : "bg-zinc-950 text-white"
@@ -864,7 +1040,7 @@ export default function AutomationStudioClient({
             type="button"
             onClick={() => void saveScenario()}
             disabled={isSaving}
-            className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:text-zinc-500"
+            className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-950 disabled:cursor-not-allowed disabled:text-zinc-500"
           >
             Save
           </button>
@@ -877,41 +1053,46 @@ export default function AutomationStudioClient({
           </button>
           <button
             type="button"
-            onClick={() => setIsRecording(false)}
-            className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold"
+            onClick={() => {
+              setIsRecording(false);
+              pushConsole("record stopped");
+            }}
+            className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-950"
           >
             Stop
           </button>
         </header>
 
-        <section className="grid min-h-0 grid-cols-[280px_minmax(0,1fr)_320px]">
+        <section className="grid min-h-0 grid-cols-[290px_minmax(0,1fr)_340px]">
           <aside className="min-h-0 overflow-y-auto border-r border-zinc-200 bg-white">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                  Commands
+                  Command Timeline
                 </p>
                 <h2 className="text-sm font-semibold">{selectedScenario.name}</h2>
               </div>
-              <span className="text-xs text-zinc-500">{selectedSteps.length}</span>
+              <span className="text-xs text-zinc-500">{selectedCommands.length}</span>
             </div>
             <div className="space-y-1 p-2">
-              {selectedSteps.map((step, index) => (
+              {selectedCommands.map((command, index) => (
                 <div
-                  key={step.id}
+                  key={command.id}
                   className={`flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left text-sm ${
-                    activeStep?.id === step.id ? "bg-zinc-950 text-white" : "hover:bg-zinc-100"
+                    activeCommand?.id === command.id
+                      ? "bg-zinc-950 text-white"
+                      : "hover:bg-zinc-100"
                   }`}
                 >
                   <input
                     type="checkbox"
-                    checked={selectedStepIds.includes(step.id)}
+                    checked={selectedCommandIds.includes(command.id)}
                     onChange={(event) => {
                       event.stopPropagation();
-                      setSelectedStepIds((ids) =>
-                        ids.includes(step.id)
-                          ? ids.filter((id) => id !== step.id)
-                          : [...ids, step.id]
+                      setSelectedCommandIds((ids) =>
+                        ids.includes(command.id)
+                          ? ids.filter((id) => id !== command.id)
+                          : [...ids, command.id]
                       );
                     }}
                     className="mt-1"
@@ -919,22 +1100,25 @@ export default function AutomationStudioClient({
                   />
                   <button
                     type="button"
-                    onClick={() => setActiveStepId(step.id)}
+                    onClick={() => setActiveCommandId(command.id)}
                     className="flex min-w-0 flex-1 items-start gap-2 text-left"
                   >
-                    <span className="font-mono text-xs text-zinc-400">{index + 1}</span>
+                    <span className="font-mono text-xs opacity-60">{index + 1}</span>
                     <span className="min-w-0">
-                      <span className="block font-semibold">{commandLabels[step.action]}</span>
+                      <span className="block font-semibold">{command.name}</span>
                       <span className="block truncate text-xs opacity-75">
-                        {step.targetValue || step.inputValue || "No target configured"}
+                        {command.url ||
+                          command.locator?.value ||
+                          command.inputValue ||
+                          "No target configured"}
                       </span>
                     </span>
                   </button>
                 </div>
               ))}
-              {selectedSteps.length === 0 ? (
+              {selectedCommands.length === 0 ? (
                 <p className="px-3 py-8 text-center text-sm text-zinc-500">
-                  Open a URL or add a command to begin recording.
+                  Open a URL or use the recorder buttons to create commands.
                 </p>
               ) : null}
             </div>
@@ -948,26 +1132,40 @@ export default function AutomationStudioClient({
                 <span className="h-3 w-3 rounded-full bg-emerald-400" />
                 <span className="ml-3 truncate text-xs text-zinc-500">{targetUrl}</span>
               </div>
-              <div className="flex flex-1 items-center justify-center bg-white">
-                <div className="text-center">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
-                    Browser / Playback
-                  </p>
-                  <p className="mt-2 text-lg font-semibold text-zinc-800">
-                    Desktop viewport
-                  </p>
-                  <div className="mt-5 flex flex-wrap justify-center gap-2">
-                    {(["click", "fill", "select", "assert-text", "assert-visible"] as AutomationStepAction[]).map((action) => (
-                      <button
-                        key={action}
-                        type="button"
-                        onClick={() => void addCommand(action)}
-                        className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50"
-                      >
-                        {commandLabels[action]}
-                      </button>
-                    ))}
-                  </div>
+              <div className="flex flex-1 flex-col items-center justify-center bg-white px-6 text-center">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                  Browser / Playback
+                </p>
+                <p className="mt-2 text-lg font-semibold text-zinc-800">
+                  Playwright recorder API target
+                </p>
+                <p className="mt-2 max-w-lg text-sm text-zinc-500">
+                  Phase 1 persists commands and validation captures. Phase 2 will
+                  attach a live Playwright browser session here.
+                </p>
+                <div className="mt-5 flex flex-wrap justify-center gap-2">
+                  {recorderCommandTypes.map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => void addCommand(type)}
+                      className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-zinc-50"
+                    >
+                      {commandLabels[type]}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  {validationCommandTypes.map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => void addCommand(type)}
+                      className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
+                    >
+                      {commandLabels[type]}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
@@ -977,48 +1175,69 @@ export default function AutomationStudioClient({
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
               Properties
             </p>
-            {activeStep ? (
+            {activeCommand ? (
               <div className="mt-4 space-y-3">
                 <label className="block">
-                  <span className="text-xs font-medium text-zinc-500">Action</span>
+                  <span className="text-xs font-medium text-zinc-500">Command</span>
                   <select
-                    value={activeStep.action}
+                    value={activeCommand.type}
                     onChange={(event) =>
-                      void updateActiveStep({
-                        action: event.target.value as AutomationStepAction,
+                      void updateActiveCommand({
+                        type: event.target.value as AutomationV2CommandType,
+                        name: commandLabels[event.target.value as AutomationV2CommandType],
                       })
                     }
-                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm"
+                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950"
                   >
                     {Object.entries(commandLabels).map(([key, label]) => (
-                      <option key={key} value={key}>{label}</option>
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
                     ))}
                   </select>
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-zinc-500">Locator</span>
+                  <span className="text-xs font-medium text-zinc-500">Name</span>
                   <input
-                    value={activeStep.targetValue ?? ""}
+                    value={activeCommand.name}
                     onChange={(event) =>
-                      void updateActiveStep({ targetValue: event.target.value })
+                      void updateActiveCommand({ name: event.target.value })
                     }
-                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm"
+                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-zinc-500">Locator / Target</span>
+                  <input
+                    value={activeCommand.locator?.value ?? activeCommand.url ?? ""}
+                    onChange={(event) =>
+                      activeCommand.type === "navigate"
+                        ? void updateActiveCommand({ url: event.target.value })
+                        : void updateActiveCommand({
+                            locator: {
+                              ...(activeCommand.locator ?? getDefaultLocator(activeCommand.type)),
+                              value: event.target.value,
+                            },
+                          })
+                    }
+                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950"
                   />
                 </label>
                 <label className="block">
                   <span className="text-xs font-medium text-zinc-500">Input / Expected</span>
                   <input
-                    value={activeStep.inputValue ?? activeStep.expectedValue ?? ""}
+                    value={activeCommand.inputValue ?? activeCommand.expectedValue ?? ""}
                     onChange={(event) =>
-                      void updateActiveStep({
-                        inputValue: event.target.value,
-                        expectedValue:
-                          activeStep.action.toString().startsWith("assert")
-                            ? event.target.value
-                            : activeStep.expectedValue,
+                      void updateActiveCommand({
+                        inputValue: activeCommand.type.startsWith("assert")
+                          ? activeCommand.inputValue
+                          : event.target.value,
+                        expectedValue: activeCommand.type.startsWith("assert")
+                          ? event.target.value
+                          : activeCommand.expectedValue,
                       })
                     }
-                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm"
+                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950"
                   />
                 </label>
                 <div className="rounded-xl bg-zinc-50 px-3 py-3">
@@ -1026,25 +1245,31 @@ export default function AutomationStudioClient({
                     Smart Locator Suggestions
                   </p>
                   <div className="mt-2 space-y-1 text-xs text-zinc-600">
-                    <p>data-testid</p>
                     <p>role + accessible name</p>
-                    <p>stable CSS selector</p>
+                    <p>data-testid</p>
+                    <p>stable CSS path</p>
                   </div>
                 </div>
               </div>
             ) : (
               <p className="mt-4 text-sm text-zinc-500">
-                Select a command to edit locators and action settings.
+                Select a command to edit locators and settings.
               </p>
             )}
             <button
               type="button"
               onClick={() => void convertSelectionToAction()}
-              disabled={selectedStepIds.length === 0}
+              disabled={selectedCommandIds.length === 0}
               className="mt-5 w-full rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-600"
             >
               Convert Selection to Action
             </button>
+            <details className="mt-4 rounded-xl bg-zinc-950 p-3 text-xs text-zinc-100">
+              <summary className="cursor-pointer font-semibold">Playwright Spec Preview</summary>
+              <pre className="mt-3 max-h-60 overflow-auto whitespace-pre-wrap text-[11px] leading-5 text-zinc-200">
+                {specPreview}
+              </pre>
+            </details>
           </aside>
         </section>
 

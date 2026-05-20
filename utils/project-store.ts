@@ -37,6 +37,15 @@ import {
   AutomationScheduleStatus,
   AutomationSuiteStatus,
   AutomationTargetType,
+  AutomationV2Action,
+  AutomationV2Command,
+  AutomationV2CommandStatus,
+  AutomationV2CommandType,
+  AutomationV2Locator,
+  AutomationV2Run,
+  AutomationV2RunStatus,
+  AutomationV2Scenario,
+  AutomationV2ScenarioStatus,
   normalizeAutomationProvider,
   CasesSavedView,
   CaseReviewHistoryEntry,
@@ -950,6 +959,353 @@ const getStoredAutomationSteps = (
       return [scriptId, parsedSteps];
     })
   );
+};
+
+const automationV2CommandTypes = [
+  "navigate",
+  "click",
+  "fill",
+  "select",
+  "hover",
+  "press",
+  "assert-text",
+  "assert-image",
+  "assert-a11y",
+  "assert-label",
+  "assert-focus",
+  "run-action",
+] as const;
+
+const automationV2ScenarioStatuses = [
+  "draft",
+  "ready",
+  "active",
+  "paused",
+] as const;
+
+const automationV2RunStatuses = [
+  "not-run",
+  "passed",
+  "failed",
+  "blocked",
+] as const;
+
+const automationV2CommandStatuses = [
+  "pending",
+  "passed",
+  "failed",
+  "blocked",
+] as const;
+
+const getStringArray = (value: unknown) =>
+  Array.isArray(value)
+    ? value.filter(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.trim().length > 0
+      )
+    : [];
+
+const parseAutomationV2Locator = (value: unknown): AutomationV2Locator | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const strategy = [
+    "role",
+    "text",
+    "label",
+    "placeholder",
+    "testid",
+    "css",
+    "xpath",
+    "image",
+    "a11y",
+  ].includes(String(record.strategy))
+    ? (record.strategy as AutomationV2Locator["strategy"])
+    : "css";
+
+  return {
+    strategy,
+    value: typeof record.value === "string" ? record.value : "",
+    stable: typeof record.stable === "string" ? record.stable : undefined,
+    cssPath: typeof record.cssPath === "string" ? record.cssPath : undefined,
+    label: typeof record.label === "string" ? record.label : undefined,
+    role: typeof record.role === "string" ? record.role : undefined,
+    tagName: typeof record.tagName === "string" ? record.tagName : undefined,
+    text: typeof record.text === "string" ? record.text : undefined,
+  };
+};
+
+const parseAutomationV2Command = (
+  value: unknown,
+  fallbackScenarioId: string,
+  fallbackOrder: number
+): AutomationV2Command | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== "string") {
+    return null;
+  }
+
+  const type = automationV2CommandTypes.includes(
+    record.type as AutomationV2CommandType
+  )
+    ? (record.type as AutomationV2CommandType)
+    : "click";
+  const status = automationV2CommandStatuses.includes(
+    record.status as AutomationV2CommandStatus
+  )
+    ? (record.status as AutomationV2CommandStatus)
+    : undefined;
+
+  return {
+    id: record.id,
+    scenarioId:
+      typeof record.scenarioId === "string" ? record.scenarioId : fallbackScenarioId,
+    order: typeof record.order === "number" ? record.order : fallbackOrder,
+    type,
+    name: typeof record.name === "string" ? record.name : type,
+    description:
+      typeof record.description === "string" ? record.description : undefined,
+    locator: parseAutomationV2Locator(record.locator),
+    inputValue:
+      typeof record.inputValue === "string" ? record.inputValue : undefined,
+    expectedValue:
+      typeof record.expectedValue === "string" ? record.expectedValue : undefined,
+    url: typeof record.url === "string" ? record.url : undefined,
+    key: typeof record.key === "string" ? record.key : undefined,
+    actionId: typeof record.actionId === "string" ? record.actionId : undefined,
+    status,
+    createdAt:
+      typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+    updatedAt:
+      typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+    meta:
+      record.meta && typeof record.meta === "object" && !Array.isArray(record.meta)
+        ? (record.meta as Record<string, unknown>)
+        : undefined,
+  };
+};
+
+const parseAutomationV2Commands = (
+  value: unknown,
+  scenarioId: string
+): AutomationV2Command[] =>
+  Array.isArray(value)
+    ? value
+        .map((entry, index) => parseAutomationV2Command(entry, scenarioId, index))
+        .filter((entry): entry is AutomationV2Command => Boolean(entry))
+        .sort((left, right) => left.order - right.order)
+    : [];
+
+const getStoredAutomationV2Scenarios = (
+  value: unknown
+): Project["automationV2Scenarios"] => {
+  const planning = getProjectPlanning(value);
+  const scenarios = planning?.automationV2Scenarios;
+
+  if (!Array.isArray(scenarios)) {
+    return [];
+  }
+
+  return scenarios
+    .map((item): AutomationV2Scenario | null => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.id !== "string" ||
+        typeof record.projectId !== "string" ||
+        typeof record.name !== "string"
+      ) {
+        return null;
+      }
+
+      const status = automationV2ScenarioStatuses.includes(
+        record.status as AutomationV2ScenarioStatus
+      )
+        ? (record.status as AutomationV2ScenarioStatus)
+        : "draft";
+
+      return {
+        id: record.id,
+        projectId: record.projectId,
+        suiteId: typeof record.suiteId === "string" ? record.suiteId : undefined,
+        name: record.name,
+        description:
+          typeof record.description === "string" ? record.description : undefined,
+        tags: getStringArray(record.tags),
+        status,
+        startUrl: typeof record.startUrl === "string" ? record.startUrl : undefined,
+        commands: parseAutomationV2Commands(record.commands, record.id),
+        createdAt:
+          typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+        updatedAt:
+          typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+        lastRunAt:
+          typeof record.lastRunAt === "number" ? record.lastRunAt : undefined,
+      } satisfies AutomationV2Scenario;
+    })
+    .filter((entry): entry is AutomationV2Scenario => Boolean(entry));
+};
+
+const getStoredAutomationV2Actions = (
+  value: unknown
+): Project["automationV2Actions"] => {
+  const planning = getProjectPlanning(value);
+  const actions = planning?.automationV2Actions;
+
+  if (!Array.isArray(actions)) {
+    return [];
+  }
+
+  return actions
+    .map((item): AutomationV2Action | null => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.id !== "string" ||
+        typeof record.projectId !== "string" ||
+        typeof record.name !== "string"
+      ) {
+        return null;
+      }
+
+      return {
+        id: record.id,
+        projectId: record.projectId,
+        name: record.name,
+        description:
+          typeof record.description === "string" ? record.description : undefined,
+        tags: getStringArray(record.tags),
+        parameters: Array.isArray(record.parameters)
+          ? record.parameters.flatMap((entry) => {
+              if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+                return [];
+              }
+              const parameter = entry as Record<string, unknown>;
+              return typeof parameter.id === "string" &&
+                typeof parameter.name === "string"
+                ? [
+                    {
+                      id: parameter.id,
+                      name: parameter.name,
+                      defaultValue:
+                        typeof parameter.defaultValue === "string"
+                          ? parameter.defaultValue
+                          : undefined,
+                      required:
+                        typeof parameter.required === "boolean"
+                          ? parameter.required
+                          : undefined,
+                    },
+                  ]
+                : [];
+            })
+          : [],
+        commands: parseAutomationV2Commands(record.commands, record.id),
+        createdAt:
+          typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+        updatedAt:
+          typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+      } satisfies AutomationV2Action;
+    })
+    .filter((entry): entry is AutomationV2Action => Boolean(entry));
+};
+
+const getStoredAutomationV2Runs = (value: unknown): Project["automationV2Runs"] => {
+  const planning = getProjectPlanning(value);
+  const runs = planning?.automationV2Runs;
+
+  if (!Array.isArray(runs)) {
+    return [];
+  }
+
+  return runs
+    .map((item): AutomationV2Run | null => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.id !== "string" ||
+        typeof record.scenarioId !== "string" ||
+        typeof record.scenarioName !== "string" ||
+        typeof record.startedAt !== "number"
+      ) {
+        return null;
+      }
+
+      const status = automationV2RunStatuses.includes(
+        record.status as AutomationV2RunStatus
+      )
+        ? (record.status as AutomationV2RunStatus)
+        : "not-run";
+
+      return {
+        id: record.id,
+        scenarioId: record.scenarioId,
+        scenarioName: record.scenarioName,
+        status,
+        startedAt: record.startedAt,
+        finishedAt:
+          typeof record.finishedAt === "number" ? record.finishedAt : undefined,
+        logs: getStringArray(record.logs),
+        commandResults: Array.isArray(record.commandResults)
+          ? record.commandResults.flatMap((entry) => {
+              if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+                return [];
+              }
+              const result = entry as Record<string, unknown>;
+              if (
+                typeof result.commandId !== "string" ||
+                typeof result.commandName !== "string"
+              ) {
+                return [];
+              }
+              const commandType = automationV2CommandTypes.includes(
+                result.commandType as AutomationV2CommandType
+              )
+                ? (result.commandType as AutomationV2CommandType)
+                : "click";
+              const commandStatus = automationV2CommandStatuses.includes(
+                result.status as AutomationV2CommandStatus
+              )
+                ? (result.status as AutomationV2CommandStatus)
+                : "pending";
+              return [
+                {
+                  commandId: result.commandId,
+                  commandName: result.commandName,
+                  commandType,
+                  status: commandStatus,
+                  message:
+                    typeof result.message === "string" ? result.message : undefined,
+                  startedAt:
+                    typeof result.startedAt === "number"
+                      ? result.startedAt
+                      : undefined,
+                  finishedAt:
+                    typeof result.finishedAt === "number"
+                      ? result.finishedAt
+                      : undefined,
+                },
+              ];
+            })
+          : [],
+      } satisfies AutomationV2Run;
+    })
+    .filter((entry): entry is AutomationV2Run => Boolean(entry));
 };
 
 const getStoredAutomationBindings = (
@@ -2777,6 +3133,13 @@ const toWorkspaceProject = (project: ProjectRecord): Project => {
       typeof getProjectPlanning(project.rows)?.activeAutomationEnvironmentId === "string"
         ? (getProjectPlanning(project.rows)?.activeAutomationEnvironmentId as string)
         : "",
+    automationV2Scenarios: getStoredAutomationV2Scenarios(project.rows),
+    automationV2Actions: getStoredAutomationV2Actions(project.rows),
+    automationV2Runs: getStoredAutomationV2Runs(project.rows),
+    activeAutomationV2ScenarioId:
+      typeof getProjectPlanning(project.rows)?.activeAutomationV2ScenarioId === "string"
+        ? (getProjectPlanning(project.rows)?.activeAutomationV2ScenarioId as string)
+        : "",
     generationFeedbackLog: getStoredGenerationFeedbackLog(project.rows),
     activeRunId: getActiveRunId(project.rows),
     lastGeneratedChangeImpactSignature: latestChangeComparison?.signature ?? null,
@@ -2856,6 +3219,13 @@ const toWorkspaceAutomationProject = (project: AutomationProjectRecord): Project
   activeAutomationEnvironmentId:
     typeof getProjectPlanning(project.rows)?.activeAutomationEnvironmentId === "string"
       ? (getProjectPlanning(project.rows)?.activeAutomationEnvironmentId as string)
+      : "",
+  automationV2Scenarios: getStoredAutomationV2Scenarios(project.rows),
+  automationV2Actions: getStoredAutomationV2Actions(project.rows),
+  automationV2Runs: getStoredAutomationV2Runs(project.rows),
+  activeAutomationV2ScenarioId:
+    typeof getProjectPlanning(project.rows)?.activeAutomationV2ScenarioId === "string"
+      ? (getProjectPlanning(project.rows)?.activeAutomationV2ScenarioId as string)
       : "",
   generationFeedbackLog: getStoredGenerationFeedbackLog(project.rows),
   activeRunId: getActiveRunId(project.rows),
@@ -2966,6 +3336,16 @@ const normalizeProject = (project: Project): Project => ({
     ? project.automationSchedules
     : [],
   activeAutomationEnvironmentId: project.activeAutomationEnvironmentId ?? "",
+  automationV2Scenarios: Array.isArray(project.automationV2Scenarios)
+    ? project.automationV2Scenarios
+    : [],
+  automationV2Actions: Array.isArray(project.automationV2Actions)
+    ? project.automationV2Actions
+    : [],
+  automationV2Runs: Array.isArray(project.automationV2Runs)
+    ? project.automationV2Runs
+    : [],
+  activeAutomationV2ScenarioId: project.activeAutomationV2ScenarioId ?? "",
   generationFeedbackLog: Array.isArray(project.generationFeedbackLog)
     ? project.generationFeedbackLog
     : [],
@@ -3379,6 +3759,11 @@ export const writeProjects = async (projects: Project[]) => {
                   automationSchedules: project.automationSchedules ?? [],
                   activeAutomationEnvironmentId:
                     project.activeAutomationEnvironmentId ?? "",
+                  automationV2Scenarios: project.automationV2Scenarios ?? [],
+                  automationV2Actions: project.automationV2Actions ?? [],
+                  automationV2Runs: project.automationV2Runs ?? [],
+                  activeAutomationV2ScenarioId:
+                    project.activeAutomationV2ScenarioId ?? "",
                   generationFeedbackLog: project.generationFeedbackLog ?? [],
                   activeRunId: project.activeRunId ?? "",
                 },
@@ -3436,6 +3821,11 @@ export const writeProjects = async (projects: Project[]) => {
                   automationSchedules: project.automationSchedules ?? [],
                   activeAutomationEnvironmentId:
                     project.activeAutomationEnvironmentId ?? "",
+                  automationV2Scenarios: project.automationV2Scenarios ?? [],
+                  automationV2Actions: project.automationV2Actions ?? [],
+                  automationV2Runs: project.automationV2Runs ?? [],
+                  activeAutomationV2ScenarioId:
+                    project.activeAutomationV2ScenarioId ?? "",
                   generationFeedbackLog: project.generationFeedbackLog ?? [],
                   activeRunId: project.activeRunId ?? "",
                 },
