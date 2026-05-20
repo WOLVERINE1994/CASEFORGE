@@ -5,6 +5,7 @@ import Image from "next/image";
 type CaseForgeBrandProps = {
   variant?: "full" | "mark";
   size?: "sm" | "md" | "lg";
+  tone?: "default" | "onDark";
   className?: string;
   priority?: boolean;
 };
@@ -69,6 +70,7 @@ function BrandMark({
 export default function CaseForgeBrand({
   variant = "full",
   size = "md",
+  tone = "default",
   className = "",
   priority = false,
 }: CaseForgeBrandProps) {
@@ -77,6 +79,14 @@ export default function CaseForgeBrand({
   }
 
   const config = wordmarkClassName[size];
+  const titleColor =
+    tone === "onDark" ? "text-white" : "text-slate-950 dark:text-slate-50";
+  const forgeGradient =
+    tone === "onDark"
+      ? "bg-[linear-gradient(135deg,#67E8F9_0%,#60A5FA_48%,#A78BFA_100%)]"
+      : "bg-[linear-gradient(135deg,#2563EB_0%,#4F46E5_52%,#7C3AED_100%)]";
+  const subtextColor =
+    tone === "onDark" ? "text-slate-300" : "text-slate-500 dark:text-slate-400";
 
   return (
     <div
@@ -86,15 +96,15 @@ export default function CaseForgeBrand({
       <BrandMark size={size} priority={priority} />
       <div className="min-w-0">
         <div
-          className={`truncate font-semibold tracking-tight text-slate-950 dark:text-slate-50 ${config.title}`}
+          className={`truncate font-semibold tracking-tight ${titleColor} ${config.title}`}
         >
           <span>case</span>
-          <span className="bg-[linear-gradient(135deg,#2563EB_0%,#4F46E5_52%,#7C3AED_100%)] bg-clip-text text-transparent">
+          <span className={`${forgeGradient} bg-clip-text text-transparent`}>
             Forge
           </span>
         </div>
         {config.showSubtext ? (
-          <p className={`mt-0.5 truncate font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 ${config.subtext}`}>
+          <p className={`mt-0.5 truncate font-semibold uppercase tracking-[0.18em] ${subtextColor} ${config.subtext}`}>
             AI-powered QA workspace
           </p>
         ) : null}
