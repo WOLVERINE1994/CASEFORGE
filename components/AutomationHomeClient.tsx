@@ -30,6 +30,7 @@ export default function AutomationHomeClient({
   projectKey,
 }: AutomationHomeClientProps) {
   const encodedProjectKey = encodeURIComponent(projectKey);
+  const [navigatingTo, setNavigatingTo] = useState("");
   const [state, setState] = useState<LoadState>({
     status: "loading",
     project: null,
@@ -85,9 +86,29 @@ export default function AutomationHomeClient({
   const latestRuns = [...runs]
     .sort((left, right) => right.startedAt - left.startedAt)
     .slice(0, 4);
+  const showNavigationBuffer = (label: string) => {
+    setNavigatingTo(label);
+  };
+  const navigationBuffer = navigatingTo ? (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/72 px-4 backdrop-blur-sm">
+      <div className="cf-panel w-full max-w-sm rounded-[28px] px-6 py-6 text-center shadow-[0_26px_80px_-38px_rgba(2,6,23,0.95)]">
+        <div className="mx-auto h-11 w-11 animate-spin rounded-full border-2 border-slate-700 border-t-cyan-300" />
+        <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
+          Loading
+        </p>
+        <p className="mt-2 text-sm font-semibold text-slate-50">
+          Opening {navigatingTo}
+        </p>
+        <p className="mt-2 text-xs leading-5 text-slate-400">
+          Preparing automation data and editor panels.
+        </p>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <main className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
+      {navigationBuffer}
       <section className="cf-panel rounded-[28px] px-5 py-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
@@ -105,6 +126,7 @@ export default function AutomationHomeClient({
           </div>
           <Link
             href={`/projects/${encodedProjectKey}/automation/scenarios`}
+            onClick={() => showNavigationBuffer("Scenarios")}
             className="cf-primary-button inline-flex min-h-[44px] items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold"
           >
             Open Scenarios
@@ -172,6 +194,7 @@ export default function AutomationHomeClient({
               <Link
                 key={item.href}
                 href={`/projects/${encodedProjectKey}/automation/${item.href}`}
+                onClick={() => showNavigationBuffer(item.label)}
                 className="rounded-[20px] border border-slate-700/80 bg-slate-950/60 px-4 py-4 transition hover:border-sky-400/40 hover:bg-slate-900"
               >
                 <p className="text-sm font-semibold text-slate-50">{item.label}</p>
@@ -191,6 +214,7 @@ export default function AutomationHomeClient({
                 <Link
                   key={run.id}
                   href={`/projects/${encodedProjectKey}/automation/runs/${run.id}`}
+                  onClick={() => showNavigationBuffer("Run details")}
                   className="block rounded-[18px] border border-slate-700/80 bg-slate-950/60 px-4 py-3 transition hover:bg-slate-900"
                 >
                   <div className="flex items-center justify-between gap-3">
