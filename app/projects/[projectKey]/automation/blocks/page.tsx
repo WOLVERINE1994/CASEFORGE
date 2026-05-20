@@ -1,4 +1,4 @@
-import ProjectAutomationWorkspace from "../../../../../components/ProjectAutomationWorkspace";
+import { redirect } from "next/navigation";
 
 export default async function ProjectAutomationBlocksPage({
   params,
@@ -6,13 +6,5 @@ export default async function ProjectAutomationBlocksPage({
   params: Promise<{ projectKey: string }>;
 }) {
   const { projectKey } = await params;
-  return (
-    <ProjectAutomationWorkspace
-      projectKey={projectKey}
-      initialProject={null}
-      initialSection="actions"
-    />
-  );
+  redirect(`/projects/${encodeURIComponent(projectKey)}/automation/actions`);
 }
-
-

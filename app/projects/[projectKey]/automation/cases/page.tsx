@@ -1,23 +1,10 @@
-import ProjectAutomationWorkspace from "../../../../../components/ProjectAutomationWorkspace";
-
-type ProjectAutomationCasesPageProps = {
-  params: Promise<{
-    projectKey: string;
-  }>;
-};
+import { redirect } from "next/navigation";
 
 export default async function ProjectAutomationCasesPage({
   params,
-}: ProjectAutomationCasesPageProps) {
+}: {
+  params: Promise<{ projectKey: string }>;
+}) {
   const { projectKey } = await params;
-
-  return (
-    <ProjectAutomationWorkspace
-      projectKey={projectKey}
-      initialProject={null}
-      initialSection="cases"
-    />
-  );
+  redirect(`/projects/${encodeURIComponent(projectKey)}/automation/scenarios`);
 }
-
-

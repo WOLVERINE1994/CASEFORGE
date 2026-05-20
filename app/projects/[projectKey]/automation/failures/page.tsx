@@ -1,23 +1,10 @@
-import ProjectAutomationWorkspace from "../../../../../components/ProjectAutomationWorkspace";
-
-type ProjectAutomationFailuresPageProps = {
-  params: Promise<{
-    projectKey: string;
-  }>;
-};
+import { redirect } from "next/navigation";
 
 export default async function ProjectAutomationFailuresPage({
   params,
-}: ProjectAutomationFailuresPageProps) {
+}: {
+  params: Promise<{ projectKey: string }>;
+}) {
   const { projectKey } = await params;
-
-  return (
-    <ProjectAutomationWorkspace
-      projectKey={projectKey}
-      initialProject={null}
-      initialSection="failures"
-    />
-  );
+  redirect(`/projects/${encodeURIComponent(projectKey)}/automation/runs`);
 }
-
-

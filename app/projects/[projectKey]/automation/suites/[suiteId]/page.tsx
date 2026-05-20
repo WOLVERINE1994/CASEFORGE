@@ -1,19 +1,12 @@
-import ProjectAutomationWorkspace from "../../../../../../components/ProjectAutomationWorkspace";
+import AutomationStudioClient from "../../../../../../components/AutomationStudioClient";
 
 export default async function ProjectAutomationSuiteDetailPage({
   params,
 }: {
   params: Promise<{ projectKey: string; suiteId: string }>;
 }) {
-  const { projectKey, suiteId } = await params;
-  return (
-    <ProjectAutomationWorkspace
-      projectKey={projectKey}
-      initialProject={null}
-      initialSection="suites"
-      initialSuiteId={suiteId}
-    />
-  );
+  const { projectKey } = await params;
+  return <AutomationStudioClient projectKey={projectKey} section="suites" />;
 }
 
 

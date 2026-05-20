@@ -1,20 +1,13 @@
-import ProjectAutomationWorkspace from "../../../../../../components/ProjectAutomationWorkspace";
+import AutomationStudioClient from "../../../../../../components/AutomationStudioClient";
 
 export default async function ProjectAutomationRunDetailPage({
   params,
 }: {
   params: Promise<{ projectKey: string; executionId: string }>;
 }) {
-  const { projectKey, executionId } = await params;
+  const { projectKey } = await params;
 
-  return (
-    <ProjectAutomationWorkspace
-      projectKey={projectKey}
-      initialProject={null}
-      initialSection="runs"
-      initialExecutionId={executionId}
-    />
-  );
+  return <AutomationStudioClient projectKey={projectKey} section="runs" />;
 }
 
 

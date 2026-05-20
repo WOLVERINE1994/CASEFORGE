@@ -1,4 +1,4 @@
-import ProjectAutomationWorkspace from "../../../../../../components/ProjectAutomationWorkspace";
+import AutomationStudioClient from "../../../../../../components/AutomationStudioClient";
 
 export default async function ProjectAutomationScenarioDetailPage({
   params,
@@ -7,11 +7,10 @@ export default async function ProjectAutomationScenarioDetailPage({
 }) {
   const { projectKey, scenarioId } = await params;
   return (
-    <ProjectAutomationWorkspace
+    <AutomationStudioClient
       projectKey={projectKey}
-      initialProject={null}
-      initialSection="scenarios"
-      initialScenarioId={scenarioId}
+      section="recorder"
+      scenarioId={scenarioId}
     />
   );
 }
