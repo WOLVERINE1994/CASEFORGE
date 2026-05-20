@@ -27,7 +27,11 @@ const allowPublicWorkspace =
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.startsWith("pk_test_"));
 
 const clerkProxy = clerkMiddleware(async (auth, request) => {
-  if (allowPublicWorkspace && request.nextUrl.pathname.startsWith("/projects")) {
+  const pathname = request.nextUrl.pathname;
+  const isPublicWorkspaceRoute =
+    pathname.startsWith("/projects") || pathname.startsWith("/api/projects");
+
+  if (allowPublicWorkspace && isPublicWorkspaceRoute) {
     return;
   }
 
