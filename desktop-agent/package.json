@@ -32,7 +32,7 @@
     "extraResources": [
       {
         "from": "../scripts/caseforge-local-agent.mjs",
-        "to": "scripts/caseforge-local-agent.mjs"
+        "to": "app.asar.unpacked/scripts/caseforge-local-agent.mjs"
       }
     ],
     "asarUnpack": [

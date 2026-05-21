@@ -34,7 +34,7 @@ const pushLog = (level, message) => {
 
 const getAgentScriptPath = () => {
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, "scripts", "caseforge-local-agent.mjs");
+    return path.join(process.resourcesPath, "app.asar.unpacked", "scripts", "caseforge-local-agent.mjs");
   }
 
   return path.resolve(app.getAppPath(), "..", "scripts", "caseforge-local-agent.mjs");
