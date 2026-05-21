@@ -70,6 +70,34 @@ a {
   text-decoration: none;
 }
 
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+summary,
+a[href] {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.cf-loading-buffer {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 3px solid rgba(148, 163, 184, 0.32);
+  border-top-color: #22d3ee;
+  border-right-color: #60a5fa;
+  animation: cf-buffer-spin 0.8s linear infinite;
+}
+
+@keyframes cf-buffer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .cf-panel {
   border: 1px solid rgba(55, 65, 81, 0.88);
   background: rgba(17, 24, 39, 0.9);
