@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import type {
@@ -125,22 +126,6 @@ const statusTone: Record<string, string> = {
   "not-run": "bg-zinc-100 text-zinc-700",
 };
 
-const recorderCommandTypes: AutomationV2CommandType[] = [
-  "click",
-  "fill",
-  "select",
-  "hover",
-  "press",
-];
-
-const validationCommandTypes: AutomationV2CommandType[] = [
-  "assert-text",
-  "assert-image",
-  "assert-a11y",
-  "assert-label",
-  "assert-focus",
-];
-
 const TrashIcon = () => (
   <svg
     aria-hidden="true"
@@ -177,29 +162,6 @@ const formatDate = (timestamp?: number) =>
   timestamp ? new Date(timestamp).toLocaleString() : "Not saved";
 
 const getTagsText = (tags?: string[]) => (tags?.length ? tags.join(", ") : "No tags");
-
-const toPlaywrightLocator = (command: AutomationV2Command) => {
-  const locator = command.locator;
-  const value = locator?.value || "[data-testid=\"target\"]";
-
-  if (locator?.strategy === "text") {
-    return `page.getByText(${JSON.stringify(command.expectedValue || value)})`;
-  }
-
-  if (locator?.strategy === "label") {
-    return `page.getByLabel(${JSON.stringify(command.expectedValue || value)})`;
-  }
-
-  if (locator?.strategy === "testid") {
-    return `page.getByTestId(${JSON.stringify(value)})`;
-  }
-
-  if (locator?.strategy === "role" && locator.role) {
-    return `page.getByRole(${JSON.stringify(locator.role)}, { name: ${JSON.stringify(locator.label || locator.text || value)} })`;
-  }
-
-  return `page.locator(${JSON.stringify(value)})`;
-};
 
 const getDefaultLocator = (type: AutomationV2CommandType) => {
   if (type === "assert-text") {
@@ -279,53 +241,6 @@ const buildCommand = (
   };
 };
 
-const buildPlaywrightSpec = (scenario: AutomationV2Scenario) => {
-  const lines = [
-    "import { test, expect } from '@playwright/test';",
-    "",
-    `test(${JSON.stringify(scenario.name)}, async ({ page }) => {`,
-  ];
-
-  scenario.commands
-    .slice()
-    .sort((left, right) => left.order - right.order)
-    .forEach((command) => {
-      const locator = toPlaywrightLocator(command);
-      if (command.type === "navigate") {
-        lines.push(`  await page.goto(${JSON.stringify(command.url || scenario.startUrl || "/")});`);
-      } else if (command.type === "click") {
-        lines.push(`  await ${locator}.click();`);
-      } else if (command.type === "fill") {
-        lines.push(
-          `  await ${locator}.fill(${JSON.stringify(command.inputValue || "")});`
-        );
-      } else if (command.type === "select") {
-        lines.push(
-          `  await ${locator}.selectOption(${JSON.stringify(command.inputValue || "")});`
-        );
-      } else if (command.type === "hover") {
-        lines.push(`  await ${locator}.hover();`);
-      } else if (command.type === "press") {
-        lines.push(`  await page.keyboard.press(${JSON.stringify(command.key || "Enter")});`);
-      } else if (command.type === "assert-text") {
-        lines.push(`  await expect(${locator}).toBeVisible();`);
-      } else if (command.type === "assert-image") {
-        lines.push(`  await expect(${locator}).toBeVisible();`);
-      } else if (command.type === "assert-label") {
-        lines.push(`  await expect(${locator}).toBeVisible();`);
-      } else if (command.type === "assert-focus") {
-        lines.push(`  await expect(${locator}).toBeFocused();`);
-      } else if (command.type === "assert-a11y") {
-        lines.push("  // Accessibility scan command captured; axe/playwright integration lands in Phase 2.");
-      } else if (command.type === "run-action") {
-        lines.push(`  // Reusable Action: ${command.actionId || command.name}`);
-      }
-    });
-
-  lines.push("});");
-  return lines.join("\n");
-};
-
 export default function AutomationStudioClient({
   projectKey,
   section,
@@ -343,7 +258,20 @@ export default function AutomationStudioClient({
   const [tagFilter, setTagFilter] = useState("");
   const [targetUrl, setTargetUrl] = useState("https://example.com");
   const [selectedCommandIds, setSelectedCommandIds] = useState<string[]>([]);
+  const [lastSelectedCommandId, setLastSelectedCommandId] = useState<
+    string | null
+  >(null);
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
+  const [commandMenu, setCommandMenu] = useState<{
+    commandId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [actionModalOpen, setActionModalOpen] = useState(false);
+  const [actionName, setActionName] = useState("");
+  const [actionDescription, setActionDescription] = useState("");
+  const [commandEditorId, setCommandEditorId] = useState<string | null>(null);
+  const [consoleOpen, setConsoleOpen] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [isBrowserStarting, setIsBrowserStarting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -446,8 +374,9 @@ export default function AutomationStudioClient({
   );
   const activeCommand =
     selectedCommands.find((command) => command.id === activeCommandId) ??
-    selectedCommands[0] ??
     null;
+  const editorCommand =
+    selectedCommands.find((command) => command.id === commandEditorId) ?? null;
 
   const pushConsole = useCallback((line: string) => {
     setConsoleLines((lines) => [
@@ -775,12 +704,22 @@ export default function AutomationStudioClient({
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [addCommand]);
 
-  const updateActiveCommand = useCallback(
-    async (updates: Partial<AutomationV2Command>) => {
-      if (!activeCommand) return;
+  useEffect(() => {
+    if (!commandMenu) return;
+    const closeMenu = () => setCommandMenu(null);
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("keydown", closeMenu);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("keydown", closeMenu);
+    };
+  }, [commandMenu]);
+
+  const updateCommandById = useCallback(
+    async (commandId: string, updates: Partial<AutomationV2Command>) => {
       await updateScenarioCommands(
         selectedCommands.map((command) =>
-          command.id === activeCommand.id
+          command.id === commandId
             ? {
                 ...command,
                 ...updates,
@@ -792,8 +731,99 @@ export default function AutomationStudioClient({
         )
       );
     },
-    [activeCommand, selectedCommands, updateScenarioCommands]
+    [selectedCommands, updateScenarioCommands]
   );
+
+  const selectCommand = (
+    commandId: string,
+    index: number,
+    event: MouseEvent,
+  ) => {
+    setActiveCommandId(commandId);
+    setCommandMenu(null);
+
+    if (event.shiftKey && lastSelectedCommandId) {
+      const previousIndex = selectedCommands.findIndex(
+        (command) => command.id === lastSelectedCommandId
+      );
+      if (previousIndex >= 0) {
+        const start = Math.min(previousIndex, index);
+        const end = Math.max(previousIndex, index);
+        setSelectedCommandIds(
+          selectedCommands.slice(start, end + 1).map((command) => command.id)
+        );
+        return;
+      }
+    }
+
+    setLastSelectedCommandId(commandId);
+
+    if (event.ctrlKey || event.metaKey) {
+      setSelectedCommandIds((ids) =>
+        ids.includes(commandId)
+          ? ids.filter((id) => id !== commandId)
+          : [...ids, commandId]
+      );
+      return;
+    }
+
+    setSelectedCommandIds([commandId]);
+  };
+
+  const openCommandMenu = (
+    commandId: string,
+    event: MouseEvent<HTMLDivElement>,
+  ) => {
+    event.preventDefault();
+    if (!selectedCommandIds.includes(commandId)) {
+      setSelectedCommandIds([commandId]);
+      setActiveCommandId(commandId);
+      setLastSelectedCommandId(commandId);
+    }
+    setCommandMenu({ commandId, x: event.clientX, y: event.clientY });
+  };
+
+  const openActionModal = () => {
+    if (!selectedCommandIds.length) {
+      pushConsole("select one or more commands before creating an action");
+      return;
+    }
+    setActionName("");
+    setActionDescription("");
+    setActionModalOpen(true);
+    setCommandMenu(null);
+  };
+
+  const duplicateSelectedCommands = async () => {
+    if (!selectedCommandIds.length) return;
+    const now = Date.now();
+    const commandsToCopy = selectedCommands.filter((command) =>
+      selectedCommandIds.includes(command.id)
+    );
+    const copies = commandsToCopy.map((command, index) => ({
+      ...command,
+      id: crypto.randomUUID(),
+      name: `${command.name} copy`,
+      order: selectedCommands.length + index,
+      updatedAt: now,
+    }));
+    await updateScenarioCommands([...selectedCommands, ...copies]);
+    setSelectedCommandIds(copies.map((command) => command.id));
+    setActiveCommandId(copies[0]?.id ?? null);
+    setCommandMenu(null);
+    pushConsole(`duplicated ${copies.length} command(s)`);
+  };
+
+  const deleteSelectedCommands = async () => {
+    if (!selectedCommandIds.length) return;
+    await updateScenarioCommands(
+      selectedCommands.filter((command) => !selectedCommandIds.includes(command.id))
+    );
+    setSelectedCommandIds([]);
+    setActiveCommandId(null);
+    setCommandMenu(null);
+    pushConsole("deleted selected command(s)");
+  };
 
   const saveScenario = useCallback(async () => {
     if (!selectedScenario) return;
@@ -855,11 +885,10 @@ export default function AutomationStudioClient({
     const action: AutomationV2Action = {
       id: actionId,
       projectId: project.id,
-      name:
-        groupedCommands.length === 3
-          ? "Login Action"
-          : `Reusable Action ${actions.length + 1}`,
-      description: `Created from ${groupedCommands.length} selected command(s).`,
+      name: actionName.trim() || `Reusable Action ${actions.length + 1}`,
+      description:
+        actionDescription.trim() ||
+        `Created from ${groupedCommands.length} selected command(s).`,
       tags: ["reusable"],
       parameters: [],
       commands: groupedCommands.map((command, index) => ({
@@ -879,8 +908,13 @@ export default function AutomationStudioClient({
       updatedAt: now,
     });
     setSelectedCommandIds([]);
-    pushConsole(`converted ${groupedCommands.length} command(s) into ${action.name}`);
+    setActionModalOpen(false);
+    setActionName("");
+    setActionDescription("");
+    pushConsole(`created action ${action.name} from ${groupedCommands.length} command(s)`);
   }, [
+    actionDescription,
+    actionName,
     actions.length,
     persistProject,
     project,
@@ -1394,10 +1428,8 @@ export default function AutomationStudioClient({
       );
     }
 
-    const specPreview = buildPlaywrightSpec(selectedScenario);
-
     return (
-      <div className="grid h-[calc(100vh-72px)] grid-rows-[56px_minmax(0,1fr)_150px] overflow-hidden">
+      <div className="grid h-[calc(100vh-72px)] grid-rows-[56px_minmax(0,1fr)_auto] overflow-hidden">
         <header className="flex min-w-0 items-center gap-2 border-b border-zinc-200 bg-white px-4">
           <input
             value={targetUrl}
@@ -1443,57 +1475,66 @@ export default function AutomationStudioClient({
           </button>
         </header>
 
-        <section className="grid min-h-0 grid-cols-[290px_minmax(0,1fr)_340px]">
+        <section className="grid min-h-0 grid-cols-[320px_minmax(0,1fr)]">
           <aside className="min-h-0 overflow-y-auto border-r border-zinc-200 bg-white">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+            <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
                   Command Timeline
                 </p>
                 <h2 className="text-sm font-semibold">{selectedScenario.name}</h2>
               </div>
-              <span className="text-xs text-zinc-500">{selectedCommands.length}</span>
+              <button
+                type="button"
+                onClick={openActionModal}
+                disabled={selectedCommandIds.length === 0}
+                className="rounded-xl bg-zinc-950 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500"
+              >
+                Create Action
+              </button>
             </div>
             <div className="space-y-1 p-2">
               {selectedCommands.map((command, index) => (
                 <div
                   key={command.id}
-                  className={`flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left text-sm ${
-                    activeCommand?.id === command.id
-                      ? "bg-zinc-950 text-white"
-                      : "hover:bg-zinc-100"
+                  role="button"
+                  tabIndex={0}
+                  onClick={(event) => selectCommand(command.id, index, event)}
+                  onContextMenu={(event) => openCommandMenu(command.id, event)}
+                  onDoubleClick={() => {
+                    setActiveCommandId(command.id);
+                    setCommandEditorId(command.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setActiveCommandId(command.id);
+                      setSelectedCommandIds([command.id]);
+                    }
+                  }}
+                  className={`flex w-full cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition ${
+                    selectedCommandIds.includes(command.id)
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+                      : activeCommand?.id === command.id
+                        ? "border-zinc-300 bg-zinc-100 text-zinc-950"
+                        : "border-transparent hover:border-zinc-200 hover:bg-zinc-50"
                   }`}
                 >
-                  <input
-                    type="checkbox"
-                    checked={selectedCommandIds.includes(command.id)}
-                    onChange={(event) => {
-                      event.stopPropagation();
-                      setSelectedCommandIds((ids) =>
-                        ids.includes(command.id)
-                          ? ids.filter((id) => id !== command.id)
-                          : [...ids, command.id]
-                      );
-                    }}
-                    className="mt-1"
-                    aria-label={`Select command ${index + 1}`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setActiveCommandId(command.id)}
-                    className="flex min-w-0 flex-1 items-start gap-2 text-left"
-                  >
-                    <span className="font-mono text-xs opacity-60">{index + 1}</span>
-                    <span className="min-w-0">
-                      <span className="block font-semibold">{command.name}</span>
-                      <span className="block truncate text-xs opacity-75">
-                        {command.url ||
-                          command.locator?.value ||
-                          command.inputValue ||
-                          "No target configured"}
-                      </span>
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-100 font-mono text-xs font-semibold text-zinc-700">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold">{command.name}</span>
+                    <span className="mt-1 block truncate text-xs text-zinc-500">
+                      {command.url ||
+                        command.locator?.value ||
+                        command.inputValue ||
+                        "No target configured"}
                     </span>
-                  </button>
+                  </span>
+                  <span className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-600">
+                    {command.type}
+                  </span>
                 </div>
               ))}
               {selectedCommands.length === 0 ? (
@@ -1514,17 +1555,17 @@ export default function AutomationStudioClient({
               </div>
               <div className="flex flex-1 flex-col items-center justify-center bg-white px-6 text-center">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
-                  Browser / Playback
+                  Browser / Recorder
                 </p>
-                <p className="mt-2 text-lg font-semibold text-zinc-800">
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900">
                   {browserStatus === "recording"
-                    ? "Live browser recording"
-                    : "Playwright recorder API target"}
+                    ? "Recording your browser actions"
+                    : "Open the browser and perform the flow"}
                 </p>
                 <p className="mt-2 max-w-lg text-sm text-zinc-500">
                   {browserStatus === "recording"
                     ? "Use the opened Chromium window. Click, type, select, navigate, and press Ctrl+Alt+T/I/A/L/F to capture assertions."
-                    : "Record launches a local Playwright Chromium window and syncs captured commands into this timeline."}
+                    : "The local CaseForge Agent launches a real Playwright Chromium window. Your actions sync back into the command timeline automatically."}
                 </p>
                 <p className="mt-2 text-xs font-medium text-zinc-400">
                   {recorderRuntimeLabel ||
@@ -1532,149 +1573,210 @@ export default function AutomationStudioClient({
                       ? "Runtime: Local CaseForge server"
                       : "Runtime: CaseForge Local Agent on 127.0.0.1:4873")}
                 </p>
-                <div className="mt-5 flex flex-wrap justify-center gap-2">
-                  {recorderCommandTypes.map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => void addCommand(type)}
-                      className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-zinc-50"
-                    >
-                      {commandLabels[type]}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-3 flex flex-wrap justify-center gap-2">
-                  {validationCommandTypes.map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => void addCommand(type)}
-                      className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
-                    >
-                      {commandLabels[type]}
-                    </button>
-                  ))}
+                <div className="mt-6 grid max-w-xl gap-2 text-xs text-zinc-500 sm:grid-cols-2">
+                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+T text assertion</div>
+                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+I image assertion</div>
+                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+A accessibility scan</div>
+                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+F focus assertion</div>
                 </div>
               </div>
             </div>
           </section>
+        </section>
 
-          <aside className="min-h-0 overflow-y-auto border-l border-zinc-200 bg-white p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
-              Properties
-            </p>
-            {activeCommand ? (
-              <div className="mt-4 space-y-3">
-                <label className="block">
-                  <span className="text-xs font-medium text-zinc-500">Command</span>
-                  <select
-                    value={activeCommand.type}
+        <footer className="border-t border-zinc-200 bg-zinc-950 text-xs text-zinc-300">
+          <button
+            type="button"
+            onClick={() => setConsoleOpen((open) => !open)}
+            className="flex w-full cursor-pointer items-center justify-between px-4 py-3 text-left"
+          >
+            <span className="font-semibold uppercase tracking-[0.16em] text-zinc-500">
+              Console / Logs
+            </span>
+            <span>{message || (isSaving ? "Saving..." : "Ready")}</span>
+          </button>
+          {consoleOpen ? (
+            <div className="max-h-28 space-y-1 overflow-y-auto border-t border-zinc-800 px-4 py-3">
+              {consoleLines.slice(0, 5).map((line, index) => (
+                <p key={`${line}-${index}`}>{line}</p>
+              ))}
+            </div>
+          ) : null}
+        </footer>
+
+        {commandMenu ? (
+          <div
+            className="fixed z-50 w-48 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 text-sm shadow-xl"
+            style={{ left: commandMenu.x, top: commandMenu.y }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={openActionModal}
+              className="block w-full cursor-pointer px-3 py-2 text-left font-medium text-zinc-800 hover:bg-zinc-50"
+            >
+              Create Action
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCommandEditorId(commandMenu.commandId);
+                setActiveCommandId(commandMenu.commandId);
+                setCommandMenu(null);
+              }}
+              className="block w-full cursor-pointer px-3 py-2 text-left font-medium text-zinc-800 hover:bg-zinc-50"
+            >
+              Rename / Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => void duplicateSelectedCommands()}
+              className="block w-full cursor-pointer px-3 py-2 text-left font-medium text-zinc-800 hover:bg-zinc-50"
+            >
+              Duplicate
+            </button>
+            <button
+              type="button"
+              onClick={() => void deleteSelectedCommands()}
+              className="block w-full cursor-pointer px-3 py-2 text-left font-medium text-rose-600 hover:bg-rose-50"
+            >
+              Delete
+            </button>
+          </div>
+        ) : null}
+
+        {actionModalOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 p-4">
+            <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                Create reusable action
+              </p>
+              <h3 className="mt-2 text-lg font-semibold text-zinc-950">
+                Group {selectedCommandIds.length} selected command
+                {selectedCommandIds.length === 1 ? "" : "s"}
+              </h3>
+              <label className="mt-4 block text-sm font-medium text-zinc-700">
+                Action name
+                <input
+                  value={actionName}
+                  onChange={(event) => setActionName(event.target.value)}
+                  autoFocus
+                  className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950 outline-none focus:border-emerald-400"
+                  placeholder="Login Action"
+                />
+              </label>
+              <label className="mt-3 block text-sm font-medium text-zinc-700">
+                Description
+                <textarea
+                  value={actionDescription}
+                  onChange={(event) => setActionDescription(event.target.value)}
+                  rows={3}
+                  className="mt-1 w-full resize-none rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-400"
+                  placeholder="Optional notes for reuse"
+                />
+              </label>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActionModalOpen(false)}
+                  className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void convertSelectionToAction()}
+                  disabled={!actionName.trim()}
+                  className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500"
+                >
+                  Create Action
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {editorCommand ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 p-4">
+            <div className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                Command settings
+              </p>
+              <h3 className="mt-2 text-lg font-semibold text-zinc-950">
+                Edit command
+              </h3>
+              <div className="mt-4 grid gap-3">
+                <label className="block text-sm font-medium text-zinc-700">
+                  Name
+                  <input
+                    value={editorCommand.name}
                     onChange={(event) =>
-                      void updateActiveCommand({
-                        type: event.target.value as AutomationV2CommandType,
-                        name: commandLabels[event.target.value as AutomationV2CommandType],
+                      void updateCommandById(editorCommand.id, {
+                        name: event.target.value,
                       })
                     }
-                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950"
-                  >
-                    {Object.entries(commandLabels).map(([key, label]) => (
-                      <option key={key} value={key}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="text-xs font-medium text-zinc-500">Name</span>
-                  <input
-                    value={activeCommand.name}
-                    onChange={(event) =>
-                      void updateActiveCommand({ name: event.target.value })
-                    }
-                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950"
+                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400"
                   />
                 </label>
-                <label className="block">
-                  <span className="text-xs font-medium text-zinc-500">Locator / Target</span>
+                <label className="block text-sm font-medium text-zinc-700">
+                  Locator / target
                   <input
-                    value={activeCommand.locator?.value ?? activeCommand.url ?? ""}
+                    value={editorCommand.locator?.value ?? editorCommand.url ?? ""}
                     onChange={(event) =>
-                      activeCommand.type === "navigate"
-                        ? void updateActiveCommand({ url: event.target.value })
-                        : void updateActiveCommand({
+                      editorCommand.type === "navigate"
+                        ? void updateCommandById(editorCommand.id, {
+                            url: event.target.value,
+                          })
+                        : void updateCommandById(editorCommand.id, {
                             locator: {
-                              ...(activeCommand.locator ?? getDefaultLocator(activeCommand.type)),
+                              ...(editorCommand.locator ??
+                                getDefaultLocator(editorCommand.type)),
                               value: event.target.value,
                             },
                           })
                     }
-                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950"
+                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400"
                   />
                 </label>
-                <label className="block">
-                  <span className="text-xs font-medium text-zinc-500">Input / Expected</span>
-                  <input
-                    value={activeCommand.inputValue ?? activeCommand.expectedValue ?? ""}
-                    onChange={(event) =>
-                      void updateActiveCommand({
-                        inputValue: activeCommand.type.startsWith("assert")
-                          ? activeCommand.inputValue
-                          : event.target.value,
-                        expectedValue: activeCommand.type.startsWith("assert")
-                          ? event.target.value
-                          : activeCommand.expectedValue,
-                      })
-                    }
-                    className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950"
-                  />
-                </label>
-                <div className="rounded-xl bg-zinc-50 px-3 py-3">
-                  <p className="text-xs font-semibold text-zinc-500">
-                    Smart Locator Suggestions
-                  </p>
-                  <div className="mt-2 space-y-1 text-xs text-zinc-600">
-                    <p>role + accessible name</p>
-                    <p>data-testid</p>
-                    <p>stable CSS path</p>
-                  </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-sm font-medium text-zinc-700">
+                    Input
+                    <input
+                      value={editorCommand.inputValue ?? ""}
+                      onChange={(event) =>
+                        void updateCommandById(editorCommand.id, {
+                          inputValue: event.target.value,
+                        })
+                      }
+                      className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-zinc-700">
+                    Expected
+                    <input
+                      value={editorCommand.expectedValue ?? ""}
+                      onChange={(event) =>
+                        void updateCommandById(editorCommand.id, {
+                          expectedValue: event.target.value,
+                        })
+                      }
+                      className="mt-1 h-10 w-full rounded-xl border border-zinc-200 px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400"
+                    />
+                  </label>
                 </div>
               </div>
-            ) : (
-              <p className="mt-4 text-sm text-zinc-500">
-                Select a command to edit locators and settings.
-              </p>
-            )}
-            <button
-              type="button"
-              onClick={() => void convertSelectionToAction()}
-              disabled={selectedCommandIds.length === 0}
-              className="mt-5 w-full rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-600"
-            >
-              Convert Selection to Action
-            </button>
-            <details className="mt-4 rounded-xl bg-zinc-950 p-3 text-xs text-zinc-100">
-              <summary className="cursor-pointer font-semibold">Playwright Spec Preview</summary>
-              <pre className="mt-3 max-h-60 overflow-auto whitespace-pre-wrap text-[11px] leading-5 text-zinc-200">
-                {specPreview}
-              </pre>
-            </details>
-          </aside>
-        </section>
-
-        <footer className="border-t border-zinc-200 bg-zinc-950 px-4 py-3 text-xs text-zinc-300">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="font-semibold uppercase tracking-[0.16em] text-zinc-500">
-              Console
-            </span>
-            <span>{message || (isSaving ? "Saving..." : "Ready")}</span>
+              <div className="mt-5 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setCommandEditorId(null)}
+                  className="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="space-y-1 overflow-y-auto">
-            {consoleLines.slice(0, 5).map((line, index) => (
-              <p key={`${line}-${index}`}>{line}</p>
-            ))}
-          </div>
-        </footer>
+        ) : null}
       </div>
     );
   };
