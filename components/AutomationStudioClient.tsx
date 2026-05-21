@@ -1709,39 +1709,77 @@ export default function AutomationStudioClient({
           </aside>
 
           <section className="min-h-0 bg-zinc-100 p-4">
-            <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white">
-              <div className="flex h-10 items-center gap-2 border-b border-zinc-200 px-3">
-                <span className="h-3 w-3 rounded-full bg-rose-400" />
-                <span className="h-3 w-3 rounded-full bg-amber-400" />
-                <span className="h-3 w-3 rounded-full bg-emerald-400" />
-                <span className="ml-3 truncate text-xs text-zinc-500">{targetUrl}</span>
-              </div>
-              <div className="flex flex-1 flex-col items-center justify-center bg-white px-6 text-center">
+            <div className="flex h-full flex-col justify-between rounded-2xl border border-zinc-200 bg-white p-5">
+              <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
-                  Browser / Recorder
+                  Recorder Status
                 </p>
-                <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900">
-                  {browserStatus === "recording"
-                    ? "Recording your browser actions"
-                    : "Open the browser and perform the flow"}
-                </p>
-                <p className="mt-2 max-w-lg text-sm text-zinc-500">
-                  {browserStatus === "recording"
-                    ? "Use the opened browser window. Click, type, select, navigate, and add checkpoints when needed."
-                    : "The CaseForge desktop companion opens a real browser window. Your actions sync back into this workflow automatically."}
-                </p>
-                <p className="mt-2 text-xs font-medium text-zinc-400">
-                  {browserConnectionLabel ||
-                    (isBrowserOnLocalCaseForge()
-                      ? "Browser connection ready"
-                      : "Desktop companion ready")}
-                </p>
-                <div className="mt-6 grid max-w-xl gap-2 text-xs text-zinc-500 sm:grid-cols-2">
-                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+T text check</div>
-                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+I image check</div>
-                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+A accessibility scan</div>
-                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+F focus check</div>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
+                      browserStatus === "recording"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-zinc-100 text-zinc-700"
+                    }`}
+                  >
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        browserStatus === "recording"
+                          ? "animate-pulse bg-emerald-500"
+                          : "bg-zinc-400"
+                      }`}
+                    />
+                    {browserStatus === "recording" ? "Recording" : "Ready"}
+                  </span>
+                  <span className="text-sm text-zinc-500">
+                    {browserConnectionLabel ||
+                      (isBrowserOnLocalCaseForge()
+                        ? "Browser connection ready"
+                        : "Desktop companion ready")}
+                  </span>
                 </div>
+                <h3 className="mt-6 max-w-xl text-2xl font-semibold tracking-tight text-zinc-950">
+                  Use the opened browser window. Captured steps appear in the timeline.
+                </h3>
+                <p className="mt-2 max-w-xl text-sm text-zinc-500">
+                  This area now stays lightweight because the real interaction happens in Chrome or Edge.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl bg-zinc-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                    Steps
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-zinc-950">
+                    {selectedCommands.length}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-zinc-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                    Selected
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-zinc-950">
+                    {selectedCommandIds.length}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-zinc-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                    Actions
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-zinc-950">
+                    {actions.length}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                  Latest Activity
+                </p>
+                <p className="mt-2 text-sm font-medium text-zinc-700">
+                  {activityLines[0] ?? "Ready"}
+                </p>
               </div>
             </div>
           </section>
