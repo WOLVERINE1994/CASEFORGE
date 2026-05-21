@@ -1597,14 +1597,29 @@ export default function AutomationStudioClient({
                         : "border-transparent hover:border-zinc-200 hover:bg-zinc-50"
                   }`}
                 >
-                  <input
-                    type="checkbox"
-                    checked={selectedCommandIds.includes(command.id)}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={() => toggleCommandSelection(command.id)}
-                    className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-emerald-600"
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleCommandSelection(command.id);
+                    }}
+                    className={`mt-0.5 inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[11px] font-semibold transition ${
+                      selectedCommandIds.includes(command.id)
+                        ? "border-emerald-500 bg-emerald-600 text-white"
+                        : "border-zinc-300 bg-white text-zinc-700 hover:border-emerald-400 hover:text-emerald-700"
+                    }`}
+                    aria-pressed={selectedCommandIds.includes(command.id)}
                     aria-label={`Select step ${index + 1}`}
-                  />
+                  >
+                    <span
+                      className={`h-3 w-3 rounded border ${
+                        selectedCommandIds.includes(command.id)
+                          ? "border-white bg-white"
+                          : "border-zinc-400 bg-white"
+                      }`}
+                    />
+                    {selectedCommandIds.includes(command.id) ? "Selected" : "Select"}
+                  </button>
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-100 font-mono text-xs font-semibold text-zinc-700">
                     {index + 1}
                   </span>
