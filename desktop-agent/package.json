@@ -40,10 +40,10 @@
       "node_modules/playwright-core/**"
     ],
     "win": {
+      "signAndEditExecutable": false,
       "target": [
         "nsis"
-      ],
-      "publisherName": "CaseForge"
+      ]
     },
     "nsis": {
       "oneClick": false,
