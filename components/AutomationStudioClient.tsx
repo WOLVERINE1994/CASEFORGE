@@ -119,6 +119,25 @@ const validationCommandTypes: AutomationV2CommandType[] = [
   "assert-focus",
 ];
 
+const TrashIcon = () => (
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 20 20"
+    className="h-4 w-4"
+    fill="none"
+    stroke="currentColor"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    strokeWidth="1.8"
+  >
+    <path d="M3.5 5.5h13" />
+    <path d="M8 5.5V3.75h4V5.5" />
+    <path d="M5.5 5.5l.75 10.25h7.5l.75-10.25" />
+    <path d="M8.5 8.25v4.75" />
+    <path d="M11.5 8.25v4.75" />
+  </svg>
+);
+
 const readJson = async <T,>(response: Response): Promise<T> => {
   const raw = await response.text();
   try {
@@ -833,6 +852,117 @@ export default function AutomationStudioClient({
     selectedScenario,
   ]);
 
+  const deleteScenario = useCallback(
+    async (scenario: AutomationV2Scenario) => {
+      if (!project) return;
+      const confirmed = window.confirm(
+        `Delete scenario "${scenario.name}" and its run history?`
+      );
+      if (!confirmed) return;
+
+      if (selectedScenario?.id === scenario.id && isRecording) {
+        await stopBrowserRecorder();
+      }
+
+      const now = Date.now();
+      const remainingScenarios = (project.automationV2Scenarios ?? []).filter(
+        (entry) => entry.id !== scenario.id
+      );
+      const nextActiveScenarioId =
+        project.activeAutomationV2ScenarioId === scenario.id
+          ? remainingScenarios[0]?.id ?? ""
+          : project.activeAutomationV2ScenarioId ?? "";
+
+      await persistProject({
+        ...project,
+        automationSuites: (project.automationSuites ?? []).map((suite) => ({
+          ...suite,
+          scenarioIds: (suite.scenarioIds ?? []).filter(
+            (scenarioIdEntry) => scenarioIdEntry !== scenario.id
+          ),
+          updatedAt: now,
+        })),
+        automationV2Scenarios: remainingScenarios,
+        automationV2Runs: (project.automationV2Runs ?? []).filter(
+          (run) => run.scenarioId !== scenario.id
+        ),
+        activeAutomationV2ScenarioId: nextActiveScenarioId,
+        updatedAt: now,
+      });
+
+      if (selectedScenario?.id === scenario.id) {
+        setActiveCommandId(null);
+        setSelectedCommandIds([]);
+        router.push(`/projects/${encodedProjectKey}/automation/scenarios`);
+      }
+      pushConsole(`deleted scenario ${scenario.name}`);
+    },
+    [
+      encodedProjectKey,
+      isRecording,
+      persistProject,
+      project,
+      pushConsole,
+      router,
+      selectedScenario?.id,
+      stopBrowserRecorder,
+    ]
+  );
+
+  const deleteAction = useCallback(
+    async (action: AutomationV2Action) => {
+      if (!project) return;
+      const confirmed = window.confirm(`Delete action "${action.name}"?`);
+      if (!confirmed) return;
+
+      const now = Date.now();
+      await persistProject({
+        ...project,
+        automationV2Actions: (project.automationV2Actions ?? []).filter(
+          (entry) => entry.id !== action.id
+        ),
+        automationV2Scenarios: (project.automationV2Scenarios ?? []).map(
+          (scenario) => ({
+            ...scenario,
+            commands: scenario.commands.filter(
+              (command) =>
+                command.type !== "run-action" || command.actionId !== action.id
+            ),
+            updatedAt: now,
+          })
+        ),
+        updatedAt: now,
+      });
+      pushConsole(`deleted action ${action.name}`);
+    },
+    [persistProject, project, pushConsole]
+  );
+
+  const deleteSuite = useCallback(
+    async (suite: NonNullable<Project["automationSuites"]>[number]) => {
+      if (!project) return;
+      const confirmed = window.confirm(`Delete suite "${suite.name}"?`);
+      if (!confirmed) return;
+
+      const now = Date.now();
+      await persistProject({
+        ...project,
+        automationSuites: (project.automationSuites ?? []).filter(
+          (entry) => entry.id !== suite.id
+        ),
+        automationV2Scenarios: (project.automationV2Scenarios ?? []).map(
+          (scenario) =>
+            scenario.suiteId === suite.id
+              ? { ...scenario, suiteId: undefined, updatedAt: now }
+              : scenario
+        ),
+        updatedAt: now,
+      });
+      pushConsole(`deleted suite ${suite.name}`);
+    },
+    [persistProject, project, pushConsole]
+  );
+
   const filteredScenarios = scenarios.filter((scenario) => {
     const haystack = [
       scenario.name,
@@ -1008,6 +1138,7 @@ export default function AutomationStudioClient({
                 <th className="px-4 py-3 font-semibold">Commands</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 font-semibold">Updated</th>
+                <th className="px-4 py-3 text-right font-semibold">Delete</th>
               </tr>
             </thead>
             <tbody>
@@ -1032,11 +1163,22 @@ export default function AutomationStudioClient({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-zinc-500">{formatDate(scenario.updatedAt)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => void deleteScenario(scenario)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                      aria-label={`Delete scenario ${scenario.name}`}
+                      title="Delete scenario"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </td>
                 </tr>
               ))}
               {filteredScenarios.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-zinc-500">
+                  <td colSpan={7} className="px-4 py-10 text-center text-zinc-500">
                     No v2 scenarios yet. Start with + New Scenario.
                   </td>
                 </tr>
@@ -1064,6 +1206,7 @@ export default function AutomationStudioClient({
               <th className="px-4 py-3 font-semibold">Commands</th>
               <th className="px-4 py-3 font-semibold">Tags</th>
               <th className="px-4 py-3 font-semibold">Updated</th>
+              <th className="px-4 py-3 text-right font-semibold">Delete</th>
             </tr>
           </thead>
           <tbody>
@@ -1073,11 +1216,22 @@ export default function AutomationStudioClient({
                 <td className="px-4 py-3 text-zinc-600">{action.commands.length}</td>
                 <td className="px-4 py-3 text-zinc-600">{getTagsText(action.tags)}</td>
                 <td className="px-4 py-3 text-zinc-500">{formatDate(action.updatedAt)}</td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={() => void deleteAction(action)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                    aria-label={`Delete action ${action.name}`}
+                    title="Delete action"
+                  >
+                    <TrashIcon />
+                  </button>
+                </td>
               </tr>
             ))}
             {actions.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-zinc-500">
+                <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
                   Select commands in the recorder workspace and convert them into an Action.
                 </td>
               </tr>
@@ -1145,6 +1299,7 @@ export default function AutomationStudioClient({
               <th className="px-4 py-3 font-semibold">Status</th>
               <th className="px-4 py-3 font-semibold">Scenarios</th>
               <th className="px-4 py-3 font-semibold">Updated</th>
+              <th className="px-4 py-3 text-right font-semibold">Delete</th>
             </tr>
           </thead>
           <tbody>
@@ -1154,11 +1309,22 @@ export default function AutomationStudioClient({
                 <td className="px-4 py-3 text-zinc-600">{suite.status ?? "draft"}</td>
                 <td className="px-4 py-3 text-zinc-600">{suite.scenarioIds?.length ?? 0}</td>
                 <td className="px-4 py-3 text-zinc-500">{formatDate(suite.updatedAt)}</td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={() => void deleteSuite(suite)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                    aria-label={`Delete suite ${suite.name}`}
+                    title="Delete suite"
+                  >
+                    <TrashIcon />
+                  </button>
+                </td>
               </tr>
             ))}
             {suites.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-zinc-500">
+                <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
                   Suites will group v2 scenarios as the library grows.
                 </td>
               </tr>
