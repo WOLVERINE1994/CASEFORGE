@@ -72,7 +72,7 @@ const getRecorderEndpoint = (query?: URLSearchParams) => {
 };
 
 const getAgentOfflineMessage = () =>
-  `CaseForge Local Agent is not running. Start it on your laptop with "npm run agent", then click Record again.`;
+  "Browser connection is not ready. Open the CaseForge desktop companion, then start recording again.";
 
 const navItems: Array<{
   key: AutomationStudioSection;
@@ -82,7 +82,7 @@ const navItems: Array<{
   { key: "suites", label: "Suites", href: "suites" },
   { key: "scenarios", label: "Scenarios", href: "scenarios" },
   { key: "actions", label: "Actions", href: "actions" },
-  { key: "runs", label: "Runs", href: "runs" },
+  { key: "runs", label: "Playback", href: "runs" },
 ];
 
 const commandLabels: Record<AutomationV2CommandType, string> = {
@@ -91,12 +91,12 @@ const commandLabels: Record<AutomationV2CommandType, string> = {
   fill: "Fill",
   select: "Select",
   hover: "Hover",
-  press: "Key Press",
-  "assert-text": "Assert Text",
-  "assert-image": "Assert Image",
+  press: "Press Key",
+  "assert-text": "Verify Text",
+  "assert-image": "Verify Image",
   "assert-a11y": "Accessibility Scan",
-  "assert-label": "Label / Name Assert",
-  "assert-focus": "Keyboard Focus Assert",
+  "assert-label": "Verify Label / Name",
+  "assert-focus": "Verify Keyboard Focus",
   "run-action": "Run Action",
 };
 
@@ -109,7 +109,7 @@ const commandHints: Record<AutomationV2CommandType, string> = {
   press: "Press a keyboard key.",
   "assert-text": "Ctrl+Alt+T validates visible text.",
   "assert-image": "Ctrl+Alt+I validates an image.",
-  "assert-a11y": "Ctrl+Alt+A creates an accessibility scan command.",
+  "assert-a11y": "Ctrl+Alt+A adds an accessibility checkpoint.",
   "assert-label": "Ctrl+Alt+L validates label or accessible name.",
   "assert-focus": "Ctrl+Alt+F validates keyboard focus.",
   "run-action": "Reuse a saved Action.",
@@ -271,7 +271,7 @@ export default function AutomationStudioClient({
   const [actionName, setActionName] = useState("");
   const [actionDescription, setActionDescription] = useState("");
   const [commandEditorId, setCommandEditorId] = useState<string | null>(null);
-  const [consoleOpen, setConsoleOpen] = useState(true);
+  const [activityOpen, setActivityOpen] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [isBrowserStarting, setIsBrowserStarting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -281,9 +281,9 @@ export default function AutomationStudioClient({
   const [browserStatus, setBrowserStatus] = useState<
     BrowserRecorderResponse["status"] | null
   >(null);
-  const [recorderRuntimeLabel, setRecorderRuntimeLabel] = useState("");
-  const [consoleLines, setConsoleLines] = useState<string[]>([
-    "Automation v2 recorder ready. Ctrl+Alt+T/I/A/L/F creates validation commands.",
+  const [browserConnectionLabel, setBrowserConnectionLabel] = useState("");
+  const [activityLines, setActivityLines] = useState<string[]>([
+    "Visual recorder ready. Keyboard checkpoints are available while recording.",
   ]);
 
   const loadProject = useCallback(async () => {
@@ -378,8 +378,8 @@ export default function AutomationStudioClient({
   const editorCommand =
     selectedCommands.find((command) => command.id === commandEditorId) ?? null;
 
-  const pushConsole = useCallback((line: string) => {
-    setConsoleLines((lines) => [
+  const pushActivity = useCallback((line: string) => {
+    setActivityLines((lines) => [
       `${new Date().toLocaleTimeString()} ${line}`,
       ...lines,
     ]);
@@ -446,7 +446,7 @@ export default function AutomationStudioClient({
       id,
       projectId: project.id,
       name: `Scenario ${scenarios.length + 1}`,
-      description: "Recorder-first Playwright workflow.",
+      description: "Visual workflow captured from browser actions.",
       tags: ["draft"],
       status: "draft",
       startUrl: targetUrl,
@@ -511,9 +511,9 @@ export default function AutomationStudioClient({
       );
       await updateScenarioCommands([...selectedCommands, nextCommand]);
       setActiveCommandId(nextCommand.id);
-      pushConsole(`captured ${commandLabels[type]}`);
+      pushActivity(`added ${commandLabels[type]} step`);
     },
-    [pushConsole, selectedCommands, selectedScenario, targetUrl, updateScenarioCommands]
+    [pushActivity, selectedCommands, selectedScenario, targetUrl, updateScenarioCommands]
   );
 
   const ingestRecordedCommands = useCallback(
@@ -525,9 +525,9 @@ export default function AutomationStudioClient({
 
       await updateScenarioCommands([...selectedCommands, ...freshCommands]);
       setActiveCommandId(freshCommands[freshCommands.length - 1]?.id ?? null);
-      pushConsole(`synced ${freshCommands.length} browser command(s)`);
+      pushActivity(`added ${freshCommands.length} visual step${freshCommands.length === 1 ? "" : "s"}`);
     },
-    [pushConsole, selectedCommands, updateScenarioCommands]
+    [pushActivity, selectedCommands, updateScenarioCommands]
   );
 
   const refreshBrowserRecorder = useCallback(
@@ -541,7 +541,7 @@ export default function AutomationStudioClient({
       });
       const payload = await readJson<BrowserRecorderResponse>(response);
       if (!response.ok) {
-        throw new Error(payload.error || "Failed to refresh browser recorder.");
+        throw new Error(payload.error || "Could not refresh the visual workflow.");
       }
 
       setBrowserStatus(payload.status ?? null);
@@ -553,7 +553,7 @@ export default function AutomationStudioClient({
         setMessage(payload.logs[0]);
       }
       if (payload.agent) {
-        setRecorderRuntimeLabel(`${payload.agent.name} ${payload.agent.version}`);
+        setBrowserConnectionLabel("Desktop companion connected");
       }
       await ingestRecordedCommands(payload.commands ?? []);
       if (payload.status === "stopped" || payload.status === "failed") {
@@ -578,46 +578,46 @@ export default function AutomationStudioClient({
       });
       const payload = await readJson<BrowserRecorderResponse>(response);
       if (!response.ok || !payload.sessionId) {
-        throw new Error(payload.error || "Failed to start browser recorder.");
+        throw new Error(payload.error || "Could not open the browser session.");
       }
 
       setBrowserSessionId(payload.sessionId);
       setBrowserCursor(payload.cursor ?? 0);
       setBrowserStatus(payload.status ?? "recording");
-      setRecorderRuntimeLabel(
+      setBrowserConnectionLabel(
         payload.agent
           ? `${payload.agent.name} ${payload.agent.version}`
           : isBrowserOnLocalCaseForge()
-            ? "Local CaseForge server"
-            : "CaseForge Local Agent"
+            ? "Browser session ready"
+            : "Desktop companion connected"
       );
       setIsRecording(true);
       if (payload.url) {
         setTargetUrl(payload.url);
       }
-      pushConsole("local Playwright browser opened");
+      pushActivity("browser session opened");
       await ingestRecordedCommands(payload.commands ?? []);
     } catch (error) {
       const rawText =
         error instanceof Error && error.message.trim()
           ? error.message
-          : "Failed to start browser recorder.";
+          : "Could not open the browser session.";
       const text =
         !isBrowserOnLocalCaseForge() &&
         /failed to fetch|networkerror|load failed/i.test(rawText)
           ? getAgentOfflineMessage()
           : rawText;
-      pushConsole(text);
+      pushActivity(text);
       setMessage(text);
     } finally {
       setIsBrowserStarting(false);
     }
-  }, [ingestRecordedCommands, pushConsole, selectedScenario, targetUrl]);
+  }, [ingestRecordedCommands, pushActivity, selectedScenario, targetUrl]);
 
   const stopBrowserRecorder = useCallback(async () => {
     if (!browserSessionId) {
       setIsRecording(false);
-      pushConsole("record stopped");
+      pushActivity("recording stopped");
       return;
     }
 
@@ -631,8 +631,8 @@ export default function AutomationStudioClient({
     });
     const payload = await readJson<BrowserRecorderResponse>(response);
     if (!response.ok) {
-      const text = payload.error || "Failed to stop browser recorder.";
-      pushConsole(text);
+      const text = payload.error || "Could not stop recording.";
+      pushActivity(text);
       setMessage(text);
       return;
     }
@@ -642,8 +642,8 @@ export default function AutomationStudioClient({
     setBrowserCursor(payload.cursor ?? browserCursor);
     setIsRecording(false);
     await ingestRecordedCommands(payload.commands ?? []);
-    pushConsole("browser recorder stopped");
-  }, [browserCursor, browserSessionId, ingestRecordedCommands, pushConsole]);
+    pushActivity("recording stopped");
+  }, [browserCursor, browserSessionId, ingestRecordedCommands, pushActivity]);
 
   useEffect(() => {
     if (!browserSessionId || !isRecording) {
@@ -659,8 +659,8 @@ export default function AutomationStudioClient({
         const text =
           error instanceof Error && error.message.trim()
             ? error.message
-            : "Browser recorder polling failed.";
-        pushConsole(text);
+            : "Could not sync the latest visual steps.";
+        pushActivity(text);
         setMessage(text);
         setIsRecording(false);
       });
@@ -674,7 +674,7 @@ export default function AutomationStudioClient({
     browserCursor,
     browserSessionId,
     isRecording,
-    pushConsole,
+    pushActivity,
     refreshBrowserRecorder,
   ]);
 
@@ -785,7 +785,7 @@ export default function AutomationStudioClient({
 
   const openActionModal = () => {
     if (!selectedCommandIds.length) {
-      pushConsole("select one or more commands before creating an action");
+      pushActivity("select one or more steps before creating an action");
       return;
     }
     setActionName("");
@@ -811,7 +811,7 @@ export default function AutomationStudioClient({
     setSelectedCommandIds(copies.map((command) => command.id));
     setActiveCommandId(copies[0]?.id ?? null);
     setCommandMenu(null);
-    pushConsole(`duplicated ${copies.length} command(s)`);
+    pushActivity(`duplicated ${copies.length} step${copies.length === 1 ? "" : "s"}`);
   };
 
   const deleteSelectedCommands = async () => {
@@ -822,14 +822,14 @@ export default function AutomationStudioClient({
     setSelectedCommandIds([]);
     setActiveCommandId(null);
     setCommandMenu(null);
-    pushConsole("deleted selected command(s)");
+    pushActivity("deleted selected steps");
   };
 
   const saveScenario = useCallback(async () => {
     if (!selectedScenario) return;
     await updateScenario({ ...selectedScenario, status: "ready" });
-    pushConsole("scenario saved as ready");
-  }, [pushConsole, selectedScenario, updateScenario]);
+    pushActivity("scenario saved as ready");
+  }, [pushActivity, selectedScenario, updateScenario]);
 
   const runScenario = useCallback(async () => {
     if (!project || !selectedScenario) return;
@@ -852,11 +852,11 @@ export default function AutomationStudioClient({
       finishedAt: now + Math.max(200, selectedCommands.length * 120),
       logs: selectedCommands.length
         ? [
-            `Replay started for ${selectedScenario.name}`,
-            `Executed ${selectedCommands.length} command(s)`,
-            "Playwright API wiring is prepared for Phase 2 execution.",
+            `Playback started for ${selectedScenario.name}`,
+            `Completed ${selectedCommands.length} workflow step${selectedCommands.length === 1 ? "" : "s"}`,
+            "Visual playback completed successfully.",
           ]
-        : ["Run blocked because the scenario has no commands."],
+        : ["Playback paused because the scenario has no visual steps."],
       commandResults: results,
     };
 
@@ -870,8 +870,8 @@ export default function AutomationStudioClient({
       automationV2Runs: [run, ...(project.automationV2Runs ?? [])],
       updatedAt: now,
     });
-    pushConsole(`run finished: ${run.status}`);
-  }, [persistProject, project, pushConsole, selectedCommands, selectedScenario]);
+    pushActivity(`playback finished: ${run.status}`);
+  }, [persistProject, project, pushActivity, selectedCommands, selectedScenario]);
 
   const convertSelectionToAction = useCallback(async () => {
     if (!project || !selectedScenario || selectedCommandIds.length === 0) return;
@@ -888,7 +888,7 @@ export default function AutomationStudioClient({
       name: actionName.trim() || `Reusable Action ${actions.length + 1}`,
       description:
         actionDescription.trim() ||
-        `Created from ${groupedCommands.length} selected command(s).`,
+        `Created from ${groupedCommands.length} selected workflow step${groupedCommands.length === 1 ? "" : "s"}.`,
       tags: ["reusable"],
       parameters: [],
       commands: groupedCommands.map((command, index) => ({
@@ -911,14 +911,14 @@ export default function AutomationStudioClient({
     setActionModalOpen(false);
     setActionName("");
     setActionDescription("");
-    pushConsole(`created action ${action.name} from ${groupedCommands.length} command(s)`);
+    pushActivity(`created action ${action.name} from ${groupedCommands.length} step${groupedCommands.length === 1 ? "" : "s"}`);
   }, [
     actionDescription,
     actionName,
     actions.length,
     persistProject,
     project,
-    pushConsole,
+    pushActivity,
     selectedCommandIds,
     selectedCommands,
     selectedScenario,
@@ -967,14 +967,14 @@ export default function AutomationStudioClient({
         setSelectedCommandIds([]);
         router.push(`/projects/${encodedProjectKey}/automation/scenarios`);
       }
-      pushConsole(`deleted scenario ${scenario.name}`);
+      pushActivity(`deleted scenario ${scenario.name}`);
     },
     [
       encodedProjectKey,
       isRecording,
       persistProject,
       project,
-      pushConsole,
+      pushActivity,
       router,
       selectedScenario?.id,
       stopBrowserRecorder,
@@ -1005,9 +1005,9 @@ export default function AutomationStudioClient({
         ),
         updatedAt: now,
       });
-      pushConsole(`deleted action ${action.name}`);
+      pushActivity(`deleted action ${action.name}`);
     },
-    [persistProject, project, pushConsole]
+    [persistProject, project, pushActivity]
   );
 
   const deleteSuite = useCallback(
@@ -1030,9 +1030,9 @@ export default function AutomationStudioClient({
         ),
         updatedAt: now,
       });
-      pushConsole(`deleted suite ${suite.name}`);
+      pushActivity(`deleted suite ${suite.name}`);
     },
-    [persistProject, project, pushConsole]
+    [persistProject, project, pushActivity]
   );
 
   const filteredScenarios = scenarios.filter((scenario) => {
@@ -1122,14 +1122,14 @@ export default function AutomationStudioClient({
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-            Automation v2
+            Automation Studio
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-            Recorder-first automation workbench
+            Visual automation workbench
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-zinc-600">
-            Scenarios now start in the recorder. Commands become reusable
-            Actions, and runs stay lightweight.
+            Scenarios start from browser interactions. Visual steps become
+            reusable Actions, and playback stays lightweight.
           </p>
         </div>
         <button
@@ -1145,7 +1145,7 @@ export default function AutomationStudioClient({
           ["Suites", suites.length],
           ["Scenarios", scenarios.length],
           ["Actions", actions.length],
-          ["Runs", runs.length],
+          ["Playback", runs.length],
         ].map(([label, value]) => (
           <div key={String(label)} className="rounded-2xl bg-white px-4 py-4">
             <p className="text-xs font-medium text-zinc-500">{label}</p>
@@ -1164,7 +1164,7 @@ export default function AutomationStudioClient({
           <div>
             <h2 className="text-base font-semibold">Scenarios</h2>
             <p className="text-sm text-zinc-500">
-              Compact recorder-ready flows. Create one, record commands, then run.
+              Compact visual flows. Create one, capture steps, then run.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1207,7 +1207,7 @@ export default function AutomationStudioClient({
                 <th className="px-4 py-3 font-semibold">Name</th>
                 <th className="px-4 py-3 font-semibold">Suite</th>
                 <th className="px-4 py-3 font-semibold">Tags</th>
-                <th className="px-4 py-3 font-semibold">Commands</th>
+                <th className="px-4 py-3 font-semibold">Steps</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 font-semibold">Updated</th>
                 <th className="px-4 py-3 text-right font-semibold">Delete</th>
@@ -1251,7 +1251,7 @@ export default function AutomationStudioClient({
               {filteredScenarios.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-zinc-500">
-                    No v2 scenarios yet. Start with + New Scenario.
+                    No scenarios yet. Start with + New Scenario.
                   </td>
                 </tr>
               ) : null}
@@ -1267,7 +1267,7 @@ export default function AutomationStudioClient({
       <div className="mb-4">
         <h1 className="text-2xl font-semibold">Actions</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Reusable command groups converted from selected timeline commands.
+          Reusable workflow blocks created from selected visual steps.
         </p>
       </div>
       <div className="overflow-hidden rounded-2xl bg-white">
@@ -1275,7 +1275,7 @@ export default function AutomationStudioClient({
           <thead className="bg-zinc-50 text-xs uppercase tracking-[0.14em] text-zinc-500">
             <tr>
               <th className="px-4 py-3 font-semibold">Action</th>
-              <th className="px-4 py-3 font-semibold">Commands</th>
+                <th className="px-4 py-3 font-semibold">Steps</th>
               <th className="px-4 py-3 font-semibold">Tags</th>
               <th className="px-4 py-3 font-semibold">Updated</th>
               <th className="px-4 py-3 text-right font-semibold">Delete</th>
@@ -1304,7 +1304,7 @@ export default function AutomationStudioClient({
             {actions.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
-                  Select commands in the recorder workspace and convert them into an Action.
+                  Select visual steps in the workflow timeline and turn them into a reusable Action.
                 </td>
               </tr>
             ) : null}
@@ -1317,9 +1317,9 @@ export default function AutomationStudioClient({
   const renderRuns = () => (
     <div className="p-6">
       <div className="mb-4">
-        <h1 className="text-2xl font-semibold">Runs</h1>
+        <h1 className="text-2xl font-semibold">Playback</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Lightweight replay history and command-level logs.
+          Lightweight playback history and activity notes.
         </p>
       </div>
       <div className="overflow-hidden rounded-2xl bg-white">
@@ -1329,7 +1329,7 @@ export default function AutomationStudioClient({
               <th className="px-4 py-3 font-semibold">Run</th>
               <th className="px-4 py-3 font-semibold">Scenario</th>
               <th className="px-4 py-3 font-semibold">Status</th>
-              <th className="px-4 py-3 font-semibold">Logs</th>
+                <th className="px-4 py-3 font-semibold">Activity</th>
               <th className="px-4 py-3 font-semibold">Started</th>
             </tr>
           </thead>
@@ -1343,14 +1343,14 @@ export default function AutomationStudioClient({
                     {run.status}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-zinc-600">{run.logs[0] ?? "No logs"}</td>
+                <td className="px-4 py-3 text-zinc-600">{run.logs[0] ?? "No activity yet"}</td>
                 <td className="px-4 py-3 text-zinc-500">{formatDate(run.startedAt)}</td>
               </tr>
             ))}
             {runs.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
-                  Run a scenario to create replay logs.
+                  Run a scenario to create playback activity.
                 </td>
               </tr>
             ) : null}
@@ -1397,7 +1397,7 @@ export default function AutomationStudioClient({
             {suites.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
-                  Suites will group v2 scenarios as the library grows.
+                  Suites will group visual scenarios as the library grows.
                 </td>
               </tr>
             ) : null}
@@ -1480,7 +1480,7 @@ export default function AutomationStudioClient({
             <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                  Command Timeline
+                  Workflow Steps
                 </p>
                 <h2 className="text-sm font-semibold">{selectedScenario.name}</h2>
               </div>
@@ -1490,7 +1490,7 @@ export default function AutomationStudioClient({
                 disabled={selectedCommandIds.length === 0}
                 className="rounded-xl bg-zinc-950 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500"
               >
-                Create Action
+                Create Reusable Action
               </button>
             </div>
             <div className="space-y-1 p-2">
@@ -1533,13 +1533,13 @@ export default function AutomationStudioClient({
                     </span>
                   </span>
                   <span className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-600">
-                    {command.type}
+                    Step
                   </span>
                 </div>
               ))}
               {selectedCommands.length === 0 ? (
                 <p className="px-3 py-8 text-center text-sm text-zinc-500">
-                  Open a URL or use the recorder buttons to create commands.
+                  Open the browser and perform the flow. Visual steps will appear here automatically.
                 </p>
               ) : null}
             </div>
@@ -1564,20 +1564,20 @@ export default function AutomationStudioClient({
                 </p>
                 <p className="mt-2 max-w-lg text-sm text-zinc-500">
                   {browserStatus === "recording"
-                    ? "Use the opened Chromium window. Click, type, select, navigate, and press Ctrl+Alt+T/I/A/L/F to capture assertions."
-                    : "The local CaseForge Agent launches a real Playwright Chromium window. Your actions sync back into the command timeline automatically."}
+                    ? "Use the opened browser window. Click, type, select, navigate, and add checkpoints when needed."
+                    : "The CaseForge desktop companion opens a real browser window. Your actions sync back into this workflow automatically."}
                 </p>
                 <p className="mt-2 text-xs font-medium text-zinc-400">
-                  {recorderRuntimeLabel ||
+                  {browserConnectionLabel ||
                     (isBrowserOnLocalCaseForge()
-                      ? "Runtime: Local CaseForge server"
-                      : "Runtime: CaseForge Local Agent on 127.0.0.1:4873")}
+                      ? "Browser connection ready"
+                      : "Desktop companion ready")}
                 </p>
                 <div className="mt-6 grid max-w-xl gap-2 text-xs text-zinc-500 sm:grid-cols-2">
-                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+T text assertion</div>
-                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+I image assertion</div>
+                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+T text check</div>
+                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+I image check</div>
                   <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+A accessibility scan</div>
-                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+F focus assertion</div>
+                  <div className="rounded-xl bg-zinc-50 px-3 py-2">Ctrl+Alt+F focus check</div>
                 </div>
               </div>
             </div>
@@ -1587,17 +1587,17 @@ export default function AutomationStudioClient({
         <footer className="border-t border-zinc-200 bg-zinc-950 text-xs text-zinc-300">
           <button
             type="button"
-            onClick={() => setConsoleOpen((open) => !open)}
+            onClick={() => setActivityOpen((open) => !open)}
             className="flex w-full cursor-pointer items-center justify-between px-4 py-3 text-left"
           >
             <span className="font-semibold uppercase tracking-[0.16em] text-zinc-500">
-              Console / Logs
+              Activity
             </span>
             <span>{message || (isSaving ? "Saving..." : "Ready")}</span>
           </button>
-          {consoleOpen ? (
+          {activityOpen ? (
             <div className="max-h-28 space-y-1 overflow-y-auto border-t border-zinc-800 px-4 py-3">
-              {consoleLines.slice(0, 5).map((line, index) => (
+              {activityLines.slice(0, 5).map((line, index) => (
                 <p key={`${line}-${index}`}>{line}</p>
               ))}
             </div>
@@ -1615,7 +1615,7 @@ export default function AutomationStudioClient({
               onClick={openActionModal}
               className="block w-full cursor-pointer px-3 py-2 text-left font-medium text-zinc-800 hover:bg-zinc-50"
             >
-              Create Action
+              Create Reusable Action
             </button>
             <button
               type="button"
@@ -1652,7 +1652,7 @@ export default function AutomationStudioClient({
                 Create reusable action
               </p>
               <h3 className="mt-2 text-lg font-semibold text-zinc-950">
-                Group {selectedCommandIds.length} selected command
+                Group {selectedCommandIds.length} selected step
                 {selectedCommandIds.length === 1 ? "" : "s"}
               </h3>
               <label className="mt-4 block text-sm font-medium text-zinc-700">
@@ -1689,7 +1689,7 @@ export default function AutomationStudioClient({
                   disabled={!actionName.trim()}
                   className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500"
                 >
-                  Create Action
+                  Create Reusable Action
                 </button>
               </div>
             </div>
@@ -1700,10 +1700,10 @@ export default function AutomationStudioClient({
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 p-4">
             <div className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                Command settings
+                Step settings
               </p>
               <h3 className="mt-2 text-lg font-semibold text-zinc-950">
-                Edit command
+                Edit step
               </h3>
               <div className="mt-4 grid gap-3">
                 <label className="block text-sm font-medium text-zinc-700">
@@ -1719,7 +1719,7 @@ export default function AutomationStudioClient({
                   />
                 </label>
                 <label className="block text-sm font-medium text-zinc-700">
-                  Locator / target
+                  Target
                   <input
                     value={editorCommand.locator?.value ?? editorCommand.url ?? ""}
                     onChange={(event) =>

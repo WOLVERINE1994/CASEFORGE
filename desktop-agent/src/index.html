@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CaseForge Agent</title>
+    <title>CaseForge Companion</title>
     <style>
       :root {
         color: #111827;
@@ -260,16 +260,16 @@
     <main class="shell">
       <section class="hero">
         <div>
-          <div class="eyebrow">Local Browser Automation</div>
-          <h1>CaseForge Agent</h1>
+          <div class="eyebrow">Browser Companion</div>
+          <h1>CaseForge Companion</h1>
           <p class="intro">
-            Runs the recorder and Playwright browser automation service on this computer, while CaseForge
-            in the browser saves scenarios, commands, actions, and run results to your workspace.
+            Keeps visual recording and playback connected to this computer, while CaseForge saves
+            scenarios, steps, reusable actions, and results to your workspace.
           </p>
           <div class="actions" style="margin-top: 22px">
-            <button class="primary" data-start>Start Agent</button>
-            <button class="secondary" data-stop>Stop Agent</button>
-            <button class="ghost" data-health>Open Health Check</button>
+            <button class="primary" data-start>Start Companion</button>
+            <button class="secondary" data-stop>Stop Companion</button>
+            <button class="ghost" data-health>Check Connection</button>
             <button class="ghost" data-caseforge>Open CaseForge</button>
             <span class="spinner" aria-label="Loading"></span>
           </div>
@@ -277,10 +277,10 @@
         <aside class="status-card">
           <div class="status-row">
             <span class="status-pill stopped" data-status-pill></span>
-            <strong data-status-text>Checking agent</strong>
+            <strong data-status-text>Checking companion</strong>
           </div>
-          <div class="endpoint" data-endpoint>127.0.0.1:4873</div>
-          <p class="detail" data-detail>Checking local service health.</p>
+          <div class="endpoint" data-endpoint>Waiting for CaseForge</div>
+          <p class="detail" data-detail>Checking browser connection.</p>
         </aside>
       </section>
 
@@ -288,17 +288,17 @@
         <div class="panel">
           <h2>How Users Run It</h2>
           <ol class="steps">
-            <li>Install CaseForge Agent on the machine where browser automation should run.</li>
-            <li>Open the agent and keep it running while recording or replaying scenarios.</li>
-            <li>Use the CaseForge Automation workspace from Vercel or local development.</li>
-            <li>The web app talks to this local service at 127.0.0.1:4873.</li>
+            <li>Install CaseForge Companion on the computer where the browser should open.</li>
+            <li>Keep the companion running while recording or replaying scenarios.</li>
+            <li>Use the CaseForge Automation workspace from the browser.</li>
+            <li>CaseForge connects automatically when the companion is ready.</li>
           </ol>
         </div>
 
         <div class="panel">
-          <h2>Agent Logs</h2>
+          <h2>Activity</h2>
           <div class="logs" data-logs>
-            <div class="log-empty">Agent logs will appear here.</div>
+            <div class="log-empty">Connection activity will appear here.</div>
           </div>
         </div>
       </section>

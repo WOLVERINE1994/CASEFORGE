@@ -2,7 +2,7 @@
   "name": "@caseforge/desktop-agent",
   "version": "0.1.1",
   "private": true,
-  "description": "CaseForge Local Agent desktop installer app for browser recording and automation execution.",
+  "description": "CaseForge desktop companion for visual browser recording and playback.",
   "type": "module",
   "main": "src/main.mjs",
   "scripts": {
@@ -20,8 +20,8 @@
   },
   "build": {
     "appId": "com.caseforge.agent",
-    "productName": "CaseForge Agent",
-    "artifactName": "CaseForge-Agent-Setup-${version}.${ext}",
+    "productName": "CaseForge Companion",
+    "artifactName": "CaseForge-Companion-Setup-${version}.${ext}",
     "directories": {
       "output": "dist"
     },
@@ -51,7 +51,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "CaseForge Agent"
+      "shortcutName": "CaseForge Companion"
     }
   }
 }

@@ -486,7 +486,7 @@ const closeRuntime = async () => {
   if (session && session.status !== "failed") {
     session.status = "stopped";
     session.updatedAt = Date.now();
-    session.logs = ["Recorder stopped.", ...session.logs];
+    session.logs = ["Recording stopped.", ...session.logs];
   }
 
   await runtime.browser?.close().catch(() => undefined);
@@ -503,7 +503,7 @@ export async function GET(req: Request) {
 
   if (!session || session.id !== sessionId) {
     return Response.json(
-      { error: "Recorder session is not active." },
+      { error: "Browser session is not active." },
       { status: 404 }
     );
   }
@@ -532,7 +532,7 @@ export async function POST(req: Request) {
         status: "stopped",
         cursor: session?.commands.length ?? 0,
         commands: session?.commands ?? [],
-        logs: session?.logs ?? ["Recorder stopped."],
+        logs: session?.logs ?? ["Recording stopped."],
       });
     }
 
@@ -540,7 +540,7 @@ export async function POST(req: Request) {
       return Response.json(
         {
           error:
-            "Visible browser recording must run from local CaseForge. Vercel can save scenarios and replay headless runs, but it cannot open a browser window on your laptop.",
+            "Visible recording needs the CaseForge desktop companion on this computer. Open the companion, then try again.",
         },
         { status: 400 }
       );
@@ -582,8 +582,8 @@ export async function POST(req: Request) {
       currentUrl: startUrl,
       commands: [],
       logs: [
-        "Launching local Playwright browser.",
-        "Use the opened browser normally. Click, type, select, navigate, and use Ctrl+Alt+T/I/A/L/F assertions.",
+        "Opening browser session.",
+        "Use the browser normally. Click, type, select, navigate, and add checkpoints when needed.",
       ],
     };
 
@@ -621,7 +621,7 @@ export async function POST(req: Request) {
     const message =
       error instanceof Error && error.message.trim()
         ? error.message
-        : "Failed to start browser recorder.";
+        : "Could not open the browser session.";
     const session = getRuntime().session;
     if (session) {
       session.status = "failed";

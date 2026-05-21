@@ -23,7 +23,7 @@ const setBusy = (busy) => {
 
 const renderLogs = () => {
   if (!state.logs.length) {
-    logsEl.innerHTML = '<div class="log-empty">Agent logs will appear here.</div>';
+    logsEl.innerHTML = '<div class="log-empty">Connection activity will appear here.</div>';
     return;
   }
 
@@ -44,17 +44,17 @@ const renderStatus = () => {
   const external = Boolean(status?.externalAgentDetected);
 
   statusPill.className = `status-pill ${running ? "running" : "stopped"}`;
-  statusText.textContent = running ? "Agent running" : "Agent stopped";
-  endpointText.textContent = status ? `${status.host}:${status.port}` : "127.0.0.1:4873";
+  statusText.textContent = running ? "Companion running" : "Companion stopped";
+  endpointText.textContent = running ? "Ready for CaseForge" : "Waiting for CaseForge";
 
   if (running && managedByApp) {
-    detailText.textContent = "This desktop app is managing the local recorder service.";
+    detailText.textContent = "Visual recording and playback are ready.";
   } else if (running && external) {
-    detailText.textContent = "An agent is already running outside this app. Stop it from the original terminal if needed.";
+    detailText.textContent = "A CaseForge browser companion is already running.";
   } else if (status?.health?.message) {
     detailText.textContent = status.health.message;
   } else {
-    detailText.textContent = "Start the agent before recording or replaying browser automation.";
+    detailText.textContent = "Start the companion before recording or replaying scenarios.";
   }
 
   startButton.disabled = state.busy || running;

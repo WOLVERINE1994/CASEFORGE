@@ -1,8 +1,8 @@
-# CaseForge Agent
+# CaseForge Companion
 
-CaseForge Agent is the Windows desktop wrapper for local browser recording and automation execution.
+CaseForge Companion is the Windows desktop app for visual browser recording and playback.
 
-The Vercel app can save scenarios and run server-side flows, but a visible browser recorder must run on the user's computer. This app starts the local Playwright agent at `http://127.0.0.1:4873` so CaseForge can open a browser, capture commands, and replay scenarios.
+The Vercel app saves scenarios, visual steps, reusable actions, and results. This companion opens the browser on the user's computer so CaseForge can capture and replay workflows visually.
 
 ## Development
 
@@ -27,12 +27,12 @@ npm install
 npm run dist:win
 ```
 
-The installer is written to `desktop-agent/dist/` as `CaseForge-Agent-Setup-<version>.exe`.
+The installer is written to `desktop-agent/dist/` as `CaseForge-Companion-Setup-<version>.exe`.
 
-## Runtime
+## Connection
 
-- Local endpoint: `http://127.0.0.1:4873`
-- Health check: `http://127.0.0.1:4873/health`
-- Wrapped script: `scripts/caseforge-local-agent.mjs`
+- The companion keeps the browser connection available for CaseForge.
+- The app shows connection health from its own window.
+- Browser recording and playback stay visual in the CaseForge workspace.
 
 For production distribution, code signing should be added before sharing the installer broadly so Windows SmartScreen trusts it.
