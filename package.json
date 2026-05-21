@@ -8,6 +8,8 @@
     "build": "next build",
     "start": "next start",
     "agent": "node scripts/caseforge-local-agent.mjs",
+    "agent:desktop": "npm --prefix desktop-agent run dev",
+    "agent:desktop:dist": "npm --prefix desktop-agent run dist:win",
     "lint": "eslint",
     "lint:strict": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",

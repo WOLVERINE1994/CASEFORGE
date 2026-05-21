@@ -1,0 +1,57 @@
+{
+  "name": "@caseforge/desktop-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CaseForge Local Agent desktop installer app for browser recording and automation execution.",
+  "type": "module",
+  "main": "src/main.mjs",
+  "scripts": {
+    "dev": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis",
+    "dist:win": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "playwright": "^1.55.0"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.caseforge.agent",
+    "productName": "CaseForge Agent",
+    "artifactName": "CaseForge-Agent-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../scripts/caseforge-local-agent.mjs",
+        "to": "scripts/caseforge-local-agent.mjs"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/playwright/**",
+      "node_modules/playwright-core/**"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "publisherName": "CaseForge"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "CaseForge Agent"
+    }
+  }
+}
