@@ -49,7 +49,29 @@ type BrowserRecorderResponse = {
   commands?: AutomationV2Command[];
   logs?: string[];
   error?: string;
+  agent?: {
+    name: string;
+    version: string;
+  };
 };
+
+const localAgentOrigin = "http://127.0.0.1:4873";
+
+const isBrowserOnLocalCaseForge = () =>
+  typeof window !== "undefined" &&
+  ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+
+const getRecorderEndpoint = (query?: URLSearchParams) => {
+  const path = query
+    ? `/automation/browser?${query.toString()}`
+    : "/automation/browser";
+  return isBrowserOnLocalCaseForge()
+    ? `/api${path}`
+    : `${localAgentOrigin}${path}`;
+};
+
+const getAgentOfflineMessage = () =>
+  `CaseForge Local Agent is not running. Start it on your laptop with "npm run agent", then click Record again.`;
 
 const navItems: Array<{
   key: AutomationStudioSection;
@@ -331,6 +353,7 @@ export default function AutomationStudioClient({
   const [browserStatus, setBrowserStatus] = useState<
     BrowserRecorderResponse["status"] | null
   >(null);
+  const [recorderRuntimeLabel, setRecorderRuntimeLabel] = useState("");
   const [consoleLines, setConsoleLines] = useState<string[]>([
     "Automation v2 recorder ready. Ctrl+Alt+T/I/A/L/F creates validation commands.",
   ]);
@@ -584,7 +607,7 @@ export default function AutomationStudioClient({
         sessionId,
         cursor: String(cursor),
       });
-      const response = await fetch(`/api/automation/browser?${params.toString()}`, {
+      const response = await fetch(getRecorderEndpoint(params), {
         cache: "no-store",
       });
       const payload = await readJson<BrowserRecorderResponse>(response);
@@ -600,6 +623,9 @@ export default function AutomationStudioClient({
       if (payload.logs?.[0]) {
         setMessage(payload.logs[0]);
       }
+      if (payload.agent) {
+        setRecorderRuntimeLabel(`${payload.agent.name} ${payload.agent.version}`);
+      }
       await ingestRecordedCommands(payload.commands ?? []);
       if (payload.status === "stopped" || payload.status === "failed") {
         setIsRecording(false);
@@ -612,7 +638,7 @@ export default function AutomationStudioClient({
     if (!selectedScenario) return;
     setIsBrowserStarting(true);
     try {
-      const response = await fetch("/api/automation/browser", {
+      const response = await fetch(getRecorderEndpoint(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -629,6 +655,13 @@ export default function AutomationStudioClient({
       setBrowserSessionId(payload.sessionId);
       setBrowserCursor(payload.cursor ?? 0);
       setBrowserStatus(payload.status ?? "recording");
+      setRecorderRuntimeLabel(
+        payload.agent
+          ? `${payload.agent.name} ${payload.agent.version}`
+          : isBrowserOnLocalCaseForge()
+            ? "Local CaseForge server"
+            : "CaseForge Local Agent"
+      );
       setIsRecording(true);
       if (payload.url) {
         setTargetUrl(payload.url);
@@ -636,10 +669,15 @@ export default function AutomationStudioClient({
       pushConsole("local Playwright browser opened");
       await ingestRecordedCommands(payload.commands ?? []);
     } catch (error) {
-      const text =
+      const rawText =
         error instanceof Error && error.message.trim()
           ? error.message
           : "Failed to start browser recorder.";
+      const text =
+        !isBrowserOnLocalCaseForge() &&
+        /failed to fetch|networkerror|load failed/i.test(rawText)
+          ? getAgentOfflineMessage()
+          : rawText;
       pushConsole(text);
       setMessage(text);
     } finally {
@@ -654,7 +692,7 @@ export default function AutomationStudioClient({
       return;
     }
 
-    const response = await fetch("/api/automation/browser", {
+    const response = await fetch(getRecorderEndpoint(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1487,6 +1525,12 @@ export default function AutomationStudioClient({
                   {browserStatus === "recording"
                     ? "Use the opened Chromium window. Click, type, select, navigate, and press Ctrl+Alt+T/I/A/L/F to capture assertions."
                     : "Record launches a local Playwright Chromium window and syncs captured commands into this timeline."}
+                </p>
+                <p className="mt-2 text-xs font-medium text-zinc-400">
+                  {recorderRuntimeLabel ||
+                    (isBrowserOnLocalCaseForge()
+                      ? "Runtime: Local CaseForge server"
+                      : "Runtime: CaseForge Local Agent on 127.0.0.1:4873")}
                 </p>
                 <div className="mt-5 flex flex-wrap justify-center gap-2">
                   {recorderCommandTypes.map((type) => (

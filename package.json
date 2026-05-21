@@ -7,6 +7,7 @@
     "prebuild": "node scripts/vercel-migrate.mjs && prisma generate",
     "build": "next build",
     "start": "next start",
+    "agent": "node scripts/caseforge-local-agent.mjs",
     "lint": "eslint",
     "lint:strict": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
