@@ -57,6 +57,10 @@ type BrowserRecorderResponse = {
 };
 
 const localAgentOrigin = "http://127.0.0.1:4873";
+const companionVersion = "0.1.2";
+const companionDownloadUrl =
+  process.env.NEXT_PUBLIC_COMPANION_DOWNLOAD_URL ||
+  `https://github.com/WOLVERINE1994/CASEFORGE/releases/download/caseforge-companion-v${companionVersion}/CaseForge-Companion-Setup-${companionVersion}.exe`;
 
 const isBrowserOnLocalCaseForge = () =>
   typeof window !== "undefined" &&
@@ -79,7 +83,7 @@ const getRecorderStartErrorMessage = (rawText: string) => {
     !isBrowserOnLocalCaseForge() &&
     /(^|\b)not found\b|unknown caseforge agent route/i.test(rawText)
   ) {
-    return "The browser connection is using an older CaseForge companion. Close the old companion or recorder, install the latest CaseForge Companion, then click Record again.";
+    return "The browser connection is using an older CaseForge companion. Close the old companion or recorder, use Download Companion to install the latest version, then click Record again.";
   }
 
   if (
@@ -1153,6 +1157,12 @@ export default function AutomationStudioClient({
         >
           + New Scenario
         </button>
+        <a
+          href={companionDownloadUrl}
+          className="inline-flex min-h-[42px] items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50"
+        >
+          Download Companion
+        </a>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
         {[
@@ -1487,6 +1497,12 @@ export default function AutomationStudioClient({
           >
             Run
           </button>
+          <a
+            href={companionDownloadUrl}
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50"
+          >
+            Download Companion
+          </a>
         </header>
 
         <section className="grid min-h-0 grid-cols-[320px_minmax(0,1fr)]">
