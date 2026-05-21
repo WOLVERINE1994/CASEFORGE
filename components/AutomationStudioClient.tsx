@@ -39,6 +39,18 @@ type LoadState =
 
 type ScenarioStatusFilter = "all" | AutomationV2Scenario["status"];
 
+type BrowserRecorderResponse = {
+  started?: boolean;
+  stopped?: boolean;
+  sessionId?: string;
+  status?: "starting" | "recording" | "stopping" | "stopped" | "failed";
+  cursor?: number;
+  url?: string;
+  commands?: AutomationV2Command[];
+  logs?: string[];
+  error?: string;
+};
+
 const navItems: Array<{
   key: AutomationStudioSection;
   label: string;
@@ -124,6 +136,29 @@ const formatDate = (timestamp?: number) =>
   timestamp ? new Date(timestamp).toLocaleString() : "Not saved";
 
 const getTagsText = (tags?: string[]) => (tags?.length ? tags.join(", ") : "No tags");
+
+const toPlaywrightLocator = (command: AutomationV2Command) => {
+  const locator = command.locator;
+  const value = locator?.value || "[data-testid=\"target\"]";
+
+  if (locator?.strategy === "text") {
+    return `page.getByText(${JSON.stringify(command.expectedValue || value)})`;
+  }
+
+  if (locator?.strategy === "label") {
+    return `page.getByLabel(${JSON.stringify(command.expectedValue || value)})`;
+  }
+
+  if (locator?.strategy === "testid") {
+    return `page.getByTestId(${JSON.stringify(value)})`;
+  }
+
+  if (locator?.strategy === "role" && locator.role) {
+    return `page.getByRole(${JSON.stringify(locator.role)}, { name: ${JSON.stringify(locator.label || locator.text || value)} })`;
+  }
+
+  return `page.locator(${JSON.stringify(value)})`;
+};
 
 const getDefaultLocator = (type: AutomationV2CommandType) => {
   if (type === "assert-text") {
@@ -214,35 +249,31 @@ const buildPlaywrightSpec = (scenario: AutomationV2Scenario) => {
     .slice()
     .sort((left, right) => left.order - right.order)
     .forEach((command) => {
-      const locatorValue = command.locator?.value || "[data-testid=\"target\"]";
+      const locator = toPlaywrightLocator(command);
       if (command.type === "navigate") {
         lines.push(`  await page.goto(${JSON.stringify(command.url || scenario.startUrl || "/")});`);
       } else if (command.type === "click") {
-        lines.push(`  await page.locator(${JSON.stringify(locatorValue)}).click();`);
+        lines.push(`  await ${locator}.click();`);
       } else if (command.type === "fill") {
         lines.push(
-          `  await page.locator(${JSON.stringify(locatorValue)}).fill(${JSON.stringify(command.inputValue || "")});`
+          `  await ${locator}.fill(${JSON.stringify(command.inputValue || "")});`
         );
       } else if (command.type === "select") {
         lines.push(
-          `  await page.locator(${JSON.stringify(locatorValue)}).selectOption(${JSON.stringify(command.inputValue || "")});`
+          `  await ${locator}.selectOption(${JSON.stringify(command.inputValue || "")});`
         );
       } else if (command.type === "hover") {
-        lines.push(`  await page.locator(${JSON.stringify(locatorValue)}).hover();`);
+        lines.push(`  await ${locator}.hover();`);
       } else if (command.type === "press") {
         lines.push(`  await page.keyboard.press(${JSON.stringify(command.key || "Enter")});`);
       } else if (command.type === "assert-text") {
-        lines.push(
-          `  await expect(page.getByText(${JSON.stringify(command.expectedValue || locatorValue)})).toBeVisible();`
-        );
+        lines.push(`  await expect(${locator}).toBeVisible();`);
       } else if (command.type === "assert-image") {
-        lines.push(`  await expect(page.locator(${JSON.stringify(locatorValue)})).toBeVisible();`);
+        lines.push(`  await expect(${locator}).toBeVisible();`);
       } else if (command.type === "assert-label") {
-        lines.push(
-          `  await expect(page.getByLabel(${JSON.stringify(command.expectedValue || locatorValue)})).toBeVisible();`
-        );
+        lines.push(`  await expect(${locator}).toBeVisible();`);
       } else if (command.type === "assert-focus") {
-        lines.push(`  await expect(page.locator(${JSON.stringify(locatorValue)})).toBeFocused();`);
+        lines.push(`  await expect(${locator}).toBeFocused();`);
       } else if (command.type === "assert-a11y") {
         lines.push("  // Accessibility scan command captured; axe/playwright integration lands in Phase 2.");
       } else if (command.type === "run-action") {
@@ -273,8 +304,14 @@ export default function AutomationStudioClient({
   const [selectedCommandIds, setSelectedCommandIds] = useState<string[]>([]);
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [isBrowserStarting, setIsBrowserStarting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [browserSessionId, setBrowserSessionId] = useState<string | null>(null);
+  const [browserCursor, setBrowserCursor] = useState(0);
+  const [browserStatus, setBrowserStatus] = useState<
+    BrowserRecorderResponse["status"] | null
+  >(null);
   const [consoleLines, setConsoleLines] = useState<string[]>([
     "Automation v2 recorder ready. Ctrl+Alt+T/I/A/L/F creates validation commands.",
   ]);
@@ -507,6 +544,153 @@ export default function AutomationStudioClient({
     },
     [pushConsole, selectedCommands, selectedScenario, targetUrl, updateScenarioCommands]
   );
+
+  const ingestRecordedCommands = useCallback(
+    async (commands: AutomationV2Command[]) => {
+      if (!commands.length) return;
+      const existingIds = new Set(selectedCommands.map((command) => command.id));
+      const freshCommands = commands.filter((command) => !existingIds.has(command.id));
+      if (!freshCommands.length) return;
+
+      await updateScenarioCommands([...selectedCommands, ...freshCommands]);
+      setActiveCommandId(freshCommands[freshCommands.length - 1]?.id ?? null);
+      pushConsole(`synced ${freshCommands.length} browser command(s)`);
+    },
+    [pushConsole, selectedCommands, updateScenarioCommands]
+  );
+
+  const refreshBrowserRecorder = useCallback(
+    async (sessionId: string, cursor: number) => {
+      const params = new URLSearchParams({
+        sessionId,
+        cursor: String(cursor),
+      });
+      const response = await fetch(`/api/automation/browser?${params.toString()}`, {
+        cache: "no-store",
+      });
+      const payload = await readJson<BrowserRecorderResponse>(response);
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to refresh browser recorder.");
+      }
+
+      setBrowserStatus(payload.status ?? null);
+      setBrowserCursor(payload.cursor ?? cursor);
+      if (payload.url) {
+        setTargetUrl(payload.url);
+      }
+      if (payload.logs?.[0]) {
+        setMessage(payload.logs[0]);
+      }
+      await ingestRecordedCommands(payload.commands ?? []);
+      if (payload.status === "stopped" || payload.status === "failed") {
+        setIsRecording(false);
+      }
+    },
+    [ingestRecordedCommands]
+  );
+
+  const startBrowserRecorder = useCallback(async () => {
+    if (!selectedScenario) return;
+    setIsBrowserStarting(true);
+    try {
+      const response = await fetch("/api/automation/browser", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "start",
+          scenarioId: selectedScenario.id,
+          startUrl: targetUrl,
+        }),
+      });
+      const payload = await readJson<BrowserRecorderResponse>(response);
+      if (!response.ok || !payload.sessionId) {
+        throw new Error(payload.error || "Failed to start browser recorder.");
+      }
+
+      setBrowserSessionId(payload.sessionId);
+      setBrowserCursor(payload.cursor ?? 0);
+      setBrowserStatus(payload.status ?? "recording");
+      setIsRecording(true);
+      if (payload.url) {
+        setTargetUrl(payload.url);
+      }
+      pushConsole("local Playwright browser opened");
+      await ingestRecordedCommands(payload.commands ?? []);
+    } catch (error) {
+      const text =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "Failed to start browser recorder.";
+      pushConsole(text);
+      setMessage(text);
+    } finally {
+      setIsBrowserStarting(false);
+    }
+  }, [ingestRecordedCommands, pushConsole, selectedScenario, targetUrl]);
+
+  const stopBrowserRecorder = useCallback(async () => {
+    if (!browserSessionId) {
+      setIsRecording(false);
+      pushConsole("record stopped");
+      return;
+    }
+
+    const response = await fetch("/api/automation/browser", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "stop",
+        sessionId: browserSessionId,
+      }),
+    });
+    const payload = await readJson<BrowserRecorderResponse>(response);
+    if (!response.ok) {
+      const text = payload.error || "Failed to stop browser recorder.";
+      pushConsole(text);
+      setMessage(text);
+      return;
+    }
+
+    setBrowserStatus("stopped");
+    setBrowserSessionId(null);
+    setBrowserCursor(payload.cursor ?? browserCursor);
+    setIsRecording(false);
+    await ingestRecordedCommands(payload.commands ?? []);
+    pushConsole("browser recorder stopped");
+  }, [browserCursor, browserSessionId, ingestRecordedCommands, pushConsole]);
+
+  useEffect(() => {
+    if (!browserSessionId || !isRecording) {
+      return;
+    }
+
+    let cancelled = false;
+    const interval = window.setInterval(() => {
+      if (cancelled) {
+        return;
+      }
+      void refreshBrowserRecorder(browserSessionId, browserCursor).catch((error) => {
+        const text =
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : "Browser recorder polling failed.";
+        pushConsole(text);
+        setMessage(text);
+        setIsRecording(false);
+      });
+    }, 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [
+    browserCursor,
+    browserSessionId,
+    isRecording,
+    pushConsole,
+    refreshBrowserRecorder,
+  ]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -1019,17 +1203,23 @@ export default function AutomationStudioClient({
           />
           <button
             type="button"
-            onClick={() => void addCommand("navigate")}
-            className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-950"
+            onClick={() => void startBrowserRecorder()}
+            disabled={isBrowserStarting}
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-950 disabled:cursor-wait disabled:text-zinc-500"
           >
-            Open Browser
+            {isBrowserStarting ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-950" />
+            ) : null}
+            {isBrowserStarting ? "Opening..." : "Open Browser"}
           </button>
           <button
             type="button"
-            onClick={() => {
-              setIsRecording((value) => !value);
-              pushConsole(`record ${isRecording ? "off" : "on"}`);
-            }}
+            onClick={() =>
+              isRecording
+                ? void stopBrowserRecorder()
+                : void startBrowserRecorder()
+            }
+            disabled={isBrowserStarting}
             className={`h-10 rounded-xl px-3 text-sm font-semibold ${
               isRecording ? "bg-rose-600 text-white" : "bg-zinc-950 text-white"
             }`}
@@ -1053,10 +1243,7 @@ export default function AutomationStudioClient({
           </button>
           <button
             type="button"
-            onClick={() => {
-              setIsRecording(false);
-              pushConsole("record stopped");
-            }}
+            onClick={() => void stopBrowserRecorder()}
             className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-950"
           >
             Stop
@@ -1137,11 +1324,14 @@ export default function AutomationStudioClient({
                   Browser / Playback
                 </p>
                 <p className="mt-2 text-lg font-semibold text-zinc-800">
-                  Playwright recorder API target
+                  {browserStatus === "recording"
+                    ? "Live browser recording"
+                    : "Playwright recorder API target"}
                 </p>
                 <p className="mt-2 max-w-lg text-sm text-zinc-500">
-                  Phase 1 persists commands and validation captures. Phase 2 will
-                  attach a live Playwright browser session here.
+                  {browserStatus === "recording"
+                    ? "Use the opened Chromium window. Click, type, select, navigate, and press Ctrl+Alt+T/I/A/L/F to capture assertions."
+                    : "Open Browser launches a local Playwright Chromium window and syncs recorded commands into this timeline."}
                 </p>
                 <div className="mt-5 flex flex-wrap justify-center gap-2">
                   {recorderCommandTypes.map((type) => (
