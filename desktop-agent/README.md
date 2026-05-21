@@ -28,6 +28,7 @@ npm run dist:win
 ```
 
 The installer is written to `desktop-agent/dist/` as `CaseForge-Companion-Setup-<version>.exe`.
+The companion opens the installed Chrome or Edge browser when a packaged browser is not available.
 
 ## Connection
 

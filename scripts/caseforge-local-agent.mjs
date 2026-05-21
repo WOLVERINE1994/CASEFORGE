@@ -27,6 +27,35 @@ const state = {
   session: null,
 };
 
+const isBrowserInstallError = (error) =>
+  error instanceof Error &&
+  /executable doesn't exist|please run the following command|playwright install/i.test(
+    error.message
+  );
+
+const browserInstallMessage =
+  "CaseForge could not find a browser to open. Install Google Chrome or Microsoft Edge, then try recording again.";
+
+const launchVisibleBrowser = async () => {
+  try {
+    return await chromium.launch({ headless: false });
+  } catch (error) {
+    if (!isBrowserInstallError(error)) {
+      throw error;
+    }
+  }
+
+  for (const channel of ["chrome", "msedge"]) {
+    try {
+      return await chromium.launch({ channel, headless: false });
+    } catch {
+      // Try the next installed browser.
+    }
+  }
+
+  throw new Error(browserInstallMessage);
+};
+
 const jsonHeaders = (origin = "*") => ({
   "Access-Control-Allow-Origin": origin || "*",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
@@ -453,7 +482,7 @@ const getRecorderSnapshot = (session, cursor = 0) => ({
   logs: session.logs,
   agent: {
     name: "CaseForge Companion",
-    version: "0.1.2",
+    version: "0.1.3",
   },
 });
 
@@ -473,7 +502,7 @@ const startRecorder = async (body) => {
 
   await closeRuntime();
 
-  const browser = await chromium.launch({ headless: false });
+  const browser = await launchVisibleBrowser();
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
   });
@@ -542,7 +571,7 @@ const server = createServer(async (req, res) => {
         {
           ok: true,
           name: "CaseForge Companion",
-          version: "0.1.2",
+          version: "0.1.3",
           activeSessionId: state.session?.id ?? null,
           status: state.session?.status ?? "idle",
         },
@@ -597,8 +626,9 @@ const server = createServer(async (req, res) => {
 
     sendJson(res, 404, { error: "Unknown CaseForge agent route." }, origin);
   } catch (error) {
-    const message =
-      error instanceof Error && error.message.trim()
+    const message = isBrowserInstallError(error)
+      ? browserInstallMessage
+      : error instanceof Error && error.message.trim()
         ? error.message
         : "CaseForge Companion could not complete the request.";
     if (state.session) {

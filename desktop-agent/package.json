@@ -1,6 +1,6 @@
 {
   "name": "@caseforge/desktop-agent",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "CaseForge desktop companion for visual browser recording and playback.",
   "type": "module",

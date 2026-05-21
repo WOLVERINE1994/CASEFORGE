@@ -55,6 +55,37 @@ const getRuntime = () => {
 const isHostedRuntime = () =>
   Boolean(process.env.VERCEL || process.env.NEXT_RUNTIME === "edge");
 
+const isBrowserInstallError = (error: unknown) =>
+  error instanceof Error &&
+  /executable doesn't exist|please run the following command|playwright install/i.test(
+    error.message
+  );
+
+const browserInstallMessage =
+  "CaseForge could not find a browser to open. Install Google Chrome or Microsoft Edge, then try recording again.";
+
+const launchVisibleBrowser = async (): Promise<Browser> => {
+  const { chromium } = await import("playwright");
+
+  try {
+    return await chromium.launch({ headless: false });
+  } catch (error) {
+    if (!isBrowserInstallError(error)) {
+      throw error;
+    }
+  }
+
+  for (const channel of ["chrome", "msedge"] as const) {
+    try {
+      return await chromium.launch({ channel, headless: false });
+    } catch {
+      // Try the next installed browser.
+    }
+  }
+
+  throw new Error(browserInstallMessage);
+};
+
 const normalizeCommandType = (value: string | undefined): AutomationV2CommandType => {
   if (
     value === "click" ||
@@ -564,10 +595,7 @@ export async function POST(req: Request) {
 
     await closeRuntime();
 
-    const { chromium } = await import("playwright");
-    const browser = await chromium.launch({
-      headless: false,
-    });
+    const browser = await launchVisibleBrowser();
     const context = await browser.newContext({
       viewport: { width: 1440, height: 900 },
     });
@@ -618,8 +646,9 @@ export async function POST(req: Request) {
       url: session.currentUrl,
     });
   } catch (error) {
-    const message =
-      error instanceof Error && error.message.trim()
+    const message = isBrowserInstallError(error)
+      ? browserInstallMessage
+      : error instanceof Error && error.message.trim()
         ? error.message
         : "Could not open the browser session.";
     const session = getRuntime().session;
