@@ -57,7 +57,7 @@ type BrowserRecorderResponse = {
 };
 
 const localAgentOrigin = "http://127.0.0.1:4873";
-const companionVersion = "0.1.4";
+const companionVersion = "0.1.5";
 const companionDownloadUrl =
   process.env.NEXT_PUBLIC_COMPANION_DOWNLOAD_URL ||
   `https://github.com/WOLVERINE1994/CASEFORGE/releases/download/caseforge-companion-v${companionVersion}/CaseForge-Companion-Setup-${companionVersion}.exe`;
@@ -788,6 +788,30 @@ export default function AutomationStudioClient({
     setSelectedCommandIds([commandId]);
   };
 
+  const toggleCommandSelection = (commandId: string) => {
+    setActiveCommandId(commandId);
+    setLastSelectedCommandId(commandId);
+    setCommandMenu(null);
+    setSelectedCommandIds((ids) =>
+      ids.includes(commandId)
+        ? ids.filter((id) => id !== commandId)
+        : [...ids, commandId]
+    );
+  };
+
+  const selectAllCommands = () => {
+    setCommandMenu(null);
+    setSelectedCommandIds(selectedCommands.map((command) => command.id));
+    setLastSelectedCommandId(selectedCommands.at(-1)?.id ?? null);
+    setActiveCommandId(selectedCommands.at(-1)?.id ?? null);
+  };
+
+  const clearSelectedCommands = () => {
+    setCommandMenu(null);
+    setSelectedCommandIds([]);
+    setLastSelectedCommandId(null);
+  };
+
   const openCommandMenu = (
     commandId: string,
     event: MouseEvent<HTMLDivElement>,
@@ -1507,21 +1531,44 @@ export default function AutomationStudioClient({
 
         <section className="grid min-h-0 grid-cols-[320px_minmax(0,1fr)]">
           <aside className="min-h-0 overflow-y-auto border-r border-zinc-200 bg-white">
-            <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
+            <div className="space-y-3 border-b border-zinc-200 px-4 py-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
                   Workflow Steps
                 </p>
                 <h2 className="text-sm font-semibold">{selectedScenario.name}</h2>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Select steps to combine them into a reusable Action.
+                </p>
               </div>
-              <button
-                type="button"
-                onClick={openActionModal}
-                disabled={selectedCommandIds.length === 0}
-                className="rounded-xl bg-zinc-950 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500"
-              >
-                Create Reusable Action
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openActionModal}
+                  disabled={selectedCommandIds.length === 0}
+                  className="rounded-xl bg-zinc-950 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500"
+                >
+                  Create Reusable Action
+                </button>
+                {selectedCommands.length ? (
+                  <button
+                    type="button"
+                    onClick={
+                      selectedCommandIds.length === selectedCommands.length
+                        ? clearSelectedCommands
+                        : selectAllCommands
+                    }
+                    className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                  >
+                    {selectedCommandIds.length === selectedCommands.length
+                      ? "Clear"
+                      : "Select all"}
+                  </button>
+                ) : null}
+                <span className="text-xs font-medium text-zinc-500">
+                  {selectedCommandIds.length} selected
+                </span>
+              </div>
             </div>
             <div className="space-y-1 p-2">
               {selectedCommands.map((command, index) => (
@@ -1550,6 +1597,14 @@ export default function AutomationStudioClient({
                         : "border-transparent hover:border-zinc-200 hover:bg-zinc-50"
                   }`}
                 >
+                  <input
+                    type="checkbox"
+                    checked={selectedCommandIds.includes(command.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={() => toggleCommandSelection(command.id)}
+                    className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-emerald-600"
+                    aria-label={`Select step ${index + 1}`}
+                  />
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-100 font-mono text-xs font-semibold text-zinc-700">
                     {index + 1}
                   </span>

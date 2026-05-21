@@ -591,8 +591,13 @@ const attachRecorder = async (page, session) => {
   });
 
   page.on("console", (message) => {
+    const text = message.text();
+    if (/failed to load resource|status of 404|net::err_/i.test(text)) {
+      return;
+    }
+
     session.logs = [
-      `[browser:${message.type()}] ${message.text()}`,
+      `[browser:${message.type()}] ${text}`,
       ...session.logs,
     ].slice(0, 40);
     session.updatedAt = Date.now();
