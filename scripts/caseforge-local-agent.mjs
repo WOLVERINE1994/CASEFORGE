@@ -219,6 +219,142 @@ const recorderInitScript = () => {
   const textOf = (element) =>
     (element?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120);
 
+  const recorderUiRoot = document.createElement("div");
+  recorderUiRoot.setAttribute("data-caseforge-recorder-ui", "true");
+  recorderUiRoot.innerHTML = `
+    <style>
+      [data-caseforge-recorder-ui] {
+        all: initial;
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      [data-caseforge-recorder-badge] {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 2147483647;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 999px;
+        background: rgba(10, 15, 28, 0.94);
+        color: #ffffff;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.24);
+        padding: 10px 14px;
+        font: 700 13px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+        pointer-events: none;
+      }
+      [data-caseforge-recorder-badge]::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #22c55e;
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.65);
+        animation: caseforge-recorder-pulse 1.3s infinite;
+      }
+      [data-caseforge-hover-box] {
+        position: fixed;
+        z-index: 2147483646;
+        border: 2px solid #10b981;
+        border-radius: 8px;
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.18);
+        pointer-events: none;
+        display: none;
+        transition: transform 80ms ease, width 80ms ease, height 80ms ease;
+      }
+      [data-caseforge-hover-label] {
+        position: absolute;
+        left: -2px;
+        top: -30px;
+        max-width: 260px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        border-radius: 8px;
+        background: #047857;
+        color: #ffffff;
+        padding: 5px 8px;
+        font: 700 12px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+      [data-caseforge-capture-toast] {
+        position: fixed;
+        right: 18px;
+        bottom: 68px;
+        z-index: 2147483647;
+        border-radius: 12px;
+        background: #ecfdf5;
+        color: #065f46;
+        border: 1px solid #a7f3d0;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+        padding: 9px 12px;
+        font: 800 12px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+        pointer-events: none;
+        opacity: 0;
+        transform: translateY(8px);
+        transition: opacity 150ms ease, transform 150ms ease;
+      }
+      [data-caseforge-capture-toast].is-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      @keyframes caseforge-recorder-pulse {
+        70% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+      }
+    </style>
+    <div data-caseforge-hover-box><div data-caseforge-hover-label></div></div>
+    <div data-caseforge-capture-toast>Captured step</div>
+    <div data-caseforge-recorder-badge>CaseForge recording</div>
+  `;
+  document.documentElement.appendChild(recorderUiRoot);
+
+  const hoverBox = recorderUiRoot.querySelector("[data-caseforge-hover-box]");
+  const hoverLabel = recorderUiRoot.querySelector("[data-caseforge-hover-label]");
+  const captureToast = recorderUiRoot.querySelector("[data-caseforge-capture-toast]");
+  let captureToastTimer = 0;
+
+  const stepLabel = {
+    click: "Captured click",
+    fill: "Captured fill",
+    select: "Captured select",
+    hover: "Captured hover",
+    press: "Captured key",
+    "assert-text": "Captured text check",
+    "assert-image": "Captured image check",
+    "assert-a11y": "Captured accessibility scan",
+    "assert-label": "Captured label check",
+    "assert-focus": "Captured focus check",
+    navigate: "Captured navigation",
+  };
+
+  const showCaptured = (type) => {
+    if (!captureToast) return;
+    captureToast.textContent = stepLabel[type] || "Captured step";
+    captureToast.classList.add("is-visible");
+    win.clearTimeout(captureToastTimer);
+    captureToastTimer = win.setTimeout(() => {
+      captureToast.classList.remove("is-visible");
+    }, 900);
+  };
+
+  const updateHover = (element) => {
+    if (!hoverBox || !hoverLabel || !element || recorderUiRoot.contains(element)) {
+      return;
+    }
+    const rect = element.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) {
+      hoverBox.style.display = "none";
+      return;
+    }
+    hoverBox.style.display = "block";
+    hoverBox.style.left = `${Math.max(0, rect.left)}px`;
+    hoverBox.style.top = `${Math.max(0, rect.top)}px`;
+    hoverBox.style.width = `${rect.width}px`;
+    hoverBox.style.height = `${rect.height}px`;
+    hoverLabel.textContent = readLabel(element) || element.tagName.toLowerCase();
+  };
+
   const readLabel = (element) => {
     if (!element) return "";
     const ariaLabel = element.getAttribute("aria-label");
@@ -312,6 +448,7 @@ const recorderInitScript = () => {
 
   const invoke = (payload) => {
     try {
+      showCaptured(payload.type);
       win.__caseforgeRecord?.({
         ...payload,
         url: location.href,
@@ -328,6 +465,9 @@ const recorderInitScript = () => {
     (event) => {
       lastPointerTarget =
         event.target instanceof Element ? event.target : lastPointerTarget;
+      if (lastPointerTarget) {
+        updateHover(lastPointerTarget);
+      }
     },
     true
   );
