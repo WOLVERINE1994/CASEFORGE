@@ -145,8 +145,8 @@ const readJson = async <T,>(response: Response): Promise<T> => {
   } catch {
     throw new Error(
       /^<!doctype html>|^<html/i.test(raw.trim())
-        ? "Project API returned a sign-in or error page instead of JSON."
-        : "Project API returned an invalid response."
+        ? "API returned a sign-in or error page instead of JSON."
+        : "API returned an invalid response."
     );
   }
 };
@@ -1369,28 +1369,24 @@ export default function AutomationStudioClient({
           />
           <button
             type="button"
-            onClick={() => void startBrowserRecorder()}
-            disabled={isBrowserStarting}
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-950 disabled:cursor-wait disabled:text-zinc-500"
-          >
-            {isBrowserStarting ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-950" />
-            ) : null}
-            {isBrowserStarting ? "Opening..." : "Open Browser"}
-          </button>
-          <button
-            type="button"
             onClick={() =>
               isRecording
                 ? void stopBrowserRecorder()
                 : void startBrowserRecorder()
             }
             disabled={isBrowserStarting}
-            className={`h-10 rounded-xl px-3 text-sm font-semibold ${
+            className={`inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:cursor-wait disabled:opacity-70 ${
               isRecording ? "bg-rose-600 text-white" : "bg-zinc-950 text-white"
             }`}
           >
-            {isRecording ? "Record On" : "Record"}
+            {isBrowserStarting ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+            ) : null}
+            {isBrowserStarting
+              ? "Opening..."
+              : isRecording
+                ? "Stop Recording"
+                : "Record"}
           </button>
           <button
             type="button"
@@ -1406,13 +1402,6 @@ export default function AutomationStudioClient({
             className="h-10 rounded-xl bg-emerald-700 px-3 text-sm font-semibold text-white"
           >
             Run
-          </button>
-          <button
-            type="button"
-            onClick={() => void stopBrowserRecorder()}
-            className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-950"
-          >
-            Stop
           </button>
         </header>
 
@@ -1497,7 +1486,7 @@ export default function AutomationStudioClient({
                 <p className="mt-2 max-w-lg text-sm text-zinc-500">
                   {browserStatus === "recording"
                     ? "Use the opened Chromium window. Click, type, select, navigate, and press Ctrl+Alt+T/I/A/L/F to capture assertions."
-                    : "Open Browser launches a local Playwright Chromium window and syncs recorded commands into this timeline."}
+                    : "Record launches a local Playwright Chromium window and syncs captured commands into this timeline."}
                 </p>
                 <div className="mt-5 flex flex-wrap justify-center gap-2">
                   {recorderCommandTypes.map((type) => (

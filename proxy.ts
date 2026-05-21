@@ -29,7 +29,9 @@ const allowPublicWorkspace =
 const clerkProxy = clerkMiddleware(async (auth, request) => {
   const pathname = request.nextUrl.pathname;
   const isPublicWorkspaceRoute =
-    pathname.startsWith("/projects") || pathname.startsWith("/api/projects");
+    pathname.startsWith("/projects") ||
+    pathname.startsWith("/api/projects") ||
+    pathname.startsWith("/api/automation/browser");
 
   if (allowPublicWorkspace && isPublicWorkspaceRoute) {
     return;
