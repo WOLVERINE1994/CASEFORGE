@@ -11,12 +11,12 @@ const commandName = {
   fill: "Fill",
   select: "Select",
   hover: "Hover",
-  press: "Key Press",
-  "assert-text": "Assert Text",
-  "assert-image": "Assert Image",
+  press: "Press Key",
+  "assert-text": "Verify Text",
+  "assert-image": "Verify Image",
   "assert-a11y": "Accessibility Scan",
-  "assert-label": "Label / Name Assert",
-  "assert-focus": "Keyboard Focus Assert",
+  "assert-label": "Verify Label / Name",
+  "assert-focus": "Verify Keyboard Focus",
   "run-action": "Run Action",
 };
 
@@ -435,7 +435,7 @@ const closeRuntime = async () => {
   if (session && session.status !== "failed") {
     session.status = "stopped";
     session.updatedAt = Date.now();
-    session.logs = ["Recorder stopped.", ...session.logs];
+    session.logs = ["Recording stopped.", ...session.logs];
   }
 
   await state.browser?.close().catch(() => undefined);
@@ -452,8 +452,8 @@ const getRecorderSnapshot = (session, cursor = 0) => ({
   commands: session.commands.slice(Number.isFinite(cursor) ? cursor : 0),
   logs: session.logs,
   agent: {
-    name: "CaseForge Local Agent",
-    version: "0.1.0",
+    name: "CaseForge Companion",
+    version: "0.1.2",
   },
 });
 
@@ -488,8 +488,8 @@ const startRecorder = async (body) => {
     currentUrl: startUrl,
     commands: [],
     logs: [
-      "CaseForge Local Agent connected.",
-      "Use the opened browser normally. Click, type, select, navigate, and use Ctrl+Alt+T/I/A/L/F assertions.",
+      "CaseForge Companion connected.",
+      "Use the browser normally. Click, type, select, navigate, and add checkpoints when needed.",
     ],
   };
 
@@ -541,8 +541,8 @@ const server = createServer(async (req, res) => {
         200,
         {
           ok: true,
-          name: "CaseForge Local Agent",
-          version: "0.1.0",
+          name: "CaseForge Companion",
+          version: "0.1.2",
           activeSessionId: state.session?.id ?? null,
           status: state.session?.status ?? "idle",
         },
@@ -558,7 +558,7 @@ const server = createServer(async (req, res) => {
         sendJson(
           res,
           404,
-          { error: "Recorder session is not active." },
+          { error: "Browser session is not active." },
           origin
         );
         return;
@@ -583,7 +583,7 @@ const server = createServer(async (req, res) => {
             status: "stopped",
             cursor: session?.commands.length ?? 0,
             commands: session?.commands ?? [],
-            logs: session?.logs ?? ["Recorder stopped."],
+            logs: session?.logs ?? ["Recording stopped."],
           },
           origin
         );
@@ -600,7 +600,7 @@ const server = createServer(async (req, res) => {
     const message =
       error instanceof Error && error.message.trim()
         ? error.message
-        : "CaseForge Local Agent failed.";
+        : "CaseForge Companion could not complete the request.";
     if (state.session) {
       state.session.status = "failed";
       state.session.logs = [message, ...state.session.logs];
@@ -611,8 +611,8 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`CaseForge Local Agent listening at http://${HOST}:${PORT}`);
-  console.log("Keep this window open while recording or replaying browser automation.");
+  console.log(`CaseForge Companion ready at http://${HOST}:${PORT}`);
+  console.log("Keep this window open while recording or replaying scenarios.");
 });
 
 const shutdown = async () => {

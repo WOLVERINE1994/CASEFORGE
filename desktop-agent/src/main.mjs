@@ -50,7 +50,7 @@ const checkHealth = async () => {
     const payload = await response.json();
     return { ok: true, payload };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Agent is not reachable." };
+    return { ok: false, message: error instanceof Error ? error.message : "Companion is not reachable." };
   }
 };
 
@@ -78,14 +78,14 @@ const startAgent = async () => {
   const existingHealth = await checkHealth();
   if (existingHealth.ok) {
     externalAgentDetected = true;
-    pushLog("info", `Existing CaseForge Agent detected at ${HEALTH_URL}.`);
+    pushLog("info", "Existing CaseForge Companion detected.");
     return getStatus();
   }
 
   externalAgentDetected = false;
   const scriptPath = getAgentScriptPath();
 
-  pushLog("info", `Starting CaseForge Agent on ${AGENT_HOST}:${AGENT_PORT}.`);
+  pushLog("info", "Starting CaseForge Companion.");
 
   agentProcess = spawn(process.execPath, [scriptPath], {
     env: {
@@ -102,7 +102,7 @@ const startAgent = async () => {
   agentProcess.stderr?.on("data", (chunk) => pushLog("error", chunk.toString()));
   agentProcess.on("error", (error) => pushLog("error", error.message));
   agentProcess.on("exit", (code, signal) => {
-    pushLog("info", `Agent stopped${code === null ? "" : ` with code ${code}`}${signal ? ` (${signal})` : ""}.`);
+    pushLog("info", `Companion stopped${code === null ? "" : ` with code ${code}`}${signal ? ` (${signal})` : ""}.`);
     agentProcess = undefined;
     mainWindow?.webContents.send("agent:status", {
       running: false,
@@ -121,11 +121,11 @@ const startAgent = async () => {
 
 const stopAgent = async () => {
   if (!agentProcess) {
-    pushLog("info", externalAgentDetected ? "Agent is running outside this app; leaving it untouched." : "Agent is already stopped.");
+    pushLog("info", externalAgentDetected ? "Companion is already running; leaving it untouched." : "Companion is already stopped.");
     return getStatus();
   }
 
-  pushLog("info", "Stopping CaseForge Agent.");
+  pushLog("info", "Stopping CaseForge Companion.");
   agentProcess.kill();
   agentProcess = undefined;
   await new Promise((resolve) => setTimeout(resolve, 500));
@@ -138,7 +138,7 @@ const createWindow = () => {
     height: 700,
     minWidth: 860,
     minHeight: 620,
-    title: "CaseForge Agent",
+    title: "CaseForge Companion",
     backgroundColor: "#f6f8fb",
     webPreferences: {
       preload: path.join(app.getAppPath(), "src", "preload.mjs"),

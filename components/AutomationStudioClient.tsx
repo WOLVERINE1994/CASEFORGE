@@ -74,6 +74,24 @@ const getRecorderEndpoint = (query?: URLSearchParams) => {
 const getAgentOfflineMessage = () =>
   "Browser connection is not ready. Open the CaseForge desktop companion, then start recording again.";
 
+const getRecorderStartErrorMessage = (rawText: string) => {
+  if (
+    !isBrowserOnLocalCaseForge() &&
+    /(^|\b)not found\b|unknown caseforge agent route/i.test(rawText)
+  ) {
+    return "The browser connection is using an older CaseForge companion. Close the old companion or recorder, install the latest CaseForge Companion, then click Record again.";
+  }
+
+  if (
+    !isBrowserOnLocalCaseForge() &&
+    /failed to fetch|networkerror|load failed/i.test(rawText)
+  ) {
+    return getAgentOfflineMessage();
+  }
+
+  return rawText;
+};
+
 const navItems: Array<{
   key: AutomationStudioSection;
   label: string;
@@ -602,11 +620,7 @@ export default function AutomationStudioClient({
         error instanceof Error && error.message.trim()
           ? error.message
           : "Could not open the browser session.";
-      const text =
-        !isBrowserOnLocalCaseForge() &&
-        /failed to fetch|networkerror|load failed/i.test(rawText)
-          ? getAgentOfflineMessage()
-          : rawText;
+      const text = getRecorderStartErrorMessage(rawText);
       pushActivity(text);
       setMessage(text);
     } finally {
