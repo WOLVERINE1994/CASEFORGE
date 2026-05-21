@@ -368,6 +368,10 @@ export default function AutomationStudioClient({
       ),
     [project?.automationV2Actions]
   );
+  const actionById = useMemo(
+    () => Object.fromEntries(actions.map((action) => [action.id, action])),
+    [actions]
+  );
   const runs = useMemo(
     () =>
       [...(project?.automationV2Runs ?? [])].sort(
@@ -924,10 +928,12 @@ export default function AutomationStudioClient({
 
     const now = Date.now();
     const actionId = crypto.randomUUID();
+    const actionNameText =
+      actionName.trim() || `Reusable Action ${actions.length + 1}`;
     const action: AutomationV2Action = {
       id: actionId,
       projectId: project.id,
-      name: actionName.trim() || `Reusable Action ${actions.length + 1}`,
+      name: actionNameText,
       description:
         actionDescription.trim() ||
         `Created from ${groupedCommands.length} selected workflow step${groupedCommands.length === 1 ? "" : "s"}.`,
@@ -943,17 +949,58 @@ export default function AutomationStudioClient({
       createdAt: now,
       updatedAt: now,
     };
+    const firstSelectedIndex = selectedCommands.findIndex((command) =>
+      selectedCommandIds.includes(command.id)
+    );
+    const actionCommand: AutomationV2Command = {
+      id: crypto.randomUUID(),
+      scenarioId: selectedScenario.id,
+      order: Math.max(0, firstSelectedIndex),
+      type: "run-action",
+      name: actionNameText,
+      description: `Reusable Action with ${groupedCommands.length} step${groupedCommands.length === 1 ? "" : "s"}.`,
+      actionId,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextScenarioCommands = selectedCommands
+      .flatMap((command, index) => {
+        if (index === firstSelectedIndex) {
+          return [actionCommand];
+        }
+        if (selectedCommandIds.includes(command.id)) {
+          return [];
+        }
+        return [command];
+      })
+      .map((command, index) => ({
+        ...command,
+        order: index,
+        updatedAt: command.id === actionCommand.id ? now : command.updatedAt,
+      }));
 
     await persistProject({
       ...project,
       automationV2Actions: [action, ...(project.automationV2Actions ?? [])],
+      automationV2Scenarios: (project.automationV2Scenarios ?? []).map((scenario) =>
+        scenario.id === selectedScenario.id
+          ? {
+              ...scenario,
+              commands: nextScenarioCommands,
+              status: "ready",
+              updatedAt: now,
+            }
+          : scenario
+      ),
       updatedAt: now,
     });
-    setSelectedCommandIds([]);
+    setSelectedCommandIds([actionCommand.id]);
+    setActiveCommandId(actionCommand.id);
     setActionModalOpen(false);
     setActionName("");
     setActionDescription("");
-    pushActivity(`created action ${action.name} from ${groupedCommands.length} step${groupedCommands.length === 1 ? "" : "s"}`);
+    pushActivity(`created action ${action.name} and replaced selected steps`);
   }, [
     actionDescription,
     actionName,
@@ -1571,7 +1618,12 @@ export default function AutomationStudioClient({
               </div>
             </div>
             <div className="space-y-1 p-2">
-              {selectedCommands.map((command, index) => (
+              {selectedCommands.map((command, index) => {
+                const linkedAction =
+                  command.type === "run-action"
+                    ? actionById[command.actionId ?? ""]
+                    : undefined;
+                return (
                 <div
                   key={command.id}
                   role="button"
@@ -1624,19 +1676,30 @@ export default function AutomationStudioClient({
                     {index + 1}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold">{command.name}</span>
+                    <span className="block truncate font-semibold">
+                      {linkedAction?.name ?? command.name}
+                    </span>
                     <span className="mt-1 block truncate text-xs text-zinc-500">
-                      {command.url ||
-                        command.locator?.value ||
-                        command.inputValue ||
-                        "No target configured"}
+                      {linkedAction
+                        ? `${linkedAction.commands.length} reusable step${linkedAction.commands.length === 1 ? "" : "s"}`
+                        : command.url ||
+                          command.locator?.value ||
+                          command.inputValue ||
+                          "No target configured"}
                     </span>
                   </span>
-                  <span className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-600">
-                    Step
+                  <span
+                    className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ${
+                      command.type === "run-action"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-zinc-100 text-zinc-600"
+                    }`}
+                  >
+                    {command.type === "run-action" ? "Action" : "Step"}
                   </span>
                 </div>
-              ))}
+                );
+              })}
               {selectedCommands.length === 0 ? (
                 <p className="px-3 py-8 text-center text-sm text-zinc-500">
                   Open the browser and perform the flow. Visual steps will appear here automatically.
