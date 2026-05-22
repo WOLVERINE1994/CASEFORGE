@@ -104,7 +104,6 @@ const navItems: Array<{
   { key: "suites", label: "Suites", href: "suites" },
   { key: "scenarios", label: "Scenarios", href: "scenarios" },
   { key: "actions", label: "Actions", href: "actions" },
-  { key: "runs", label: "Playback", href: "runs" },
 ];
 
 const commandLabels: Record<AutomationV2CommandType, string> = {
@@ -898,11 +897,11 @@ export default function AutomationStudioClient({
       finishedAt: now + Math.max(200, selectedCommands.length * 120),
       logs: selectedCommands.length
         ? [
-            `Playback started for ${selectedScenario.name}`,
+            `Run started for ${selectedScenario.name}`,
             `Completed ${selectedCommands.length} workflow step${selectedCommands.length === 1 ? "" : "s"}`,
-            "Visual playback completed successfully.",
+            "Visual run completed successfully.",
           ]
-        : ["Playback paused because the scenario has no visual steps."],
+        : ["Run paused because the scenario has no visual steps."],
       commandResults: results,
     };
 
@@ -916,7 +915,7 @@ export default function AutomationStudioClient({
       automationV2Runs: [run, ...(project.automationV2Runs ?? [])],
       updatedAt: now,
     });
-    pushActivity(`playback finished: ${run.status}`);
+    pushActivity(`run finished: ${run.status}`);
   }, [persistProject, project, pushActivity, selectedCommands, selectedScenario]);
 
   const convertSelectionToAction = useCallback(async () => {
@@ -1218,7 +1217,7 @@ export default function AutomationStudioClient({
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-zinc-600">
             Scenarios start from browser interactions. Visual steps become
-            reusable Actions, and playback stays lightweight.
+            reusable Actions, and run history stays lightweight.
           </p>
         </div>
         <button
@@ -1235,12 +1234,11 @@ export default function AutomationStudioClient({
           Download Companion
         </a>
       </div>
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-3">
         {[
           ["Suites", suites.length],
           ["Scenarios", scenarios.length],
           ["Actions", actions.length],
-          ["Playback", runs.length],
         ].map(([label, value]) => (
           <div key={String(label)} className="rounded-2xl bg-white px-4 py-4">
             <p className="text-xs font-medium text-zinc-500">{label}</p>
@@ -1412,9 +1410,9 @@ export default function AutomationStudioClient({
   const renderRuns = () => (
     <div className="p-6">
       <div className="mb-4">
-        <h1 className="text-2xl font-semibold">Playback</h1>
+        <h1 className="text-2xl font-semibold">Runs</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Lightweight playback history and activity notes.
+          Lightweight run history and activity notes.
         </p>
       </div>
       <div className="overflow-hidden rounded-2xl bg-white">
@@ -1445,7 +1443,7 @@ export default function AutomationStudioClient({
             {runs.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
-                  Run a scenario to create playback activity.
+                  Run a scenario to create activity history.
                 </td>
               </tr>
             ) : null}
