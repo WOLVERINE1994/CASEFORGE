@@ -1576,17 +1576,31 @@ export default function AutomationStudioClient({
           </a>
         </header>
 
-        <section className="grid min-h-0 grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="min-h-0 overflow-y-auto border-r border-zinc-200 bg-white">
+        <section className="min-h-0 bg-white">
+          <aside className="min-h-0 h-full overflow-y-auto bg-white">
             <div className="space-y-3 border-b border-zinc-200 px-4 py-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                  Workflow Steps
-                </p>
-                <h2 className="text-sm font-semibold">{selectedScenario.name}</h2>
-                <p className="mt-1 text-xs text-zinc-500">
-                  Select steps to combine them into a reusable Action.
-                </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                    Workflow Steps
+                  </p>
+                  <h2 className="text-sm font-semibold">{selectedScenario.name}</h2>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Select steps to combine them into a reusable Action.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-700">
+                    {browserStatus === "recording" ? "Recording" : "Ready"} ·{" "}
+                    {selectedCommands.length} step
+                    {selectedCommands.length === 1 ? "" : "s"}
+                  </div>
+                  {browserConnectionLabel ? (
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {browserConnectionLabel}
+                    </p>
+                  ) : null}
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -1617,7 +1631,7 @@ export default function AutomationStudioClient({
                 </span>
               </div>
             </div>
-            <div className="space-y-1 p-2">
+            <div className="space-y-2 p-4">
               {selectedCommands.map((command, index) => {
                 const linkedAction =
                   command.type === "run-action"
@@ -1701,88 +1715,19 @@ export default function AutomationStudioClient({
                 );
               })}
               {selectedCommands.length === 0 ? (
-                <p className="px-3 py-8 text-center text-sm text-zinc-500">
-                  Open the browser and perform the flow. Visual steps will appear here automatically.
-                </p>
+                <div className="flex min-h-[45vh] items-center justify-center rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-6 py-12 text-center">
+                  <div>
+                    <p className="text-base font-semibold text-zinc-950">
+                      Start recording to build this workflow.
+                    </p>
+                    <p className="mt-2 text-sm text-zinc-500">
+                      Open the browser, perform the flow, and visual steps will appear here automatically.
+                    </p>
+                  </div>
+                </div>
               ) : null}
             </div>
           </aside>
-
-          <section className="min-h-0 bg-zinc-100 p-4">
-            <div className="flex h-full flex-col justify-between rounded-2xl border border-zinc-200 bg-white p-5">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
-                  Recorder Status
-                </p>
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <span
-                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
-                      browserStatus === "recording"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-zinc-100 text-zinc-700"
-                    }`}
-                  >
-                    <span
-                      className={`h-2 w-2 rounded-full ${
-                        browserStatus === "recording"
-                          ? "animate-pulse bg-emerald-500"
-                          : "bg-zinc-400"
-                      }`}
-                    />
-                    {browserStatus === "recording" ? "Recording" : "Ready"}
-                  </span>
-                  <span className="text-sm text-zinc-500">
-                    {browserConnectionLabel ||
-                      (isBrowserOnLocalCaseForge()
-                        ? "Browser connection ready"
-                        : "Desktop companion ready")}
-                  </span>
-                </div>
-                <h3 className="mt-6 max-w-xl text-2xl font-semibold tracking-tight text-zinc-950">
-                  Use the opened browser window. Captured steps appear in the timeline.
-                </h3>
-                <p className="mt-2 max-w-xl text-sm text-zinc-500">
-                  This area now stays lightweight because the real interaction happens in Chrome or Edge.
-                </p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl bg-zinc-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-400">
-                    Steps
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold text-zinc-950">
-                    {selectedCommands.length}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-zinc-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-400">
-                    Selected
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold text-zinc-950">
-                    {selectedCommandIds.length}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-zinc-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-400">
-                    Actions
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold text-zinc-950">
-                    {actions.length}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-400">
-                  Latest Activity
-                </p>
-                <p className="mt-2 text-sm font-medium text-zinc-700">
-                  {activityLines[0] ?? "Ready"}
-                </p>
-              </div>
-            </div>
-          </section>
         </section>
 
         <footer className="border-t border-zinc-200 bg-zinc-950 text-xs text-zinc-300">
