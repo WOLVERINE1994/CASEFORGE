@@ -12,6 +12,8 @@ import type { Project } from "../../utils/workspace";
 import { formatUtcDate } from "../../utils/date-format";
 import { buildAutomationCandidateInsights } from "../../utils/test-case-management";
 
+export const dynamic = "force-dynamic";
+
 const projectHref = (projectKey: string | undefined, projectId: string) =>
   `/projects/${encodeURIComponent(projectKey?.trim() || projectId)}`;
 
