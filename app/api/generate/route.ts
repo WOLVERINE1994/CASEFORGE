@@ -551,6 +551,8 @@ IMPORTANT RULES:
 - Use 3 to 6 steps unless the requirement genuinely needs fewer or more
 - Expected Result must describe the final observable outcome in one concise sentence
 - Test Data should include realistic example inputs when they help execution; otherwise use None
+- Never use generic Test Data phrases such as "valid business input", "invalid or incomplete input", "minimum, maximum, and empty values", or "standard browser session"
+- For form stories, Test Data must name concrete field values, such as realistic names, emails, phone numbers, passwords, dates, dropdown selections, checkbox states, and optional field values
 - Do not repeat near-identical test cases
 - Each test case should be realistic and distinct
 - Decide the appropriate number of test cases based on requirement scope and complexity

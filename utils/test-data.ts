@@ -16,8 +16,25 @@ const addUnique = (items: string[], value: string) => {
   }
 };
 
+const isWeakTestData = (value?: string) => {
+  const normalized = value?.trim().toLowerCase() ?? "";
+
+  if (!normalized || normalized === "none") {
+    return true;
+  }
+
+  return [
+    "valid business input",
+    "invalid or incomplete input",
+    "minimum, maximum, and empty values",
+    "standard browser session",
+    "valid user inputs",
+    "sample qa value",
+  ].some((phrase) => normalized.includes(phrase));
+};
+
 export const suggestTestData = (row: TestCaseRow) => {
-  if (row.testData?.trim()) {
+  if (row.testData?.trim() && !isWeakTestData(row.testData)) {
     return row.testData.trim();
   }
 
@@ -32,6 +49,25 @@ export const suggestTestData = (row: TestCaseRow) => {
     .toLowerCase();
 
   const suggestions: string[] = [];
+
+  if (hasPattern(content, /\bsign\s*up\b|\bsignup\b|\bcreate account\b|\bregister\b|\baccount creation\b/)) {
+    addUnique(suggestions, 'First Name: "Sincara"');
+    addUnique(suggestions, 'Last Name: "Glow"');
+    addUnique(suggestions, 'Valid email: "sincara.glow@example.com"');
+    addUnique(suggestions, 'Invalid email: "sincara.glow@"');
+    addUnique(suggestions, 'Mobile Number: "9521314567"');
+    addUnique(suggestions, 'Short Mobile Number: "95213"');
+    addUnique(suggestions, 'Password: "GlowCart@123"');
+    addUnique(suggestions, 'Confirm Password mismatch: "GlowCart@124"');
+    addUnique(suggestions, 'Date of Birth: "1995-08-14"');
+    addUnique(suggestions, 'Gender: "Female"');
+    addUnique(suggestions, 'Skin Profile: "Sensitive"');
+    addUnique(suggestions, 'Beauty Interest: "Skincare"');
+    addUnique(suggestions, 'Referral Code: "GLOW10"');
+    addUnique(suggestions, 'Address: "12 Market Street, Mumbai"');
+    addUnique(suggestions, "Terms checkbox: checked/unchecked");
+    addUnique(suggestions, "Newsletter checkbox: checked/unchecked");
+  }
 
   if (hasPattern(content, /\bemail\b/)) {
     addUnique(suggestions, 'Valid email: "qa.user@example.com"');
@@ -104,9 +140,9 @@ export const suggestTestData = (row: TestCaseRow) => {
   }
 
   if (suggestions.length === 0) {
-    suggestions.push('Happy-path data set: "valid business input"');
-    suggestions.push('Negative-path data set: "invalid or incomplete input"');
-    suggestions.push("Boundary data set: minimum, maximum, and empty values");
+    suggestions.push('Valid text: "Sincara QA"');
+    suggestions.push('Invalid text: ""');
+    suggestions.push('Boundary text: "A" and 255-character value');
   }
 
   return suggestions.join("; ");
