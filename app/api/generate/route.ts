@@ -4,6 +4,23 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
+const GENERATOR_VERSION = "server-fallback-v2";
+
+const generationResponse = (body: Record<string, unknown>, init?: ResponseInit) =>
+  Response.json(
+    {
+      generatorVersion: GENERATOR_VERSION,
+      ...body,
+    },
+    {
+      ...init,
+      headers: {
+        ...(init?.headers ?? {}),
+        "x-caseforge-generator-version": GENERATOR_VERSION,
+      },
+    },
+  );
+
 const getModeInstructions = (mode: string) => {
   switch (mode) {
     case "negative":
@@ -534,20 +551,20 @@ Do not use markdown or commentary.`,
       result = buildFallbackRows(requirement, mode, caseTarget.target);
     }
 
-    return Response.json({ result });
+    return generationResponse({ result });
   } catch (error) {
     console.error("AI ERROR:", error);
 
     if (requirement) {
       const fallbackTarget = generationCaseTarget(requirement, coverage).target;
-      return Response.json({
+      return generationResponse({
         result: buildFallbackRows(requirement, mode, fallbackTarget),
         warning:
           "AI request failed; returned deterministic fallback coverage. Check GROQ_API_KEY in the server environment.",
       });
     }
 
-    return Response.json(
+    return generationResponse(
       { result: "Error generating test cases. Check server logs." },
       { status: 500 }
     );
