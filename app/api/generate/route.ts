@@ -186,6 +186,146 @@ const buildFallbackCases = (requirement: string, mode: string, coverage: string)
       .join("\n");
   }
 
+  const isSignupStory = /\bsign\s*up\b|\bsignup\b|\bcreate account\b|\bregister\b|\baccount is created\b/i.test(
+    requirement
+  );
+
+  if (isSignupStory) {
+    const rows = [
+      [
+        "TC001",
+        "Functional",
+        "Create account opens complete signup form",
+        "User is not signed in; GlowCart entry page is available",
+        "Click Create Account; Review the opened signup form; Check required and optional controls",
+        "The signup form opens and displays the expected required and optional fields.",
+        "First Name; Last Name; Email; Mobile Number; Password; Confirm Password; Date of Birth; Gender; Skin Profile",
+      ],
+      [
+        "TC002",
+        "Negative",
+        "Empty required signup fields block submission",
+        "Signup form is open; Required fields are empty",
+        "Click Submit; Review validation messages beside required fields",
+        "Submission is blocked and required-field validation feedback is shown.",
+        "Required fields left blank",
+      ],
+      [
+        "TC003",
+        "Negative",
+        "Invalid email address is rejected",
+        "Signup form is open; Required non-email fields contain valid values",
+        "Enter an invalid email address; Complete remaining required fields; Select terms consent; Submit the form",
+        "Submission is blocked and the email field shows invalid-format feedback.",
+        "invalid-email",
+      ],
+      [
+        "TC004",
+        "Negative",
+        "Password confirmation mismatch is rejected",
+        "Signup form is open; Required profile fields contain valid values",
+        "Enter a password; Enter a different confirm password; Select terms consent; Submit the form",
+        "Submission is blocked and password mismatch feedback is shown.",
+        "Password=GlowCart@123; Confirm Password=GlowCart@124",
+      ],
+      [
+        "TC005",
+        "Negative",
+        "Short mobile number blocks account creation",
+        "Signup form is open; Required non-phone fields contain valid values",
+        "Enter fewer than 10 digits in Mobile Number; Select terms consent; Submit the form",
+        "Submission is blocked and phone length validation feedback is shown.",
+        "Mobile Number=95213",
+      ],
+      [
+        "TC006",
+        "Negative",
+        "Terms consent is required before signup",
+        "Signup form is open; All required text fields contain valid values",
+        "Leave Terms and Privacy Policy unchecked; Submit the form",
+        "Submission is blocked until the Terms and Privacy Policy checkbox is selected.",
+        "Terms checkbox unchecked",
+      ],
+      [
+        "TC007",
+        "UI",
+        "Dropdown selections save valid signup choices",
+        "Signup form is open; Dropdown option data is available",
+        "Open Gender dropdown; Select a gender; Open Skin Profile dropdown; Select a skin profile; Select a Beauty Interest option if present",
+        "Selected dropdown values remain visible and are included in the signup data.",
+        "Gender=Female; Skin Profile=Sensitive; Beauty Interest=Skincare",
+      ],
+      [
+        "TC008",
+        "Functional",
+        "Optional signup fields do not block submission",
+        "Signup form is open; Required fields contain valid values; Terms consent is selected",
+        "Leave optional fields blank; Leave newsletter unchecked; Submit the form",
+        "The account can be created without optional preferences, referral code, address, or newsletter consent.",
+        "Referral Code blank; Address blank; Newsletter unchecked",
+      ],
+      [
+        "TC009",
+        "UI",
+        "Password visibility toggle shows and hides values",
+        "Signup form is open; Password fields contain entered values",
+        "Click the password visibility toggle; Confirm the value is visible; Click the toggle again; Repeat for Confirm Password",
+        "Password and confirm password values can be shown and hidden without changing the entered text.",
+        "Password=GlowCart@123",
+      ],
+      [
+        "TC010",
+        "Functional",
+        "Sign in link switches from signup",
+        "Signup form is open",
+        "Click Already have account Sign in link; Review the displayed authentication form",
+        "The user is moved from signup to the sign-in flow.",
+        "Existing user path",
+      ],
+      [
+        "TC011",
+        "Functional",
+        "Valid signup creates account successfully",
+        "Signup form is open; User email is not already registered",
+        "Enter all required valid details; Select dropdown values; Select Terms and Privacy Policy; Submit the form",
+        "The account is created and success feedback is shown to the user.",
+        "First Name=Sincara; Last Name=Glow; Email=sincara@example.com; Mobile=9521314567; Password=GlowCart@123",
+      ],
+      [
+        "TC012",
+        "Negative",
+        "Missing date of birth blocks signup",
+        "Signup form is open; Other required fields contain valid values; Terms consent is selected",
+        "Leave Date of Birth empty; Submit the form; Review the date validation feedback",
+        "Submission is blocked and Date of Birth is marked as required.",
+        "Date of Birth blank",
+      ],
+      [
+        "TC013",
+        "Negative",
+        "Missing skin profile blocks signup",
+        "Signup form is open; Other required fields contain valid values; Terms consent is selected",
+        "Leave Skin Profile unselected; Submit the form; Review the dropdown validation feedback",
+        "Submission is blocked and Skin Profile is marked as required.",
+        "Skin Profile unselected",
+      ],
+      [
+        "TC014",
+        "Functional",
+        "Newsletter opt in is saved during signup",
+        "Signup form is open; Required fields contain valid values; Terms consent is selected",
+        "Select the Newsletter checkbox; Submit the form; Review the created account preferences",
+        "The account is created and the newsletter preference is saved as selected.",
+        "Newsletter checked",
+      ],
+    ];
+
+    return rows
+      .slice(0, inferTargetCaseCount(requirement, coverage))
+      .map((row) => row.map(cleanCell).join(" | "))
+      .join("\n");
+  }
+
   const rows = [
     [
       "TC001",
