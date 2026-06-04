@@ -128,6 +128,7 @@ import {
 } from "../utils/reviewer-notification-preferences";
 
 const STORAGE_KEY = "tc_projects_v1";
+const DRAFT_STORAGE_KEY = "tc_workspace_draft_v1";
 
 const parseAutomationApiResponse = async <T,>(response: Response): Promise<T> => {
   const raw = await response.text();
@@ -1418,6 +1419,86 @@ export default function ProjectWorkspace({
   useEffect(() => {
     projectsRef.current = projects;
   }, [projects]);
+
+  useEffect(() => {
+    if (!hasMounted || currentProjectId || initialProjectRef) {
+      return;
+    }
+
+    try {
+      const rawDraft = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (!rawDraft) {
+        return;
+      }
+
+      const draft = JSON.parse(rawDraft) as Partial<Project>;
+      if (typeof draft.input === "string" && !input.trim()) {
+        setInput(draft.input);
+      }
+      if (Array.isArray(draft.rows) && rows.length === 0) {
+        setRows(normalizeRows(draft.rows, draft.generationMode ?? "functional"));
+      }
+      if (draft.generationMode) {
+        setGenerationMode(draft.generationMode);
+      }
+      if (draft.coverageDepth) {
+        setCoverageDepth(draft.coverageDepth);
+      }
+      if (draft.persona) {
+        setPersona(draft.persona);
+      }
+    } catch (error) {
+      console.error("Restore workspace draft error:", error);
+    }
+  }, [currentProjectId, hasMounted, initialProjectRef, input, rows.length]);
+
+  useEffect(() => {
+    if (!hasMounted || currentProjectId || initialProjectRef) {
+      return;
+    }
+
+    try {
+      const hasDraftContent = input.trim() || rows.length > 0;
+      if (!hasDraftContent) {
+        window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+        return;
+      }
+
+      const draft: Partial<Project> = {
+        input,
+        rows: normalizeRows(rows, generationMode),
+        generationMode,
+        coverageDepth,
+        persona,
+        updatedAt: Date.now(),
+      };
+
+      window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    } catch (error) {
+      console.error("Save workspace draft error:", error);
+    }
+  }, [
+    coverageDepth,
+    currentProjectId,
+    generationMode,
+    hasMounted,
+    initialProjectRef,
+    input,
+    persona,
+    rows,
+  ]);
+
+  useEffect(() => {
+    if (!hasMounted || !currentProjectId) {
+      return;
+    }
+
+    try {
+      window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch (error) {
+      console.error("Clear workspace draft error:", error);
+    }
+  }, [currentProjectId, hasMounted]);
 
   useEffect(() => {
     return () => {
