@@ -2,6 +2,7 @@
 import ActiveReviewerBanner from "../../components/ActiveReviewerBanner";
 import AppSidebar from "../../components/AppSidebar";
 import BarChart from "../../components/charts/BarChart";
+import DeleteProjectButton from "../../components/DeleteProjectButton";
 import TrendChart from "../../components/charts/TrendChart";
 import ResponsiveShell from "../../components/ResponsiveShell";
 import {
@@ -1899,6 +1900,10 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                           >
                             Release
                           </Link>
+                          <DeleteProjectButton
+                            projectId={project.id}
+                            projectName={project.name}
+                          />
                         </div>
                       </article>
                     );
