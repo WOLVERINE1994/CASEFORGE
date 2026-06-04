@@ -55,77 +55,77 @@ export const createManualPredictionDraft = (
     case "role-leakage":
       return {
         type: "Negative",
-        title: "Verify unauthorized users cannot access restricted billing actions",
+        title: "Verify unauthorized users cannot access restricted actions",
         preconditions: `Requirement is implemented; ${personaContext}; Accounts with different permissions are available`,
         steps:
-          "Open the billing flow as an allowed user; Confirm the restricted action is visible; Repeat as an unauthorized user; Attempt the same action",
+          "Open the target flow as an allowed user; Confirm the restricted action is visible; Repeat as an unauthorized user; Attempt the same action",
         expectedResult:
           "Authorized access is allowed and unauthorized access is blocked without exposing protected controls or data",
       };
     case "validation-mismatch":
       return {
         type: "Negative",
-        title: "Verify billing updates reject invalid or incomplete input consistently",
+        title: "Verify invalid or incomplete input is rejected consistently",
         preconditions: `Requirement is implemented; ${personaContext}; Validation-triggering fields are identified`,
         steps:
-          "Open the target billing form; Submit with missing mandatory input; Repeat with invalid format; Compare the error handling and blocked action behavior",
+          "Open the target form; Submit with missing mandatory input; Repeat with invalid format; Compare the error handling and blocked action behavior",
         expectedResult:
           "The system rejects invalid data consistently and shows clear validation guidance",
       };
     case "timeout-handling":
       return {
         type: "Negative",
-        title: "Verify billing actions handle timeout or service outage safely",
+        title: "Verify dependent actions handle timeout or service outage safely",
         preconditions:
           `Requirement is implemented; ${personaContext}; A downstream timeout or outage can be simulated`,
         steps:
-          "Trigger the target billing action; Simulate timeout or service unavailability; Observe retry, rollback, and user-visible feedback",
+          "Trigger the target action; Simulate timeout or service unavailability; Observe retry, rollback, and user-visible feedback",
         expectedResult:
-          "The failure is handled safely, the user sees a clear message, and no inconsistent billing state is created",
+          "The failure is handled safely, the user sees a clear message, and no inconsistent state is created",
       };
     case "state-transition":
       return {
         type: "Functional",
-        title: "Verify billing behavior stays consistent across account states",
+        title: "Verify behavior stays consistent across account states",
         preconditions:
           `Requirement is implemented; ${personaContext}; Relevant account states can be prepared`,
         steps:
-          "Prepare the account in one business state; Perform the billing action; Repeat in another state; Compare permissions, visibility, and outcomes",
+          "Prepare the account in one business state; Perform the target action; Repeat in another state; Compare permissions, visibility, and outcomes",
         expectedResult:
-          "Each state enforces the correct billing behavior without stale or contradictory outcomes",
+          "Each state enforces the correct behavior without stale or contradictory outcomes",
       };
     case "stale-ui":
       return {
         type: "UI",
-        title: "Verify dashboard data refreshes after billing changes",
+        title: "Verify visible state refreshes after changes",
         preconditions:
-          `Requirement is implemented; ${personaContext}; Billing data is visible on a dashboard or summary view`,
+          `Requirement is implemented; ${personaContext}; The changed data or success state is visible in the UI`,
         steps:
-          "Open the dashboard; Change billing-related data; Return to the summary view; Refresh or revisit linked pages",
+          "Open the target flow; Complete a state-changing action; Return to the related view; Refresh or revisit linked pages",
         expectedResult:
-          "The latest billing state is reflected consistently across the UI without stale values",
+          "The latest state is reflected consistently across the UI without stale values",
       };
     case "ownership-visibility":
       return {
         type: "Negative",
-        title: "Verify billing data is visible only to the correct account owner",
+        title: "Verify data is visible only to the correct account owner",
         preconditions:
           `Requirement is implemented; ${personaContext}; More than one account or user context is available`,
         steps:
-          "Access billing artifacts as the intended account owner; Attempt to access the same artifacts from another account or direct link; Observe visibility and permissions",
+          "Access protected data as the intended account owner; Attempt to access the same data from another account or direct link; Observe visibility and permissions",
         expectedResult:
-          "Billing data remains scoped to the correct owner and cross-user access is blocked",
+          "Protected data remains scoped to the correct owner and cross-user access is blocked",
       };
     case "persona-gap":
       return {
         type: "Functional",
-        title: `Verify the ${toPersonaLabel(persona).toLowerCase()} journey follows the intended billing behavior`,
+        title: `Verify the ${toPersonaLabel(persona).toLowerCase()} journey follows the intended behavior`,
         preconditions:
           `Requirement is implemented; ${personaContext}; Persona-specific entry conditions are available`,
         steps:
-          "Prepare the selected persona state; Open the billing flow; Attempt the intended journey; Observe messaging, redirects, permissions, and outcomes",
+          "Prepare the selected persona state; Open the target flow; Attempt the intended journey; Observe messaging, redirects, permissions, and outcomes",
         expectedResult:
-          "The selected persona experiences the correct billing journey without missing restrictions or unexpected access",
+          "The selected persona experiences the correct journey without missing restrictions or unexpected access",
       };
     default:
       return {
@@ -204,7 +204,9 @@ const syncPatterns = [
   /\blist\b/,
   /\bhistory\b/,
   /\bsummary\b/,
-  /\bdetails\b/,
+  /\brefresh(?:ed|es)?\b/,
+  /\bsync(?:ed|s)?\b/,
+  /\bcross[- ]page\b/,
   /\bpayment method\b/,
   /\bsubscription\b/,
   /\bupdate\b/,
@@ -295,7 +297,7 @@ export const analyzeBugPredictions = (
         "Multiple actor types or access boundaries are present, which often leads to hidden actions or data leaking across permissions.",
       requirementSignal: findSignalSentence(sentences, rolePatterns),
       suggestedTestFocus:
-        "Verify authorized and unauthorized access, hidden actions, redirects, and restricted billing operations for each actor.",
+        "Verify authorized and unauthorized access, hidden actions, redirects, and restricted operations for each actor.",
       relatedRowIds,
       coverageStatus: toCoverageStatus(relatedRowIds),
     });
@@ -313,7 +315,7 @@ export const analyzeBugPredictions = (
         "The requirement describes business actions but does not clearly define invalid input, missing fields, or rejection behavior.",
       requirementSignal: "No strong validation language was detected in the requirement.",
       suggestedTestFocus:
-        "Probe missing fields, invalid card details, malformed input, and mismatched UI/API validation responses.",
+        "Probe missing fields, invalid formats, malformed input, and mismatched UI/API validation responses.",
       relatedRowIds,
       coverageStatus: toCoverageStatus(relatedRowIds),
     });
@@ -331,7 +333,7 @@ export const analyzeBugPredictions = (
       title: "Timeout handling bug risk",
       severity: "high",
       reason:
-        "External billing or payment behavior is implied, but failure, retry, and outage behavior is still underspecified.",
+        "An external dependency is implied, but failure, retry, and outage behavior is still underspecified.",
       requirementSignal: findSignalSentence(sentences, integrationPatterns),
       suggestedTestFocus:
         "Test service outages, timeouts, retry behavior, rollback safety, and user-facing error states.",
@@ -349,7 +351,7 @@ export const analyzeBugPredictions = (
       title: "State sync issue",
       severity: "medium",
       reason:
-        "State-based access and billing actions often drift between the source state, visible UI, and resulting backend behavior.",
+        "State-based actions often drift between the source state, visible UI, and resulting backend behavior.",
       requirementSignal: findSignalSentence(sentences, statePatterns),
       suggestedTestFocus:
         "Validate state transitions, disabled actions, stale views, and consistency after account status changes.",
@@ -358,17 +360,27 @@ export const analyzeBugPredictions = (
     });
   }
 
-  if (hasSyncSignals && /update|manage|download/.test(normalized)) {
+  const hasExplicitSyncSurface = hasAny(normalized, [
+    /\bdashboard\b/,
+    /\blist\b/,
+    /\bhistory\b/,
+    /\bsummary\b/,
+    /\brefresh(?:ed|es)?\b/,
+    /\bsync(?:ed|s)?\b/,
+    /\bcross[- ]page\b/,
+  ]);
+
+  if (hasSyncSignals && hasExplicitSyncSurface && /\b(update|manage|download|refresh|sync)\b/.test(normalized)) {
     const relatedRowIds = findRelatedRows(syncPatterns);
     predictions.push({
       id: "stale-ui",
       title: "Stale UI or dashboard sync risk",
       severity: "medium",
       reason:
-        "Dashboards, payment methods, and billing history often fail to refresh consistently after writes or downstream changes.",
+        "Dashboard, list, history, or summary views can fail to refresh consistently after writes or downstream changes.",
       requirementSignal: findSignalSentence(sentences, syncPatterns),
       suggestedTestFocus:
-        "Verify dashboard refresh, updated payment details, invoice visibility, and cross-page consistency after changes.",
+        "Verify visible refresh, updated details, and cross-page consistency after changes.",
       relatedRowIds,
       coverageStatus: toCoverageStatus(relatedRowIds),
     });

@@ -20,7 +20,16 @@ test("test generation expands detailed acceptance criteria into broader suites",
 
 test("test generation retries when model returns fewer rows than minimum", () => {
   assert.match(generateRouteSource, /function countGeneratedRows\(result: string\)/);
-  assert.match(generateRouteSource, /generatedRows > 0 && generatedRows < caseTarget\.minimum/);
+  assert.match(generateRouteSource, /generatedRows < caseTarget\.minimum/);
   assert.match(generateRouteSource, /Regenerate the full suite for this requirement with exactly \$\{caseTarget\.target\} meaningful rows/);
   assert.match(generateRouteSource, /Cover the form opening, all required and optional field presence, mandatory validation, invalid email, password mismatch, phone length, terms checkbox/);
+});
+
+test("test generation has deterministic signup fallback when AI under-covers", () => {
+  assert.match(generateRouteSource, /function buildFallbackRows\(requirement: string, mode: string, target: number\)/);
+  assert.match(generateRouteSource, /countGeneratedRows\(result\) < caseTarget\.minimum/);
+  assert.match(generateRouteSource, /Create account opens complete signup form/);
+  assert.match(generateRouteSource, /Invalid email address is rejected/);
+  assert.match(generateRouteSource, /Terms consent is required before signup/);
+  assert.match(generateRouteSource, /Valid signup creates account successfully/);
 });

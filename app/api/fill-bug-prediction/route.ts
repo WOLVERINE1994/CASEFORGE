@@ -63,20 +63,134 @@ const getPersonaInstructions = (persona: string) => {
 
 const predictionPromptMap: Record<string, string> = {
   "role-leakage":
-    "Create missing cases that validate role boundaries, restricted actions, hidden controls, unauthorized access, and cross-permission leakage.",
+    "Create missing cases that validate role boundaries, restricted actions, hidden controls, unauthorized access, and cross-permission leakage for the current requirement.",
   "validation-mismatch":
-    "Create missing cases that validate invalid data, missing mandatory fields, rejected actions, and consistent error behavior.",
+    "Create missing cases that validate invalid data, missing mandatory fields, rejected actions, and consistent error behavior for the current form or flow.",
   "timeout-handling":
-    "Create missing cases that validate service outage handling, timeout behavior, retry logic, rollback safety, and failure messaging.",
+    "Create missing cases that validate service outage handling, timeout behavior, retry logic, rollback safety, and failure messaging where the current requirement implies a downstream dependency.",
   "state-transition":
-    "Create missing cases that validate behavior across business states, including disabled actions, state transitions, and state-specific rules.",
+    "Create missing cases that validate behavior across business states, including disabled actions, state transitions, success state updates, and state-specific rules.",
   "stale-ui":
-    "Create missing cases that validate dashboard refresh, stale data prevention, cross-view consistency, and updated billing state visibility.",
+    "Create missing cases that validate stale UI prevention, success feedback, refreshed visible state, and cross-view consistency for the current requirement. Do not invent billing, payment, invoice, or dashboard behavior unless it appears in the requirement.",
   "ownership-visibility":
-    "Create missing cases that validate invoice ownership, account scoping, direct-link protection, and cross-user visibility controls.",
+    "Create missing cases that validate account scoping, ownership, direct-link protection, and cross-user visibility controls for the current requirement.",
   "persona-gap":
     "Create missing persona-specific cases that validate the selected user journey, including permissions, redirects, restrictions, and visible messaging.",
 };
+
+function countGeneratedRows(result: string) {
+  return result
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^TC\d+\s*\|/.test(line))
+    .filter((line) => line.split("|").length >= 6)
+    .length;
+}
+
+function hasSignupSignals(requirement: string) {
+  return /\bsign\s*up\b|\bsignup\b|\bcreate account\b|\bregister\b|\baccount is created\b/i.test(
+    requirement,
+  );
+}
+
+function buildFallbackPredictionRows(predictionId: string, requirement: string) {
+  const signup = hasSignupSignals(requirement);
+  const genericSubject = signup ? "signup" : "target";
+  const rows: Array<{
+    type: string;
+    title: string;
+    preconditions: string;
+    steps: string;
+    expectedResult: string;
+  }> = [];
+
+  switch (predictionId) {
+    case "validation-mismatch":
+      rows.push(
+        {
+          type: "Negative",
+          title: `${genericSubject} missing mandatory input is rejected`,
+          preconditions: `${signup ? "Signup form" : "Target form"} is open; Required fields are identifiable`,
+          steps:
+            "Leave one or more mandatory fields blank; Attempt to submit; Review validation feedback",
+          expectedResult:
+            "Submission is blocked and the missing mandatory fields show clear validation feedback",
+        },
+        {
+          type: "Negative",
+          title: `${genericSubject} invalid format validation is consistent`,
+          preconditions: `${signup ? "Signup form" : "Target form"} is open; Required fields are available`,
+          steps:
+            "Enter invalid formatted data; Complete other required inputs; Submit the form",
+          expectedResult:
+            "The invalid value is rejected consistently before account or record creation",
+        }
+      );
+      break;
+    case "stale-ui":
+      rows.push(
+        {
+          type: "UI",
+          title: `${genericSubject} success feedback updates visible state`,
+          preconditions: `${signup ? "Signup form" : "Target flow"} is open; Valid data is available`,
+          steps:
+            "Complete the flow successfully; Observe the success feedback; Revisit the related screen or state indicator",
+          expectedResult:
+            "The UI shows the latest successful state without stale or contradictory information",
+        },
+        {
+          type: "Regression",
+          title: `${genericSubject} reopened screen preserves latest status`,
+          preconditions: `${signup ? "Account creation" : "Target action"} has completed successfully`,
+          steps:
+            "Navigate away from the flow; Return to the related screen; Review the displayed status and data",
+          expectedResult:
+            "The reopened screen reflects the latest completed state consistently",
+        }
+      );
+      break;
+    case "state-transition":
+      rows.push({
+        type: "Functional",
+        title: `${genericSubject} state changes after successful completion`,
+        preconditions: `${signup ? "Signup form" : "Target flow"} is open; Valid data is available`,
+        steps:
+          "Complete the primary action; Observe the resulting state; Attempt the next expected user action",
+        expectedResult:
+          "The user reaches the correct post-completion state and the next available action matches the requirement",
+      });
+      break;
+    case "persona-gap":
+      rows.push({
+        type: "Functional",
+        title: `${genericSubject} journey matches selected persona expectations`,
+        preconditions: "Selected persona context is available; Requirement flow is implemented",
+        steps:
+          "Open the flow as the selected persona; Complete the intended journey; Review messaging and allowed actions",
+        expectedResult:
+          "The persona receives the correct journey, messaging, and access for the requirement",
+      });
+      break;
+    default:
+      rows.push({
+        type: "Functional",
+        title: `${genericSubject} risk area has targeted coverage`,
+        preconditions: "Requirement flow is implemented; Relevant test data is available",
+        steps:
+          "Open the target flow; Execute the risk-focused scenario; Observe the outcome",
+        expectedResult:
+          "The predicted risk area behaves correctly for the current requirement",
+      });
+      break;
+  }
+
+  return rows
+    .map(
+      (row, index) =>
+        `TC${String(index + 1).padStart(3, "0")} | ${row.type} | ${row.title} | ${row.preconditions} | ${row.steps} | ${row.expectedResult}`
+    )
+    .join("\n");
+}
 
 export async function POST(req: Request) {
   try {
@@ -168,6 +282,8 @@ IMPORTANT RULES:
 - Keep each row strictly in 6 columns only
 - Avoid adding extra commentary before or after the test cases
 - Generate only new cases that specifically cover the predicted defect zone
+- Keep every case grounded in this requirement text
+- Do not introduce unrelated billing, invoice, payment, dashboard, or admin behavior unless the requirement explicitly mentions it
 - Do not repeat or lightly rephrase existing cases
 - Preserve realistic business relevance
 
@@ -179,6 +295,10 @@ TC001 | Functional | Title | Preconditions item 1; Preconditions item 2 | Step 1
 
     let result = chatCompletion.choices[0]?.message?.content || "";
     result = result.replace(/\*\*/g, "").trim();
+
+    if (countGeneratedRows(result) === 0) {
+      result = buildFallbackPredictionRows(predictionId, requirement);
+    }
 
     return Response.json({ result });
   } catch (error) {
