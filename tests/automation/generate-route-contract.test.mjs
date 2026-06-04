@@ -31,5 +31,14 @@ test("test generation has deterministic signup fallback when AI under-covers", (
   assert.match(generateRouteSource, /Create account opens complete signup form/);
   assert.match(generateRouteSource, /Invalid email address is rejected/);
   assert.match(generateRouteSource, /Terms consent is required before signup/);
+  assert.match(generateRouteSource, /Missing date of birth blocks signup/);
+  assert.match(generateRouteSource, /Newsletter opt in is saved during signup/);
   assert.match(generateRouteSource, /Valid signup creates account successfully/);
+});
+
+test("test generation returns server fallback when AI request fails", () => {
+  assert.match(generateRouteSource, /let requirement = ""/);
+  assert.match(generateRouteSource, /AI request failed; returned deterministic fallback coverage/);
+  assert.match(generateRouteSource, /Check GROQ_API_KEY in the server environment/);
+  assert.match(generateRouteSource, /buildFallbackRows\(requirement, mode, fallbackTarget\)/);
 });

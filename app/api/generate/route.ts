@@ -355,16 +355,20 @@ function buildFallbackRows(requirement: string, mode: string, target: number) {
 }
 
 export async function POST(req: Request) {
+  let requirement = "";
+  let mode = "functional";
+  let coverage = "standard";
+
   try {
     const body = await req.json();
 
-    const requirement =
+    requirement =
       typeof body?.requirement === "string" ? body.requirement.trim() : "";
 
-    const mode =
+    mode =
       typeof body?.mode === "string" ? body.mode : "functional";
 
-    const coverage =
+    coverage =
       typeof body?.coverage === "string" ? body.coverage : "standard";
     const persona =
       typeof body?.persona === "string" ? body.persona : "all";
@@ -533,6 +537,15 @@ Do not use markdown or commentary.`,
     return Response.json({ result });
   } catch (error) {
     console.error("AI ERROR:", error);
+
+    if (requirement) {
+      const fallbackTarget = generationCaseTarget(requirement, coverage).target;
+      return Response.json({
+        result: buildFallbackRows(requirement, mode, fallbackTarget),
+        warning:
+          "AI request failed; returned deterministic fallback coverage. Check GROQ_API_KEY in the server environment.",
+      });
+    }
 
     return Response.json(
       { result: "Error generating test cases. Check server logs." },
