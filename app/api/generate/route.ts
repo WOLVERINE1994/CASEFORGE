@@ -58,6 +58,95 @@ const getPersonaInstructions = (persona: string) => {
   }
 };
 
+const clamp = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
+
+function requirementSection(requirement: string, heading: string, stopHeadings: string[]) {
+  const lines = requirement.split(/\r?\n/);
+  const startIndex = lines.findIndex((line) =>
+    new RegExp(`^\\s*${heading}\\s*:?\\s*$`, "i").test(line),
+  );
+  if (startIndex < 0) return "";
+  const stopIndex = lines.findIndex((line, index) => {
+    if (index <= startIndex) return false;
+    return stopHeadings.some((stopHeading) =>
+      new RegExp(`^\\s*${stopHeading}\\s*:?\\s*$`, "i").test(line),
+    );
+  });
+  return lines.slice(startIndex + 1, stopIndex < 0 ? undefined : stopIndex).join("\n");
+}
+
+function countAcceptanceCriteria(requirement: string) {
+  const section = requirementSection(requirement, "Acceptance Criteria", [
+    "Definition of Done",
+    "DoD",
+    "Scope",
+    "Description",
+  ]);
+  const source = section || requirement;
+  return source
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^[-*\d.)\s]+/, "").trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !/^(acceptance criteria|definition of done|scope|description|story)$/i.test(line))
+    .length;
+}
+
+function countFormFields(requirement: string) {
+  const fieldLikeLines = requirement
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^[-*\d.)\s]+/, "").trim())
+    .filter((line) => line.length >= 3 && line.length <= 42)
+    .filter((line) => !/[.!?]$/.test(line))
+    .filter((line) =>
+      /\b(field|name|email|mobile|phone|password|date|gender|dropdown|profile|checkbox|code|address|newsletter|interest)\b/i.test(
+        line,
+      ),
+    );
+  return new Set(fieldLikeLines.map((line) => line.toLowerCase())).size;
+}
+
+function countValidationRules(requirement: string) {
+  const matches = requirement.match(
+    /\bcannot submit\b|\binvalid\b|\brequired\b|\bmust\b|\bunless\b|\bnot match\b|\bless than\b|\bminimum\b|\bmaximum\b|\bcheckbox\b|\btoggle\b|\bsuccessful\b|\bswitch\b/gi,
+  );
+  return matches?.length ?? 0;
+}
+
+function generationCaseTarget(requirement: string, coverage: string) {
+  const criteriaCount = countAcceptanceCriteria(requirement);
+  const fieldCount = countFormFields(requirement);
+  const validationCount = countValidationRules(requirement);
+  const complexityScore =
+    criteriaCount + Math.ceil(fieldCount / 4) + Math.ceil(validationCount / 2);
+
+  const bounds =
+    coverage === "basic"
+      ? { min: 4, max: 8, ratio: 0.55 }
+      : coverage === "thorough"
+        ? { min: 10, max: 22, ratio: 1 }
+        : { min: 6, max: 16, ratio: 0.8 };
+
+  const target = clamp(Math.ceil(complexityScore * bounds.ratio), bounds.min, bounds.max);
+  const minimum = clamp(Math.min(target, Math.max(bounds.min, target - 2)), bounds.min, target);
+  return {
+    criteriaCount,
+    fieldCount,
+    minimum,
+    target,
+    validationCount,
+  };
+}
+
+function countGeneratedRows(result: string) {
+  return result
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^TC\d+\s*\|/.test(line))
+    .filter((line) => line.split("|").length >= 7)
+    .length;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -83,6 +172,16 @@ export async function POST(req: Request) {
     const modeInstructions = getModeInstructions(mode);
     const coverageInstructions = getCoverageInstructions(coverage);
     const personaInstructions = getPersonaInstructions(persona);
+    const caseTarget = generationCaseTarget(requirement, coverage);
+    const coveragePlanning = `Coverage Planning:
+- Estimated acceptance criteria: ${caseTarget.criteriaCount}
+- Estimated form fields and controls: ${caseTarget.fieldCount}
+- Estimated validation rules and behavioral checks: ${caseTarget.validationCount}
+- Target total test cases for this requirement: ${caseTarget.target}
+- Minimum acceptable test cases for this requirement: ${caseTarget.minimum}
+- For detailed form stories, do not collapse distinct field presence, validation, consent, dropdown, navigation, visibility-toggle, and success behaviors into a tiny happy-path set.
+- Create separate test cases for each meaningful validation rule and each distinct interactive behavior until the target is reached.
+- If there are many required fields, one field-presence case may cover them, but individual validation rules should remain separate.`;
 
     const chatCompletion = await groq.chat.completions.create({
       model: "llama-3.1-8b-instant",
@@ -118,6 +217,8 @@ ${coverageInstructions}
 Persona Guidance:
 ${personaInstructions}
 
+${coveragePlanning}
+
 IMPORTANT RULES:
 - Do NOT use markdown
 - Do NOT use asterisks (*)
@@ -148,6 +249,7 @@ IMPORTANT RULES:
 - Do not repeat near-identical test cases
 - Each test case should be realistic and distinct
 - Decide the appropriate number of test cases based on requirement scope and complexity
+- For this requirement, aim for exactly ${caseTarget.target} rows and do not return fewer than ${caseTarget.minimum} rows unless the requirement genuinely has fewer distinct behaviors
 - The selected coverage depth should influence how broad or deep the output is
 - The selected persona should materially influence permissions, starting state, and expected behavior
 - Smaller requirements should produce fewer cases
@@ -171,6 +273,51 @@ TC001 | Functional | Returning user signs in with valid credentials | User accou
 
     let result = chatCompletion.choices[0]?.message?.content || "";
     result = result.replace(/\*\*/g, "").trim();
+    const generatedRows = countGeneratedRows(result);
+
+    if (generatedRows > 0 && generatedRows < caseTarget.minimum) {
+      const retryCompletion = await groq.chat.completions.create({
+        model: "llama-3.1-8b-instant",
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a senior QA engineer regenerating an under-covered test suite. Follow the requested row count and output format exactly.",
+          },
+          {
+            role: "user",
+            content: `The previous generation returned only ${generatedRows} rows, which is below the minimum ${caseTarget.minimum}.
+
+Regenerate the full suite for this requirement with exactly ${caseTarget.target} meaningful rows.
+
+Requirement:
+${requirement}
+
+Generation Mode:
+${mode}
+
+Coverage Depth:
+${coverage}
+
+Persona:
+${persona}
+
+${coveragePlanning}
+
+Return plain text only, one test case per line, exactly 7 pipe-separated columns:
+ID | Type | Title | Preconditions | Steps | Expected Result | Test Data
+
+Cover the form opening, all required and optional field presence, mandatory validation, invalid email, password mismatch, phone length, terms checkbox, dropdown selections, optional fields, newsletter checkbox, password visibility toggle, sign-in link, and successful signup when present in the requirement.
+Do not use markdown or commentary.`,
+          },
+        ],
+      });
+      const retryResult = retryCompletion.choices[0]?.message?.content?.replace(/\*\*/g, "").trim() || "";
+      if (countGeneratedRows(retryResult) >= generatedRows) {
+        result = retryResult;
+      }
+    }
 
     return Response.json({ result });
   } catch (error) {
