@@ -4036,7 +4036,25 @@ export default function ProjectWorkspace({
         }),
       });
 
-      const data = await res.json();
+      const rawResponse = await res.text();
+      let data: { result?: string; warning?: string } = {};
+      try {
+        data = rawResponse
+          ? (JSON.parse(rawResponse) as { result?: string; warning?: string })
+          : {};
+      } catch {
+        const contentType = res.headers.get("content-type") || "unknown content type";
+        const responsePreview = rawResponse
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 160);
+        throw new Error(
+          `AI request returned ${res.status} ${res.statusText || ""} with ${contentType}. ${
+            res.redirected ? `Redirected to ${res.url}. ` : ""
+          }${responsePreview ? `Response started with: ${responsePreview}` : ""}`.trim()
+        );
+      }
+
       if (!res.ok) {
         const message =
           typeof data?.result === "string" && data.result.trim()
@@ -4086,7 +4104,7 @@ export default function ProjectWorkspace({
           ? `Generated ${preparedRows.length} structured cases. Removed ${duplicateCount} duplicate draft${duplicateCount === 1 ? "" : "s"} and moved you straight into review${generatedWorkspaceName ? ` under "${generatedWorkspaceName}".` : "."}`
           : `Generated ${preparedRows.length} structured cases. Review the draft below, tighten anything weak, then export or open the full cases route${generatedWorkspaceName ? ` under "${generatedWorkspaceName}".` : "."}`
       );
-    } catch {
+    } catch (error) {
       const { preparedRows } = parseGeneratedResult(
         buildLocalFallbackResult(requirementToGenerate)
       );
@@ -4122,9 +4140,13 @@ export default function ProjectWorkspace({
       window.setTimeout(() => {
         focusGeneratedCasesSection();
       }, 120);
+      const failureDetail =
+        error instanceof Error && error.message.trim()
+          ? ` ${error.message.trim()}`
+          : "";
       showWorkspaceNotice(
         "info",
-        `Generated ${preparedRows.length} fallback cases locally because the AI request could not be completed. The fallback now covers the core story behaviors; check Vercel env if AI generation should be available.`
+        `Generated ${preparedRows.length} fallback cases locally because the AI request could not be completed.${failureDetail} The fallback now covers the core story behaviors; check Vercel env if AI generation should be available.`
       );
     } finally {
       setLoading(false);
