@@ -31,6 +31,10 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
   const isPublicWorkspaceRoute =
     pathname.startsWith("/projects") ||
     pathname.startsWith("/api/projects") ||
+    pathname.startsWith("/api/generate") ||
+    pathname.startsWith("/api/generate-change-impact-cases") ||
+    pathname.startsWith("/api/fill-coverage-gap") ||
+    pathname.startsWith("/api/fill-bug-prediction") ||
     pathname.startsWith("/api/automation/browser");
 
   if (allowPublicWorkspace && isPublicWorkspaceRoute) {

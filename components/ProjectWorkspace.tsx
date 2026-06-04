@@ -4024,6 +4024,7 @@ export default function ProjectWorkspace({
 
       const res = await fetch("/api/generate", {
         method: "POST",
+        credentials: "same-origin",
         headers: {
           "Content-Type": "application/json",
         },
