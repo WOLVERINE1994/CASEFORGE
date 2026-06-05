@@ -2150,6 +2150,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [customLocatorValue, setCustomLocatorValue] = useState("");
   const [runModalOpen, setRunModalOpen] = useState(false);
   const [runModalError, setRunModalError] = useState("");
+  const [runModalMode, setRunModalMode] = useState<"record" | "run">("run");
   const [runConfig, setRunConfig] = useState<RunConfig>(() =>
     defaultRunConfig(targetUrl),
   );
@@ -3042,7 +3043,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     };
   };
 
-  const openRunModal = () => {
+  const openRuntimeModal = (mode: "record" | "run") => {
+    setRunModalMode(mode);
     setRunConfig((current) => {
       const firstEnvironment = environmentDraftFromUrl(targetUrl);
       return {
@@ -3068,6 +3070,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     setRunModalError("");
     setRunModalOpen(true);
   };
+
+  const openRunModal = () => openRuntimeModal("run");
+
+  const openRecordModal = () => openRuntimeModal("record");
 
   const updateRunEnvironment = (
     environmentId: string,
@@ -3106,10 +3112,65 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const selectedRunEnvironments = (config: RunConfig) =>
     config.environments
       .filter((environment) => environment.enabled && environment.baseUrl.trim())
-      .map((environment) => ({
-        ...environment,
-        baseUrl: cleanUrlAuth(environment.baseUrl),
-      }));
+      .map((environment) => {
+        const urlAuth = authFromUrl(environment.baseUrl);
+        return {
+          ...environment,
+          baseUrl: cleanUrlAuth(environment.baseUrl),
+          basicAuthEnabled: environment.basicAuthEnabled || Boolean(urlAuth),
+          password: environment.password || urlAuth?.password || "",
+          username: environment.username || urlAuth?.username || "",
+        };
+      });
+
+  const startRecordingFromConfig = async (config: RunConfig) => {
+    setBusy(true);
+    try {
+      const environments = selectedRunEnvironments(config);
+      if (!environments.length) {
+        setRunModalError("Select an environment with a URL.");
+        return;
+      }
+      const environment = environments[0];
+      if (environment.basicAuthEnabled && !environment.username.trim()) {
+        setRunModalError("Enter the Basic Auth username.");
+        return;
+      }
+      const viewport = viewportForRunConfig(config);
+      const url = normalizeUrl(environment.baseUrl);
+      setTargetUrl(url);
+      const navigateStep = makeNavigateStep(url);
+      if (!visibleSteps.some((step) => step.action === "navigate" && step.target.value === url)) {
+        void persistSteps([...finalizedSteps, navigateStep]);
+      }
+      if (session?.sessionId) {
+        await closeSession("Previous browser session closed.");
+      }
+      setRecording(true);
+      setRecordingPaused(false);
+      ignoredRecorderStepIdsRef.current = new Set();
+      appendLog(`Opening recorder at ${url}`);
+      const activeSession = await createSession(url, {
+        browserMode: config.browserMode,
+        environment,
+        viewport,
+      });
+      if (!activeSession.sessionId) throw new Error("Browser session was not created.");
+      setProviderEventCaptureAfter(new Date().toISOString());
+      setRecordingSessionId(activeSession.sessionId);
+      await setSessionRecorderMode(activeSession.sessionId, "record");
+      setRunModalOpen(false);
+      appendLog("Recording started");
+    } catch (error) {
+      setRecording(false);
+      setRecordingPaused(false);
+      setRecordingSessionId(null);
+      setProviderEventCaptureAfter(null);
+      appendLog(error instanceof Error ? error.message : "Could not start recording.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const resumeRunParameterContext = () => {
     const runTestData = activeRunTestData();
@@ -5789,53 +5850,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             {recordingPaused ? " | paused" : ""}
           </p>
         </div>
-        <form
-          className="flex flex-1 flex-col gap-2 sm:flex-row lg:max-w-4xl"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void openBrowser();
-          }}
-        >
-          <input
-            value={targetUrl}
-            onChange={(event) => setTargetUrl(event.target.value)}
-            className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-950 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
-            placeholder="https://example.com"
-          />
-          <div className="grid grid-cols-2 rounded-lg border border-zinc-200 bg-white p-0.5 text-[11px] font-semibold dark:border-zinc-800 dark:bg-zinc-900">
-            {[
-              ["headed", "Visible"],
-              ["headless", "Headless"],
-            ].map(([mode, label]) => {
-              const active = browserMode === mode;
-
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setBrowserMode(mode as "headed" | "headless")}
-                  disabled={busy || recordingActive || verifyPicking || Boolean(session?.sessionId)}
-                  className={`rounded-md px-2.5 py-1.5 transition disabled:opacity-50 ${
-                    active
-                      ? "bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950"
-                      : "text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          <button
-            type="submit"
-            disabled={busy || recordingActive || verifyPicking}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-          >
-            Open
-          </button>
+        <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:justify-end lg:max-w-4xl">
           <button
             type="button"
-            onClick={() => void toggleRecording()}
+            onClick={() => void (recordingActive ? toggleRecording() : openRecordModal())}
             disabled={busy || verifyPicking}
             className={`rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition disabled:opacity-50 ${
               recordingActive ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"
@@ -5851,7 +5869,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           >
             Run
           </button>
-        </form>
+        </div>
       </div>
 
       <div className="grid min-h-[700px] min-w-0 gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -5889,18 +5907,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                       Browser
                     </p>
                     <h3 className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
-                      Open a session to begin recording.
+                      Start recording or run this scenario.
                     </h3>
                     <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-                      The live browser stays in focus while commands and verification points are captured into the timeline.
+                      Choose the URL, device, browser mode, and auth details when you start.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => void openBrowser()}
-                      className="mt-5 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
-                    >
-                      Open Browser
-                    </button>
                   </div>
                 </div>
               )}
@@ -7464,10 +7475,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
               <div>
                 <h3 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
-                  Run Scenario
+                  {runModalMode === "record" ? "Start Recording" : "Run Scenario"}
                 </h3>
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  Choose runtime context for this run only.
+                  {runModalMode === "record"
+                    ? "Choose where and how the browser should open."
+                    : "Choose runtime context for this run only."}
                 </p>
               </div>
               <button
@@ -7494,7 +7507,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                       Environments
                     </h4>
                     <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      Selected rows run one by one.
+                      {runModalMode === "record"
+                        ? "The first selected row starts the recorder."
+                        : "Selected rows run one by one."}
                     </p>
                   </div>
                   <button
@@ -7658,9 +7673,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                       <button
                         key={mode}
                         type="button"
-                        onClick={() =>
-                          setRunConfig((current) => ({ ...current, browserMode: mode }))
-                        }
+                        onClick={() => {
+                          setBrowserMode(mode);
+                          setRunConfig((current) => ({ ...current, browserMode: mode }));
+                        }}
                         className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${
                           runConfig.browserMode === mode
                             ? "border-emerald-300 bg-emerald-50 text-emerald-950 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-100"
@@ -7673,7 +7689,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                   </div>
                   <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
                     {selectedRunEnvironments(runConfig).length} environment
-                    {selectedRunEnvironments(runConfig).length === 1 ? "" : "s"} selected |{" "}
+                    {selectedRunEnvironments(runConfig).length === 1 ? "" : "s"} selected
+                    {runModalMode === "record" && selectedRunEnvironments(runConfig).length > 1
+                      ? " (first will be used)"
+                      : ""}{" "}
+                    |{" "}
                     {deviceLabelForRunConfig(runConfig)} |{" "}
                     {runConfig.browserMode === "headed" ? "Visible browser" : "Headless"}
                   </div>
@@ -7690,11 +7710,21 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
               </button>
               <button
                 type="button"
-                onClick={() => void runScenario(runConfig)}
+                onClick={() =>
+                  void (runModalMode === "record"
+                    ? startRecordingFromConfig(runConfig)
+                    : runScenario(runConfig))
+                }
                 disabled={busy}
                 className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
               >
-                {busy ? "Running..." : "Run"}
+                {busy
+                  ? runModalMode === "record"
+                    ? "Starting..."
+                    : "Running..."
+                  : runModalMode === "record"
+                    ? "Start Recording"
+                    : "Run"}
               </button>
             </div>
           </div>
