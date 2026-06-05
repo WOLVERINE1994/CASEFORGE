@@ -29,15 +29,6 @@ export default async function ProjectCasesPage({
           { href: `/projects/${encodeURIComponent(projectKey)}/cases/views`, label: "Saved Views" },
         ]}
       />
-      <section className="rounded-[22px] border border-sky-200/80 bg-sky-50/80 px-4 py-4 text-sm text-sky-900 shadow-sm dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-700 dark:text-sky-200">
-          Product Split
-        </p>
-        <p className="mt-2 leading-6">
-          This area is now focused on manual test management. Automation authoring, recording,
-          playback, schedules, and replay now live in the dedicated <span className="font-semibold">Automation</span> workspace.
-        </p>
-      </section>
       <ProjectWorkspace
         initialProjectRef={projectKey}
         initialSection="cases"

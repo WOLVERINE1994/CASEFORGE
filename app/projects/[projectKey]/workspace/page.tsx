@@ -19,7 +19,6 @@ export default async function ProjectWorkspacePage({
         items={[
           { href: `/projects/${encodeURIComponent(projectKey)}/workspace`, label: "Generator" },
           { href: `/projects/${encodeURIComponent(projectKey)}/cases`, label: "Test Management" },
-          { href: `/projects/${encodeURIComponent(projectKey)}/automation`, label: "Automation" },
         ]}
       />
       <section className="rounded-[22px] border border-emerald-200/80 bg-emerald-50/80 px-4 py-4 text-sm text-emerald-900 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
@@ -27,9 +26,8 @@ export default async function ProjectWorkspacePage({
           Product Split
         </p>
         <p className="mt-2 leading-6">
-          This area is now focused on AI-assisted case generation and refinement. Manual case
-          governance lives in <span className="font-semibold">Test Management</span>, and
-          recording or running automation lives in <span className="font-semibold">Automation</span>.
+          This area is focused on AI-assisted case generation and refinement. Manual case
+          governance lives in <span className="font-semibold">Test Management</span>.
         </p>
       </section>
       <ProjectWorkspace

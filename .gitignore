@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+**/node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -19,6 +20,7 @@
 
 # production
 /build
+**/dist/
 
 # misc
 .DS_Store
@@ -26,6 +28,9 @@
 .codex-runtime/
 .artifacts/
 .codex-runtime/
+.codex-worktrees/
+desktop-agent/.agent-test/
+clerk-nextjs/
 
 # debug
 npm-debug.log*
@@ -42,3 +47,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel

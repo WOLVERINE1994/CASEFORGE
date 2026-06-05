@@ -145,10 +145,8 @@ export function EnvironmentSummaryCard({
   projectRouteRef,
   rowId,
 }: EnvironmentSummaryCardProps) {
-  const encodedProjectRef = projectRouteRef ? encodeURIComponent(projectRouteRef) : null;
-  const environmentsHref = encodedProjectRef
-    ? `/projects/${encodedProjectRef}/automation/environments?rowId=${encodeURIComponent(rowId)}`
-    : null;
+  void projectRouteRef;
+  void rowId;
 
   return (
     <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/70">
@@ -158,7 +156,7 @@ export function EnvironmentSummaryCard({
             Environment
           </p>
           <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-            Environment setup stays compact here and opens in the Automation Environments module.
+            Environment setup is kept as read-only case context.
           </p>
         </div>
         {environment?.isDefault ? (
@@ -173,16 +171,6 @@ export function EnvironmentSummaryCard({
         <CompactMetricCard label="Base URL" value={environment?.baseUrl?.trim() || "Not set"} valueClassName="break-all" />
       </CompactMetricGrid>
 
-      {environmentsHref ? (
-        <div className="mt-4">
-          <Link
-            href={environmentsHref}
-            className="inline-flex rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            Manage Environment
-          </Link>
-        </div>
-      ) : null}
     </div>
   );
 }

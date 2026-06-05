@@ -1,19 +1,27 @@
-import ProjectAutomationWorkspace from "../../../../../../components/ProjectAutomationWorkspace";
+import AutomationShell from "../../../../../../components/AutomationShell";
+import AutomationScenarioWorkspace from "../../../../../../components/AutomationScenarioWorkspace";
 
-export default async function ProjectAutomationScenarioDetailPage({
-  params,
-}: {
+type PageProps = {
   params: Promise<{ projectKey: string; scenarioId: string }>;
-}) {
+};
+
+export default async function AutomationScenarioDetailPage({
+  params,
+}: PageProps) {
   const { projectKey, scenarioId } = await params;
+
   return (
-    <ProjectAutomationWorkspace
+    <AutomationShell
       projectKey={projectKey}
-      initialProject={null}
-      initialSection="scenarios"
-      initialScenarioId={scenarioId}
-    />
+      activeSection="scenarios"
+      title="Scenario Workspace"
+      description="A lightweight automation IDE shell for scenario authoring."
+      layout="workspace"
+    >
+      <AutomationScenarioWorkspace
+        projectKey={projectKey}
+        scenarioId={scenarioId}
+      />
+    </AutomationShell>
   );
 }
-
-

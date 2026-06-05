@@ -4,13 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import CaseForgeBrand from "./CaseForgeBrand";
+import { NavItem as SafeNavItem } from "./SafeLayout";
 import { useActiveReviewerSession } from "./useActiveReviewerSession";
 
 type AppSidebarProps = {
   projectCount?: number;
 };
 
-type AppNavKind = "dashboard" | "library" | "new-workspace" | "users" | "admin";
+type AppNavKind =
+  | "dashboard"
+  | "library"
+  | "automation"
+  | "new-workspace"
+  | "users"
+  | "admin";
 
 function NavIcon({ kind }: { kind: AppNavKind }) {
   const commonProps = {
@@ -39,6 +46,12 @@ function NavIcon({ kind }: { kind: AppNavKind }) {
           <path d="M14.5 6.5H18v11h-3.5Z" />
         </svg>
       );
+    case "automation":
+      return (
+        <svg {...commonProps}>
+          <path d="M12 4.5 8.2 11H12l-1 8.5 4.8-7H12l.9-8Z" />
+        </svg>
+      );
     case "new-workspace":
       return (
         <svg {...commonProps}>
@@ -64,7 +77,7 @@ function NavIcon({ kind }: { kind: AppNavKind }) {
 }
 
 const navItemClassName = (active: boolean) =>
-  `relative flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm font-semibold transition ${
+  `relative ${
     active
       ? "border-emerald-200 bg-emerald-50 text-emerald-950 shadow-sm ring-1 ring-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100 dark:ring-emerald-500/10"
       : "border-transparent bg-transparent text-zinc-700 hover:border-zinc-200 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:border-zinc-700 dark:hover:bg-zinc-950"
@@ -126,6 +139,12 @@ export default function AppSidebar({ projectCount = 0 }: AppSidebarProps) {
         count: projectCount,
       },
       {
+        href: "/automation",
+        label: "Automation",
+        kind: "automation" as const,
+        active: pathname === "/automation" || pathname.startsWith("/automation/"),
+      },
+      {
         href: "/projects/new",
         label: "New Workspace",
         kind: "new-workspace" as const,
@@ -173,9 +192,9 @@ export default function AppSidebar({ projectCount = 0 }: AppSidebarProps) {
     <button
       type="button"
       onClick={onToggle}
-      className="flex w-full items-center justify-between rounded-xl px-1 py-1 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-950"
+      className="cf-safe-row w-full justify-between rounded-xl px-1 py-1 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-950"
     >
-      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+      <span className="cf-safe-label text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
         {label}
       </span>
       <svg
@@ -217,26 +236,25 @@ export default function AppSidebar({ projectCount = 0 }: AppSidebarProps) {
           {hasActiveNavItem || appNavOpen ? (
             <nav className="mt-3 space-y-1.5">
               {navItems.map((item) => (
-                <Link key={item.href} href={item.href} className={navItemClassName(item.active)}>
+                <SafeNavItem
+                  key={item.href}
+                  href={item.href}
+                  active={item.active}
+                  className={navItemClassName(item.active)}
+                  icon={<NavIcon kind={item.kind} />}
+                  label={item.label}
+                  title={item.label}
+                  badge={typeof item.count === "number" ? item.count : undefined}
+                  badgeClassName={
+                    item.active
+                      ? "bg-white text-emerald-800 dark:bg-zinc-950 dark:text-emerald-200"
+                      : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                  }
+                >
                   {item.active ? (
                     <span className="absolute inset-y-2 left-1.5 w-1 rounded-full bg-emerald-500 dark:bg-emerald-300" />
                   ) : null}
-                  <span className="flex items-center gap-3">
-                    <NavIcon kind={item.kind} />
-                    {item.label}
-                  </span>
-                  {typeof item.count === "number" ? (
-                    <span
-                      className={`inline-flex min-w-6 items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                        item.active
-                          ? "bg-white text-emerald-800 dark:bg-zinc-950 dark:text-emerald-200"
-                          : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-                      }`}
-                    >
-                      {item.count}
-                    </span>
-                  ) : null}
-                </Link>
+                </SafeNavItem>
               ))}
             </nav>
           ) : null}
@@ -249,9 +267,11 @@ export default function AppSidebar({ projectCount = 0 }: AppSidebarProps) {
           {reviewerOpen ? (
             <>
               <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                {activeReviewerSession.reviewer?.name ||
-                  activeReviewerSession.reviewer?.email ||
-                  "No active reviewer"}
+                <span className="cf-safe-wrap">
+                  {activeReviewerSession.reviewer?.name ||
+                    activeReviewerSession.reviewer?.email ||
+                    "No active reviewer"}
+                </span>
               </p>
               <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                 Browser-level reviewer context for release decisions and audit actions.

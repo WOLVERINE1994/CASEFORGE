@@ -1,23 +1,19 @@
-import ProjectAutomationWorkspace from "../../../../../components/ProjectAutomationWorkspace";
+import AutomationShell from "../../../../../components/AutomationShell";
+import AutomationRunsClient from "../../../../../components/AutomationRunsClient";
 
-type ProjectAutomationRunsPageProps = {
-  params: Promise<{
-    projectKey: string;
-  }>;
+type PageProps = {
+  params: Promise<{ projectKey: string }>;
 };
 
-export default async function ProjectAutomationRunsPage({
-  params,
-}: ProjectAutomationRunsPageProps) {
+export default async function AutomationRunsPage({ params }: PageProps) {
   const { projectKey } = await params;
-
   return (
-    <ProjectAutomationWorkspace
+    <AutomationShell
       projectKey={projectKey}
-      initialProject={null}
-      initialSection="runs"
-    />
+      activeSection="runs"
+      description="Review durable automation execution records, status, and artefacts."
+    >
+      <AutomationRunsClient projectKey={projectKey} />
+    </AutomationShell>
   );
 }
-
-

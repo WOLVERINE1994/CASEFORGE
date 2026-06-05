@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useProjectRouteMetrics } from "./ProjectRouteMetricsContext";
 import { useProjectDataState } from "./ProjectDataStateContext";
+import { LabelWithBadge, ResponsiveToolbar } from "./SafeLayout";
 import { useActiveReviewerSession } from "./useActiveReviewerSession";
 import { formatUtcDate } from "../utils/date-format";
 import {
@@ -163,21 +164,21 @@ function RouteIcon({ kind }: RouteIconProps) {
 }
 
 const routeBadgeClassName = (active: boolean) =>
-  `mr-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1.5 text-[10px] font-bold uppercase tracking-[0.08em] ${
+  `cf-safe-chip inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border px-1.5 text-[10px] font-bold uppercase tracking-[0.08em] ${
     active
       ? "border-cyan-400/20 bg-slate-950/85 text-cyan-200"
       : "border-slate-700 bg-slate-900/80 text-slate-400"
   }`;
 
 const linkClassName = (active: boolean) =>
-  `group relative inline-flex items-center rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
+  `group relative inline-flex min-w-0 max-w-full items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
     active
       ? "border-transparent bg-[linear-gradient(135deg,#2563EB_0%,#4F46E5_52%,#7C3AED_100%)] text-white shadow-[0_18px_34px_-24px_rgba(79,70,229,0.72)]"
       : "border-slate-700 bg-slate-900/80 text-slate-200 hover:bg-slate-800"
   }`;
 
 const countClassName = (active: boolean) =>
-  `ml-2 inline-flex min-w-6 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
+  `cf-safe-chip inline-flex min-w-6 shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
     active
       ? "bg-slate-950/85 text-cyan-200"
       : "bg-slate-800 text-slate-300"
@@ -350,7 +351,7 @@ export default function ProjectRouteHeader({
       count: unreadMentionCount,
       href: `${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=case-mention&unread=1`,
       className:
-        "inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20",
+        "cf-safe-chip inline-flex min-w-0 items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20",
     },
     {
       key: "watched",
@@ -358,7 +359,7 @@ export default function ProjectRouteHeader({
       count: unreadWatchCount,
       href: `${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=case-watch&unread=1`,
       className:
-        "inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20",
+        "cf-safe-chip inline-flex min-w-0 items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20",
     },
     {
       key: "template",
@@ -366,7 +367,7 @@ export default function ProjectRouteHeader({
       count: unreadTemplateOperationCount,
       href: `${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}type=template-operation&unread=1`,
       className:
-        "inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20",
+        "cf-safe-chip inline-flex min-w-0 items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20",
     },
   ].filter((entry) => entry.count > 0);
   const reviewerContextNotes = [
@@ -383,29 +384,29 @@ export default function ProjectRouteHeader({
   ].filter(Boolean) as string[];
 
   return (
-    <section className="cf-panel sticky top-4 z-20 flex flex-col gap-4 rounded-[28px] px-5 py-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
+    <section className="cf-panel flex flex-col gap-4 rounded-[28px] px-5 py-5">
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
             Project Route
           </p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-50">
+          <h1 className="cf-safe-wrap mt-1 text-3xl font-semibold tracking-tight text-slate-50">
             {projectName.trim() || "Unsaved workspace"}
           </h1>
-          <p className="mt-2 text-sm text-slate-300">{planningSummary}</p>
-          <div className="mt-3 flex flex-wrap gap-2.5">
+          <p className="cf-safe-wrap mt-2 text-sm text-slate-300">{planningSummary}</p>
+          <ResponsiveToolbar className="mt-3 gap-2.5">
             {cameFromRelease && (
-              <div className="inline-flex items-center rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200">
+              <div className="cf-safe-chip inline-flex items-center rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200">
                 Release Review Context
               </div>
             )}
             {resolvedReleaseDecision && releaseDecisionLabel ? (
               <div
-                className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] ${releaseDecisionChipTone[resolvedReleaseDecision]}`}
+                className={`cf-safe-chip inline-flex min-w-0 items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] ${releaseDecisionChipTone[resolvedReleaseDecision]}`}
               >
-                {releaseDecisionLabel}
+                <span className="cf-safe-label">{releaseDecisionLabel}</span>
                 {resolvedReleaseDecisionRecordedAt ? (
-                  <span className="ml-2 normal-case tracking-normal opacity-80">
+                  <span className="ml-2 shrink-0 normal-case tracking-normal opacity-80">
                     {formatUtcDate(resolvedReleaseDecisionRecordedAt)}
                   </span>
                 ) : null}
@@ -414,23 +415,24 @@ export default function ProjectRouteHeader({
             {activeReviewerSession.reviewer ? (
               <Link
                 href="/settings/users"
-                className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                className="cf-safe-chip inline-flex min-w-0 items-center rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
               >
-                Active Reviewer:{" "}
-                <span className="ml-1 font-bold">
-                  {activeReviewerSession.reviewer.name?.trim() ||
+                <LabelWithBadge
+                  label="Active Reviewer"
+                  badge={activeReviewerSession.reviewer.name?.trim() ||
                     activeReviewerSession.reviewer.email?.trim() ||
                     "Selected"}
-                </span>
+                  badgeClassName="bg-transparent px-0 py-0 text-xs text-slate-50"
+                />
               </Link>
             ) : activeReviewerSession.loading ? (
-                <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-xs font-semibold text-slate-400">
+                <span className="cf-safe-chip inline-flex items-center rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-xs font-semibold text-slate-400">
                   Loading reviewer...
                 </span>
               ) : (
                 <Link
                   href="/settings/users"
-                  className="inline-flex items-center rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/15"
+                  className="cf-safe-chip inline-flex items-center rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/15"
                 >
                   Set Active Reviewer
                 </Link>
@@ -438,37 +440,38 @@ export default function ProjectRouteHeader({
             {activeReviewerSession.reviewer ? (
               <Link
                 href={notificationsHref}
-                className="inline-flex items-center rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/15"
+                className="cf-safe-chip inline-flex min-w-0 items-center rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/15"
               >
-                Reviewer inbox:{" "}
-                <span className="ml-1 font-bold">
-                  {unreadReviewerNotificationCount} unread
-                </span>
+                <LabelWithBadge
+                  label="Reviewer inbox"
+                  badge={`${unreadReviewerNotificationCount} unread`}
+                  badgeClassName="bg-transparent px-0 py-0 text-xs text-cyan-100"
+                />
               </Link>
             ) : null}
-          </div>
+          </ResponsiveToolbar>
           {activeReviewerSession.reviewer && activeReviewerNotifications.length > 0 ? (
             <div className="mt-3 rounded-[18px] border border-slate-700/80 bg-slate-900/60 px-4 py-3">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                     Reviewer Focus
                   </p>
-                  <p className="mt-1 text-sm text-slate-200">
+                  <p className="cf-safe-wrap mt-1 text-sm text-slate-200">
                     Open the reviewer inbox for the full detail view. The header keeps only the signals you are most likely to check first.
                   </p>
                   {reviewerContextNotes.length > 0 ? (
-                    <p className="mt-2 text-xs text-slate-400">
+                    <p className="cf-safe-wrap mt-2 text-xs text-slate-400">
                       {reviewerContextNotes.join(" | ")}
                     </p>
                   ) : null}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <ResponsiveToolbar className="lg:justify-end">
                   <Link
                     href={`${notificationsHref}${notificationsHref.includes("?") ? "&" : "?"}unread=1`}
-                    className="inline-flex items-center rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/15"
+                    className="cf-safe-chip inline-flex min-w-0 items-center rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/15"
                   >
-                    Unread alerts: <span className="ml-1 font-bold">{unreadReviewerNotificationCount}</span>
+                    <LabelWithBadge label="Unread alerts" badge={unreadReviewerNotificationCount} badgeClassName="bg-transparent px-0 py-0 text-xs text-cyan-100" />
                   </Link>
                   {reviewerSummaryChips.map((entry) => (
                     <Link key={entry.key} href={entry.href} className={entry.className}>
@@ -478,101 +481,101 @@ export default function ProjectRouteHeader({
                   {affectedCaseCount > 0 ? (
                     <Link
                       href={`${casesHref}${casesHref.includes("?") ? "&" : "?"}collaboration=attention`}
-                      className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"
+                      className="cf-safe-chip inline-flex min-w-0 items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"
                     >
-                      Cases with attention: <span className="ml-1 font-bold">{affectedCaseCount}</span>
+                      <LabelWithBadge label="Cases with attention" badge={affectedCaseCount} badgeClassName="bg-transparent px-0 py-0 text-xs text-violet-100" />
                     </Link>
                   ) : null}
-                </div>
+                </ResponsiveToolbar>
               </div>
             </div>
           ) : null}
         </div>
 
         {showNavigation ? (
-          <div className="cf-card rounded-[20px] p-4">
+          <div className="cf-card min-w-0 rounded-[20px] p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
               Primary Modules
             </p>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <ResponsiveToolbar className="mt-3">
             <Link href={overviewHref} className={linkClassName(isActiveRoute(pathname, overviewHref))}>
               <RouteIcon kind="overview" />
               <span className={routeBadgeClassName(isActiveRoute(pathname, overviewHref))}>OV</span>
-              Overview
+              <span className="cf-safe-label">Overview</span>
             </Link>
             <Link href={casesHref} className={linkClassName(isActiveRoute(pathname, casesHref))}>
               <RouteIcon kind="cases" />
               <span className={routeBadgeClassName(isActiveRoute(pathname, casesHref))}>CS</span>
-              Cases
+              <span className="cf-safe-label">Cases</span>
               <span className={countClassName(isActiveRoute(pathname, casesHref))}>{resolvedCaseCount}</span>
             </Link>
             <Link href={salesforceHref} className={linkClassName(isActiveRoute(pathname, salesforceHref))}>
               <RouteIcon kind="salesforce" />
               <span className={routeBadgeClassName(isActiveRoute(pathname, salesforceHref))}>SF</span>
-              Salesforce
+              <span className="cf-safe-label">Salesforce</span>
             </Link>
             <Link href={runsHref} className={linkClassName(isActiveRoute(pathname, runsHref))}>
               <RouteIcon kind="runs" />
               <span className={routeBadgeClassName(isActiveRoute(pathname, runsHref))}>RN</span>
-              Runs
+              <span className="cf-safe-label">Runs</span>
             </Link>
             <Link href={reportsHref} className={linkClassName(isActiveRoute(pathname, reportsHref))}>
               <RouteIcon kind="reports" />
               <span className={routeBadgeClassName(isActiveRoute(pathname, reportsHref))}>RP</span>
-              Reports
+              <span className="cf-safe-label">Reports</span>
             </Link>
             <Link href={releasesHref} className={linkClassName(isActiveRoute(pathname, releasesHref) || isActiveRoute(pathname, releaseHref))}>
               <RouteIcon kind="release" />
               <span className={routeBadgeClassName(isActiveRoute(pathname, releasesHref) || isActiveRoute(pathname, releaseHref))}>RL</span>
-              Releases
+              <span className="cf-safe-label">Releases</span>
             </Link>
             <Link href={activityHref} className={linkClassName(isActiveRoute(pathname, activityHref))}>
               <RouteIcon kind="activity" />
               <span className={routeBadgeClassName(isActiveRoute(pathname, activityHref))}>AC</span>
-              Activity
+              <span className="cf-safe-label">Activity</span>
             </Link>
             <Link href={automationHref} className={linkClassName(isActiveRoute(pathname, automationHref))}>
               <RouteIcon kind="automation" />
               <span className={routeBadgeClassName(isActiveRoute(pathname, automationHref))}>AT</span>
-              Automation
+              <span className="cf-safe-label">Automation</span>
             </Link>
             <Link href={issuesHref} className={linkClassName(isActiveRoute(pathname, issuesHref))}>
               <RouteIcon kind="issues" />
               <span className={routeBadgeClassName(isActiveRoute(pathname, issuesHref))}>IS</span>
-              Issues
+              <span className="cf-safe-label">Issues</span>
               <span className={countClassName(isActiveRoute(pathname, issuesHref))}>{resolvedIssueCount}</span>
             </Link>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            </ResponsiveToolbar>
+            <ResponsiveToolbar className="mt-3">
             <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
               Secondary Tools
             </span>
-            <Link href={workspaceHref} className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800">
+            <Link href={workspaceHref} className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800">
               <RouteIcon kind="workspace" />
-              Workspace
+              <span className="cf-safe-label">Workspace</span>
             </Link>
             <Link
               href={notificationsHref}
-              className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+              className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
             >
               <RouteIcon kind="notifications" />
-              Notifications
-              <span className="ml-2 rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">
+              <span className="cf-safe-label">Notifications</span>
+              <span className="cf-safe-chip rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">
                 {unreadReviewerNotificationCount}
               </span>
             </Link>
-            <Link href={boardHref} className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800">
+            <Link href={boardHref} className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800">
               <RouteIcon kind="board" />
-              Board
+              <span className="cf-safe-label">Board</span>
             </Link>
             <Link
               href="/projects"
-              className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+              className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
             >
               <RouteIcon kind="library" />
-              Project Library
+              <span className="cf-safe-label">Project Library</span>
             </Link>
-            </div>
+            </ResponsiveToolbar>
           </div>
         ) : null}
       </div>

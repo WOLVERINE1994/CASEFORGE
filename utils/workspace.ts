@@ -49,6 +49,10 @@ export type AutomationStepAction =
   | "select"
   | "press"
   | "wait-for"
+  | "assert-element"
+  | "assert-attribute"
+  | "assert-style"
+  | "assert-image"
   | "assert-text"
   | "assert-visible"
   | "assert-url"
@@ -57,9 +61,13 @@ export type AutomationStepAction =
 
 export type AutomationTargetType =
   | "selector"
+  | "xpath"
   | "url"
   | "endpoint"
   | "text"
+  | "role"
+  | "label"
+  | "placeholder"
   | "value"
   | "key"
   | "shared-block"
@@ -87,9 +95,212 @@ export type AutomationValidationIssueField =
   | "targetValue"
   | "inputValue"
   | "expectedValue"
+  | "assertionType"
+  | "attributeName"
+  | "cssProperty"
+  | "locator"
   | "sharedBlockId"
   | "selectorPresetId"
   | "timeoutMs";
+
+export type AutomationLocatorMode = "smart" | "manual";
+
+export type AutomationLocatorStrategy =
+  | "selector"
+  | "xpath"
+  | "text"
+  | "role"
+  | "label"
+  | "placeholder";
+
+export type AutomationLocatorCandidate = {
+  id: string;
+  strategy: AutomationLocatorStrategy;
+  value: string;
+  preview: string;
+  label: string;
+  reason: string;
+  rank: number;
+  roleName?: string;
+  roleValue?: string;
+  matchCount?: number;
+  isUnique?: boolean;
+  recommended?: boolean;
+  refinedFrom?: string;
+};
+
+export type AutomationStepLocator = {
+  mode: AutomationLocatorMode;
+  strategy: AutomationLocatorStrategy;
+  value: string;
+  preview: string;
+  roleName?: string;
+  roleValue?: string;
+  candidates?: AutomationLocatorCandidate[];
+};
+
+export type AutomationElementFingerprint = {
+  tag?: string;
+  text?: string;
+  role?: string;
+  ariaLabel?: string;
+  placeholder?: string;
+  label?: string;
+  attributes?: Record<string, string>;
+  parentText?: string;
+  parentTag?: string;
+  cssPath?: string;
+  xpath?: string;
+  boundingBox?: {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+  };
+  confidenceScore?: number;
+};
+
+export type AutomationLocatorBundle = {
+  primary: AutomationStepLocator;
+  fallbacks: AutomationLocatorCandidate[];
+  fingerprint?: AutomationElementFingerprint;
+  confidenceScore?: number;
+  generatedAt?: number;
+};
+
+export type AutomationLocatorHealingMetadata = {
+  used: boolean;
+  originalLocator?: AutomationStepLocator | AutomationLocatorCandidate;
+  healedLocator?: AutomationLocatorCandidate;
+  attemptedLocators?: Array<{
+    locator: AutomationStepLocator | AutomationLocatorCandidate;
+    matchCount?: number;
+    reason: string;
+    confidenceScore?: number;
+  }>;
+  confidenceScore?: number;
+  reason?: string;
+  accepted?: boolean;
+};
+
+export type AutomationLocatorApprovalStatus =
+  | "pending"
+  | "accepted"
+  | "rejected"
+  | "superseded";
+
+export type AutomationLocatorApprovalRecord = {
+  id: string;
+  status: AutomationLocatorApprovalStatus;
+  scenarioId?: string;
+  scenarioName?: string;
+  actionId?: string;
+  actionName?: string;
+  stepId: string;
+  stepOrder?: number;
+  stepAction?: AutomationStepAction;
+  originalLocator?: AutomationStepLocator | AutomationLocatorCandidate;
+  healedLocator?: AutomationLocatorCandidate;
+  confidenceScore?: number;
+  reason?: string;
+  source: "self-healing" | "manual" | "regenerated";
+  createdAt: number;
+  decidedAt?: number;
+  decidedBy?: string;
+};
+
+export type AutomationVisualObjectStatus =
+  | "approved"
+  | "pending-review"
+  | "needs-repair";
+
+export type AutomationVisualObjectRecord = {
+  id: string;
+  name: string;
+  status: AutomationVisualObjectStatus;
+  primaryLocator?: AutomationStepLocator;
+  fallbackCount: number;
+  fingerprint?: AutomationElementFingerprint;
+  confidenceScore?: number;
+  usageCount: number;
+  scenarioIds: string[];
+  actionIds: string[];
+  lastSeenAt?: number;
+  updatedAt: number;
+  approvalIds?: string[];
+};
+
+export type AutomationVisionMetadata = {
+  used: boolean;
+  mode: "fallback" | "assertion" | "debug" | "recording";
+  targetText?: string;
+  confidenceScore?: number;
+  coordinates?: {
+    x: number;
+    y: number;
+  };
+  boundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  candidates?: Array<{
+    text?: string;
+    role?: string;
+    tag?: string;
+    confidenceScore: number;
+    boundingBox?: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+    reason: string;
+  }>;
+  screenshotPath?: string;
+  explanation?: string;
+};
+
+export type AutomationElementAssertionType =
+  | "exists"
+  | "visible"
+  | "hidden"
+  | "not-present";
+
+export type AutomationAssertionComparison =
+  | "exact"
+  | "contains"
+  | "starts-with"
+  | "ends-with"
+  | "exists"
+  | "does-not-exist";
+
+export type AutomationImageAssertionType =
+  | "exists"
+  | "visible"
+  | "src"
+  | "alt"
+  | "natural-size"
+  | "loaded";
+
+export type AutomationAttributeAssertion = {
+  attributeName: string;
+  comparison: AutomationAssertionComparison;
+  expectedValue?: string;
+};
+
+export type AutomationStyleAssertion = {
+  property: string;
+  comparison: AutomationAssertionComparison;
+  expectedValue?: string;
+};
+
+export type AutomationImageAssertion = {
+  check: AutomationImageAssertionType;
+  comparison?: AutomationAssertionComparison;
+  expectedValue?: string;
+};
 
 export type AutomationValidationIssue = {
   code: string;
@@ -520,6 +731,7 @@ export type AutomationScenario = {
   provider: AutomationProvider;
   executionMode?: AutomationExecutionMode;
   environmentBindingId?: string;
+  startUrl?: string;
   name: string;
   description?: string;
   tags?: string[];
@@ -555,6 +767,7 @@ export type AutomationScript = {
   provider: AutomationProvider;
   executionMode?: AutomationExecutionMode;
   environmentBindingId?: string;
+  startUrl?: string;
   name: string;
   description?: string;
   sourceType?: AutomationScriptSource;
@@ -651,6 +864,8 @@ export type AutomationStepResult = {
   message?: string;
   failureReason?: string;
   logLines?: string[];
+  healing?: AutomationLocatorHealingMetadata;
+  vision?: AutomationVisionMetadata;
   startedAt?: number;
   finishedAt?: number;
   durationMs?: number;
@@ -678,17 +893,40 @@ export type AutomationRecorderEvent = {
   id: string;
   type: AutomationRecorderEventType;
   timestamp: number;
+  pageUrl?: string;
   url?: string;
   selector?: string;
   value?: string;
   key?: string;
   label?: string;
+  locator?: AutomationStepLocator;
+  locatorCandidates?: AutomationLocatorCandidate[];
+  inspectedElement?: {
+    tagName?: string;
+    role?: string;
+    text?: string;
+    placeholder?: string;
+    label?: string;
+    attributes?: Record<string, string>;
+    parentTag?: string;
+    parentText?: string;
+    cssPath?: string;
+    xpath?: string;
+    boundingBox?: {
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+    };
+    computedStyles?: Record<string, string>;
+  };
 };
 
 export type AutomationRecorderStatus =
   | "idle"
   | "starting"
   | "recording"
+  | "paused"
   | "stopping"
   | "stopped"
   | "failed";
@@ -1074,6 +1312,8 @@ export type Project = {
   automationSelectorPresets?: AutomationSelectorPreset[];
   automationEnvironmentBindings?: AutomationEnvironmentBinding[];
   automationSchedules?: AutomationSchedule[];
+  automationVisualObjects?: AutomationVisualObjectRecord[];
+  automationLocatorApprovals?: AutomationLocatorApprovalRecord[];
   activeAutomationEnvironmentId?: string;
   generationFeedbackLog?: GenerationFeedbackRecord[];
   activeRunId?: string;

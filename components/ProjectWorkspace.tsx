@@ -53,11 +53,6 @@ import { buildWorkspaceReportData } from "../utils/report-data";
 import { importSourceArtifact } from "../utils/source-imports";
 import { suggestTestData } from "../utils/test-data";
 import { buildTrustCenterAnalysis } from "../utils/trust-center";
-import { buildDefaultAutomationReuseLibrary } from "../utils/automation-reuse";
-import {
-  normalizeAutomationRuntimeProvider,
-} from "../utils/automation";
-import { inferAutomationGenerationDomain } from "../utils/automation-step-generation";
 import {
   analyzeCoverageGaps,
   createManualGapDraft,
@@ -127,6 +122,18 @@ import {
 } from "../utils/reviewer-notification-preferences";
 
 const STORAGE_KEY = "tc_projects_v1";
+
+const buildDefaultAutomationReuseLibrary = (projectId: string) => ({
+  blocks: [],
+  selectorPresets: [],
+  environments: [],
+  activeEnvironmentId: projectId ? "" : "",
+});
+
+const normalizeAutomationRuntimeProvider = (value: unknown) =>
+  normalizeAutomationProvider(typeof value === "string" ? value : "") || "playwright";
+
+const inferAutomationGenerationDomain = (_row?: unknown) => "ui";
 
 const parseAutomationApiResponse = async <T,>(response: Response): Promise<T> => {
   const raw = await response.text();
@@ -4085,42 +4092,9 @@ export default function ProjectWorkspace({
 
       setGeneratingAutomationRowIds((current) => [...current, rowId]);
       try {
-        const provider =
-          inferAutomationGenerationDomain(row) === "api"
-            ? "api"
-            : normalizeAutomationRuntimeProvider(row.automationProvider);
-        setRows((currentRows) =>
-          currentRows.map((entry) =>
-            entry.id === rowId
-              ? {
-                  ...entry,
-                  automationStatus:
-                    entry.automationStatus === "automated" ? entry.automationStatus : "candidate",
-                  automationProvider: provider,
-                  automationBindingMode: entry.automationBindingMode ?? "automated",
-                  updatedAt: Date.now(),
-                }
-              : entry
-          )
-        );
         showWorkspaceNotice(
           "info",
-          `Automation authoring has moved to the Automation workspace. Open ${rowId} there to generate, record, edit, and run the flow.`,
-          currentProjectId || projectKey.trim()
-            ? [
-                {
-                  label: "Open Automation",
-                  href: `/projects/${encodeURIComponent(
-                    projectKey.trim() || currentProjectId || "workspace"
-                  )}/automation/scripts?caseId=${encodeURIComponent(rowId)}`,
-                },
-              ]
-            : undefined
-        );
-        router.push(
-          `/projects/${encodeURIComponent(
-            projectKey.trim() || currentProjectId || "workspace"
-          )}/automation/scripts?caseId=${encodeURIComponent(rowId)}`
+          `Automation has been removed. ${row.id} remains available as a manual test case.`
         );
       } catch (error) {
         showWorkspaceNotice(
@@ -4133,7 +4107,7 @@ export default function ProjectWorkspace({
         setGeneratingAutomationRowIds((current) => current.filter((entry) => entry !== rowId));
       }
     },
-    [currentProjectId, projectKey, router, rows]
+    [rows]
   );
 
   const generateAutomationForSelectedRows = useCallback(async () => {
@@ -4145,18 +4119,13 @@ export default function ProjectWorkspace({
     if (selectedRowIds.length > 1) {
       showWorkspaceNotice(
         "info",
-        "Bulk automation authoring now happens in the Automation workspace. Open one case there at a time to generate or record structured flows."
-      );
-      router.push(
-        `/projects/${encodeURIComponent(
-          projectKey.trim() || currentProjectId || "workspace"
-        )}/automation/scripts`
+        "Automation has been removed. Selected cases remain available in Test Management."
       );
       return;
     }
 
     await generateAutomationForRow(selectedRowIds[0]);
-  }, [currentProjectId, generateAutomationForRow, projectKey, router, selectedRowIds]);
+  }, [generateAutomationForRow, selectedRowIds]);
 
   const runAutomationForRow = useCallback(
     async (
@@ -4166,155 +4135,12 @@ export default function ProjectWorkspace({
         executionMode?: "headless" | "headed";
       }
     ) => {
-      let activeProjectRef = currentProjectIdRef.current ?? currentProjectId;
-      let activeProject =
-        projectsRef.current.find((project) => project.id === activeProjectRef) ?? null;
-
-      if (!activeProject) {
-        const trimmedName = projectName.trim();
-        if (!trimmedName) {
-          const text = "Name and save the workspace before running automation.";
-          showWorkspaceNotice("error", text);
-          return { tone: "error" as const, text };
-        }
-
-        const { updatedProject, updatedProjects } = upsertProject(
-          projectsRef.current,
-          trimmedName
-        );
-        const savedProjects = await persistProjects(updatedProjects);
-        activeProject =
-          savedProjects.find((project) => project.id === updatedProject.id) ??
-          updatedProject;
-        activeProjectRef = activeProject.id;
-        setResolvedProjectId(activeProject.id);
-      }
-
-      let activeRun =
-        activeProject.runs?.find((run) => run.id === activeProject?.activeRunId) ?? null;
-
-      if (!activeRun) {
-        const now = Date.now();
-        const defaultRun = {
-          id: crypto.randomUUID(),
-          name: "Automation Run",
-          status: "active" as const,
-          rowResults: {},
-          rowActualResults: {},
-          rowNotes: {},
-          rowStepResults: {},
-          rowStepNotes: {},
-          rowStepActualResults: {},
-          rowStepEvidence: {},
-          linkedDefectIds: {},
-          createdAt: now,
-          updatedAt: now,
-        };
-
-        const nextProject: Project = {
-          ...activeProject,
-          runs: [...(activeProject.runs ?? []), defaultRun],
-          activeRunId: defaultRun.id,
-          updatedAt: now,
-        };
-        const currentActiveProjectId = activeProject.id;
-        const nextProjects = projectsRef.current.map((project) =>
-          project.id === currentActiveProjectId ? nextProject : project
-        );
-        const savedProjects = await persistProjects(nextProjects);
-        const ensuredProject =
-          savedProjects.find((project) => project.id === nextProject.id) ?? nextProject;
-        activeProject = ensuredProject;
-        activeRun =
-          ensuredProject.runs?.find((run) => run.id === ensuredProject.activeRunId) ??
-          defaultRun;
-        activeProjectRef = ensuredProject.id;
-        setResolvedProjectId(ensuredProject.id);
-        showWorkspaceNotice(
-          "info",
-          'Created an "Automation Run" so this script can execute right away.'
-        );
-      }
-
-      const response = await fetch("/api/automation/execute", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          projectId: activeProjectRef,
-          runId: activeRun.id,
-          caseId: rowId,
-          scriptId: options?.scriptId,
-          executionMode: options?.executionMode,
-        }),
-      });
-
-      const data = await parseAutomationApiResponse<{
-        error?: string;
-        execution?: AutomationExecution;
-        artifacts?: AutomationExecutionArtifact[];
-      }>(response);
-
-      if (!response.ok || !data.execution) {
-        const text = data.error || "Failed to execute automation.";
-        showWorkspaceNotice("error", text);
-        return { tone: "error" as const, text };
-      }
-
-      setAutomationExecutions((currentExecutions) => [
-        ...currentExecutions.filter((execution) => execution.id !== data.execution?.id),
-        data.execution as AutomationExecution,
-      ]);
-      setAutomationArtifacts((currentArtifacts) => [
-        ...currentArtifacts,
-        ...((data.artifacts ?? []) as AutomationExecutionArtifact[]),
-      ]);
-      setRows((currentRows) =>
-        currentRows.map((row) =>
-          row.id === rowId
-            ? {
-                ...row,
-                executionResult: data.execution?.status ?? row.executionResult,
-              }
-            : row
-        )
-      );
-
-      const tone: "success" | "error" =
-        data.execution.status === "passed" ? "success" : "error";
-      const text =
-        data.execution.status === "passed"
-          ? `Automation passed for ${rowId}. Open Runs for case detail or Reports for the project summary.`
-          : `Automation ${data.execution.status} for ${rowId}. Open Runs for details or Reports for the summary.`;
-
-      showWorkspaceNotice(
-        tone,
-        text,
-        activeProjectRef
-          ? [
-              {
-                label: "View Run",
-                href: `/projects/${encodeURIComponent(
-                  (activeProject.projectKey?.trim() || projectKey.trim() || activeProjectRef)
-                )}/runs?${new URLSearchParams({
-                  runId: activeRun.id,
-                  rowId,
-                }).toString()}`,
-              },
-              {
-                label: "View Report",
-                href: `/projects/${encodeURIComponent(
-                  (activeProject.projectKey?.trim() || projectKey.trim() || activeProjectRef)
-                )}/reports`,
-              },
-            ]
-          : undefined
-      );
-
-      return { tone, text };
+      void options;
+      const text = `Automation has been removed. ${rowId} cannot be executed from this workspace.`;
+      showWorkspaceNotice("info", text);
+      return { tone: "info" as const, text };
     },
-    [currentProjectId, persistProjects, projectKey, projectName, upsertProject]
+    [showWorkspaceNotice]
   );
 
   const createAutomationIssueForRow = useCallback(
@@ -4662,9 +4488,10 @@ export default function ProjectWorkspace({
       console.error("Fill bug prediction error:", error);
       showWorkspaceNotice(
         "error",
-        "Unable to generate targeted cases for this likely defect zone."
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "Unable to generate targeted cases for this likely defect zone."
       );
-      alert("Unable to generate targeted cases for this likely defect zone.");
     } finally {
       setFillingPredictionId(null);
     }
@@ -7432,7 +7259,7 @@ export default function ProjectWorkspace({
               href={activeProjectWorkspaceHref}
               className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
                 initialSection === "workspace"
-                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-white dark:bg-white dark:text-zinc-950"
+                  ? "border-zinc-900 bg-zinc-900 !text-white dark:border-white dark:bg-white dark:!text-zinc-950"
                   : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
               }`}
             >
@@ -7442,7 +7269,7 @@ export default function ProjectWorkspace({
               href={activeProjectCasesHref}
               className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
                 initialSection === "cases"
-                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-white dark:bg-white dark:text-zinc-950"
+                  ? "border-zinc-900 bg-zinc-900 !text-white dark:border-white dark:bg-white dark:!text-zinc-950"
                   : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
               }`}
             >

@@ -1,18 +1,10 @@
-import ProjectAutomationWorkspace from "../../../../../components/ProjectAutomationWorkspace";
+import AutomationShell from "../../../../../components/AutomationShell";
 
-export default async function ProjectAutomationSuitesPage({
-  params,
-}: {
+type PageProps = {
   params: Promise<{ projectKey: string }>;
-}) {
+};
+
+export default async function AutomationSuitesPage({ params }: PageProps) {
   const { projectKey } = await params;
-  return (
-    <ProjectAutomationWorkspace
-      projectKey={projectKey}
-      initialProject={null}
-      initialSection="suites"
-    />
-  );
+  return <AutomationShell projectKey={projectKey} activeSection="suites" />;
 }
-
-

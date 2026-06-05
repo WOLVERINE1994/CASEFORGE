@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import CaseForgeBrand from "./CaseForgeBrand";
+import { LabelWithBadge, NavItem as SafeNavItem, ResponsiveToolbar } from "./SafeLayout";
 import { useProjectDataState } from "./ProjectDataStateContext";
 import { useProjectRouteMetrics } from "./ProjectRouteMetricsContext";
 import { useActiveReviewerSession } from "./useActiveReviewerSession";
@@ -354,7 +355,7 @@ export default function ProjectSidebar({
         href: buildProjectHref(`/projects/${encodedProjectKey}/automation`),
         label: "Automation",
         kind: "automation" as const,
-        count: (projectDataState?.project?.automationScripts ?? []).length,
+        matchPrefixes: [`/projects/${encodedProjectKey}/automation`],
       },
       {
         href: buildProjectHref(`/projects/${encodedProjectKey}/activity`),
@@ -421,7 +422,7 @@ export default function ProjectSidebar({
       },
       {
         key: "delivery",
-        label: "Automation",
+        label: "Delivery",
         open: deliveryGroupOpen,
         setOpen: setDeliveryGroupOpen,
         items: primaryNavItems.filter(
@@ -480,9 +481,9 @@ export default function ProjectSidebar({
     <button
       type="button"
       onClick={onToggle}
-      className="flex w-full items-center justify-between rounded-xl px-1 py-1 text-left transition hover:bg-slate-800/70"
+      className="cf-safe-row w-full justify-between rounded-xl px-1 py-1 text-left transition hover:bg-slate-800/70"
     >
-      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+      <span className="cf-safe-label text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
         {label}
       </span>
       <svg
@@ -511,25 +512,25 @@ export default function ProjectSidebar({
             caseForge
           </p>
           <CaseForgeBrand size="md" className="mt-3" />
-          <h2 className="mt-3 text-xl font-semibold tracking-tight text-slate-50">
+          <h2 className="cf-safe-wrap mt-3 text-xl font-semibold tracking-tight text-slate-50">
             {projectName.trim() || "Unsaved workspace"}
           </h2>
         </div>
         <p className="mt-3 text-sm leading-6 text-slate-300">
           Structured QA operations across manual testing, automation, execution, and reporting.
         </p>
-        <div className="mt-4 flex flex-wrap gap-2 text-xs">
+        <div className="cf-safe-toolbar mt-4 text-xs">
           {displayProjectKey ? (
-            <span className="rounded-full border border-slate-600/80 bg-slate-900/85 px-2.5 py-1 font-semibold text-slate-200">
+            <span className="cf-safe-chip cf-safe-wrap rounded-full border border-slate-600/80 bg-slate-900/85 px-2.5 py-1 font-semibold text-slate-200">
               {displayProjectKey}
             </span>
           ) : null}
           {shellMeta.length ? shellMeta.map((item) => (
-            <span key={item} className="rounded-full border border-slate-700/80 bg-slate-900/75 px-2.5 py-1 font-semibold text-slate-300">
+            <span key={item} className="cf-safe-chip cf-safe-wrap rounded-full border border-slate-700/80 bg-slate-900/75 px-2.5 py-1 font-semibold text-slate-300">
               {item}
             </span>
           )) : (
-            <span className="rounded-full border border-slate-700/80 bg-slate-900/75 px-2.5 py-1 font-semibold text-slate-300">
+            <span className="cf-safe-chip rounded-full border border-slate-700/80 bg-slate-900/75 px-2.5 py-1 font-semibold text-slate-300">
               Workspace active
             </span>
           )}
@@ -559,34 +560,25 @@ export default function ProjectSidebar({
                     const active = isActiveNavItem(pathname, item);
 
                     return (
-                      <Link
+                      <SafeNavItem
                         key={item.href}
                         href={item.href}
-                        className={`relative flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm font-semibold transition ${
+                        active={active}
+                        className={`${
                           active
                             ? "border-sky-400/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.2),rgba(79,70,229,0.18),rgba(124,58,237,0.2))] text-slate-50 shadow-[0_18px_34px_-28px_rgba(79,70,229,0.85)]"
                             : "border-transparent bg-transparent text-slate-300 hover:border-slate-700 hover:bg-slate-800/70"
                         }`}
+                        icon={<NavIcon kind={item.kind} />}
+                        label={item.label}
+                        title={item.label}
+                        badge={typeof item.count === "number" ? item.count : undefined}
+                        badgeClassName={active ? "bg-slate-950/85 text-cyan-200" : "bg-slate-800 text-slate-300"}
                       >
                         {active ? (
                           <span className="absolute inset-y-2 left-1.5 w-1 rounded-full bg-cyan-300" />
                         ) : null}
-                        <span className="flex items-center gap-3">
-                          <NavIcon kind={item.kind} />
-                          {item.label}
-                        </span>
-                        {typeof item.count === "number" ? (
-                          <span
-                            className={`inline-flex min-w-6 items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                              active
-                                ? "bg-slate-950/85 text-cyan-200"
-                                : "bg-slate-800 text-slate-300"
-                            }`}
-                          >
-                            {item.count}
-                          </span>
-                        ) : null}
-                      </Link>
+                      </SafeNavItem>
                     );
                   })}
                 </nav>
@@ -601,7 +593,7 @@ export default function ProjectSidebar({
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
           Secondary Tools
         </p>
-        <div className="flex flex-wrap gap-2">
+        <ResponsiveToolbar>
           {secondaryNavItems.map((item) => {
             const active = isActiveNavItem(pathname, item);
 
@@ -609,23 +601,24 @@ export default function ProjectSidebar({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                className={`min-w-0 max-w-full rounded-xl border px-3 py-2 text-xs font-semibold transition ${
                   active
                     ? "border-sky-400/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.2),rgba(79,70,229,0.18),rgba(124,58,237,0.2))] text-slate-50"
                     : "border-slate-700 bg-slate-900/80 text-slate-300 hover:bg-slate-800"
                 }`}
+                title={item.label}
               >
-                <NavIcon kind={item.kind} />
-                {item.label}
-                {typeof item.count === "number" ? (
-                  <span className="rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">
-                    {item.count}
-                  </span>
-                ) : null}
+                <LabelWithBadge
+                  badge={typeof item.count === "number" ? item.count : undefined}
+                  badgeClassName="bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300"
+                  icon={<NavIcon kind={item.kind} />}
+                  label={item.label}
+                  title={item.label}
+                />
               </Link>
             );
           })}
-        </div>
+        </ResponsiveToolbar>
       </div>
 
       <div className="cf-card rounded-[20px] p-4">
@@ -635,9 +628,11 @@ export default function ProjectSidebar({
         {reviewerOpen ? (
           <>
             <p className="mt-2 text-sm font-semibold text-slate-100">
-              {activeReviewerSession.reviewer?.name ||
-                activeReviewerSession.reviewer?.email ||
-                "No active reviewer"}
+              <span className="cf-safe-wrap">
+                {activeReviewerSession.reviewer?.name ||
+                  activeReviewerSession.reviewer?.email ||
+                  "No active reviewer"}
+              </span>
             </p>
             <p className="mt-1 text-xs text-slate-400">
               {unreadNotifications} unread reviewer alert

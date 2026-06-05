@@ -3,16 +3,10 @@
 import Link from "next/link";
 import { Fragment, type DragEvent, type ReactNode } from "react";
 import {
-  getAutomationBindingForCase,
-  getAutomationExecutionsForCase,
-  getAutomationScriptById,
-} from "../utils/automation";
-import {
   EnvironmentSummaryCard,
   VersionHistorySummaryCard,
   WorkflowAuditSummaryCard,
 } from "./CaseModuleSummaryCards";
-import CaseAutomationLinkPanel from "./CaseAutomationLinkPanel";
 import {
   type AutomationBinding,
   type AutomationEnvironmentBinding,
@@ -39,6 +33,31 @@ import {
   type TestCaseWorkflowStatus,
 } from "../utils/workspace";
 import { formatUtcDate } from "../utils/date-format";
+
+const getAutomationBindingForCase = (
+  _bindings: AutomationBinding[],
+  _rowId: string
+): AutomationBinding | null => null;
+const getAutomationExecutionsForCase = (
+  _executions: AutomationExecution[],
+  _rowId: string
+): AutomationExecution[] => [];
+const getAutomationScriptById = (
+  _scripts: AutomationScript[],
+  _scriptId?: string | null
+): AutomationScript | null => null;
+const CaseAutomationLinkPanel = (_props: {
+  row: TestCaseRow;
+  binding: AutomationBinding | null;
+  script: AutomationScript | null;
+  latestExecution: AutomationExecution | null;
+  projectRouteRef: string | null;
+  onRunAutomation: (rowId: string) => Promise<{
+    tone: "info" | "success" | "error";
+    text: string;
+  } | void>;
+  onCreateIssueFromFailure?: (rowId: string) => Promise<void>;
+}) => null;
 
 type ReviewInsight = {
   whyThisExists: string;
@@ -464,8 +483,8 @@ export default function TestCaseTable({
         ) : null}
       </div>
 
-      <div className="w-full overflow-x-auto">
-        <table className="w-full min-w-[2080px] border-separate border-spacing-0 text-sm table-fixed">
+      <div className="cf-table-shell w-full overflow-x-auto">
+        <table className="cf-table-safe w-full min-w-[2080px] border-separate border-spacing-0 text-sm table-fixed">
           <colgroup>
             {enableSelection && <col className="w-[72px]" />}
             <col className="w-[280px]" />

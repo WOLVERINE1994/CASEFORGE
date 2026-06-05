@@ -107,6 +107,52 @@ enum TestCaseStatus {
   obsolete
 }
 
+enum AutomationScenarioStatus {
+  draft
+  active
+  paused
+  archived
+}
+
+enum AutomationRunStatus {
+  queued
+  running
+  passed
+  failed
+  blocked
+  canceled
+}
+
+enum AutomationSessionStatus {
+  creating
+  idle
+  running
+  broken
+  terminating
+  terminated
+  requested
+  starting
+  ready
+  recording
+  closed
+  failed
+}
+
+enum AutomationSessionProvider {
+  managed_browser
+  self_hosted_playwright
+  optional_local_connector
+}
+
+enum AutomationArtifactType {
+  trace
+  video
+  log
+  network
+  screenshot
+  auth_state
+}
+
 model User {
   id                  String        @id @default(cuid())
   name                String
@@ -183,6 +229,11 @@ model Project {
   testCases       TestCase[]
   sprints         Sprint[]
   issues          Issue[]
+  automationScenarios AutomationScenario[]
+  automationActions AutomationAction[]
+  automationRuns AutomationRun[]
+  automationEnvironments AutomationEnvironment[]
+  automationSessions AutomationSession[]
 }
 
 model Sprint {
@@ -319,4 +370,175 @@ model TestCase {
   issue          Issue?         @relation(fields: [issueId], references: [id], onDelete: SetNull)
   requirement    Requirement?   @relation(fields: [requirementId], references: [id], onDelete: SetNull)
   owner          User?          @relation("TestCaseOwner", fields: [ownerId], references: [id])
+}
+
+model AutomationScenario {
+  id          String                   @id @default(cuid())
+  projectId   String
+  version     Int                      @default(1)
+  name        String
+  description String                   @default("")
+  status      AutomationScenarioStatus @default(draft)
+  tags        Json                     @default("[]")
+  metadata    Json                     @default("{}")
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  project     Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  steps       AutomationStep[]
+  runs        AutomationRun[]
+  sessions    AutomationSession[]
+
+  @@index([projectId, updatedAt])
+}
+
+model AutomationAction {
+  id                    String           @id @default(cuid())
+  projectId             String
+  version               Int              @default(1)
+  createdFromScenarioId String?
+  name                  String
+  description           String           @default("")
+  tags                  Json             @default("[]")
+  metadata              Json             @default("{}")
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  project               Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  steps                 AutomationStep[]
+
+  @@index([projectId, updatedAt])
+}
+
+model AutomationStep {
+  id                  String                @id @default(cuid())
+  projectId           String
+  version             Int                   @default(1)
+  scenarioId          String?
+  actionId            String?
+  orderIndex          Int
+  action              String
+  description         String
+  target              Json                  @default("{}")
+  inputValue          String                @default("")
+  expectedValue       String                @default("")
+  assertionType       String                @default("")
+  options             Json                  @default("{}")
+  commandText         String                @default("")
+  elementSnapshot     Json                  @default("{}")
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  scenario            AutomationScenario?   @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  actionRecord        AutomationAction?     @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  locatorCandidates   AutomationLocatorCandidate[]
+
+  @@index([projectId, scenarioId, orderIndex])
+  @@index([projectId, actionId, orderIndex])
+}
+
+model AutomationLocatorCandidate {
+  id              String         @id @default(cuid())
+  version         Int            @default(1)
+  stepId          String
+  strategy        String
+  value           String
+  score           Int
+  isUnique        Boolean        @default(false)
+  rank            Int
+  source          String         @default("recorded")
+  metadata        Json           @default("{}")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  step            AutomationStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@index([stepId, rank])
+}
+
+model AutomationEnvironment {
+  id                String      @id @default(cuid())
+  projectId         String
+  version           Int         @default(1)
+  name              String
+  baseUrl           String      @default("")
+  variables         Json        @default("{}")
+  authStateArtifactId String?
+  isDefault         Boolean     @default(false)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  project           Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runs              AutomationRun[]
+  sessions          AutomationSession[]
+
+  @@index([projectId, isDefault])
+}
+
+model AutomationSession {
+  id                  String                    @id @default(cuid())
+  projectId           String
+  version             Int                       @default(1)
+  scenarioId          String?
+  environmentId       String?
+  provider            AutomationSessionProvider
+  providerSessionId   String?
+  status              AutomationSessionStatus   @default(requested)
+  liveViewUrl         String?
+  expiresAt           DateTime?
+  capabilities        Json                      @default("{}")
+  metadata            Json                      @default("{}")
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+
+  project             Project                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenario            AutomationScenario?        @relation(fields: [scenarioId], references: [id], onDelete: SetNull)
+  environment         AutomationEnvironment?     @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  runs                AutomationRun[]
+
+  @@index([projectId, status, updatedAt])
+}
+
+model AutomationRun {
+  id              String              @id @default(cuid())
+  projectId       String
+  version         Int                 @default(1)
+  scenarioId      String?
+  sessionId       String?
+  environmentId   String?
+  status          AutomationRunStatus @default(queued)
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  summary         Json                @default("{}")
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  project         Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenario        AutomationScenario?  @relation(fields: [scenarioId], references: [id], onDelete: SetNull)
+  session         AutomationSession?   @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  environment     AutomationEnvironment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  artifacts       AutomationArtifact[]
+
+  @@index([projectId, createdAt])
+  @@index([scenarioId, createdAt])
+}
+
+model AutomationArtifact {
+  id          String                 @id @default(cuid())
+  projectId   String
+  version     Int                    @default(1)
+  runId       String?
+  type        AutomationArtifactType
+  label       String
+  uri         String
+  mimeType    String?
+  sizeBytes   Int?
+  encrypted   Boolean                @default(false)
+  metadata    Json                   @default("{}")
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  run         AutomationRun?          @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, runId, type])
 }

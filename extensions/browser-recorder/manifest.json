@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "CaseForge Browser Recorder",
+  "version": "0.1.0",
+  "description": "Optional current-tab recorder for CaseForge automation.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "action": {
+    "default_title": "Record with CaseForge"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

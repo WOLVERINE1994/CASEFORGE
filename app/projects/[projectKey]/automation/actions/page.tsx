@@ -1,18 +1,19 @@
-import ProjectAutomationWorkspace from "../../../../../components/ProjectAutomationWorkspace";
+import AutomationShell from "../../../../../components/AutomationShell";
+import AutomationActionsClient from "../../../../../components/AutomationActionsClient";
 
-export default async function ProjectAutomationActionsPage({
-  params,
-}: {
+type PageProps = {
   params: Promise<{ projectKey: string }>;
-}) {
+};
+
+export default async function AutomationActionsPage({ params }: PageProps) {
   const { projectKey } = await params;
   return (
-    <ProjectAutomationWorkspace
+    <AutomationShell
       projectKey={projectKey}
-      initialProject={null}
-      initialSection="actions"
-    />
+      activeSection="actions"
+      description="Reusable no-code command groups created from scenario timelines."
+    >
+      <AutomationActionsClient projectKey={projectKey} />
+    </AutomationShell>
   );
 }
-
-

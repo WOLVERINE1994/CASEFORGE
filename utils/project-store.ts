@@ -28,6 +28,7 @@ import {
   AutomationStep,
   AutomationStepAction,
   AutomationStepExecutionStatus,
+  AutomationStepResult,
   AutomationSuite,
   AutomationScheduleStatus,
   AutomationSuiteStatus,
@@ -449,6 +450,8 @@ const getStoredAutomationScripts = (
         typeof record.environmentBindingId === "string"
           ? record.environmentBindingId
           : undefined,
+      startUrl:
+        typeof record.startUrl === "string" ? record.startUrl : undefined,
       name: record.name,
       description:
         typeof record.description === "string" ? record.description : undefined,
@@ -1127,6 +1130,10 @@ const getStoredAutomationExecutions = (
                   nextRecord.action === "select" ||
                   nextRecord.action === "press" ||
                   nextRecord.action === "wait-for" ||
+                  nextRecord.action === "assert-element" ||
+                  nextRecord.action === "assert-attribute" ||
+                  nextRecord.action === "assert-style" ||
+                  nextRecord.action === "assert-image" ||
                   nextRecord.action === "assert-text" ||
                   nextRecord.action === "assert-visible" ||
                   nextRecord.action === "assert-url" ||
@@ -1162,6 +1169,20 @@ const getStoredAutomationExecutions = (
                       (line): line is string => typeof line === "string"
                     )
                   : undefined,
+                healing:
+                  nextRecord.healing &&
+                  typeof nextRecord.healing === "object" &&
+                  !Array.isArray(nextRecord.healing) &&
+                  typeof (nextRecord.healing as Record<string, unknown>).used === "boolean"
+                    ? (nextRecord.healing as AutomationStepResult["healing"])
+                    : undefined,
+                vision:
+                  nextRecord.vision &&
+                  typeof nextRecord.vision === "object" &&
+                  !Array.isArray(nextRecord.vision) &&
+                  typeof (nextRecord.vision as Record<string, unknown>).used === "boolean"
+                    ? (nextRecord.vision as AutomationStepResult["vision"])
+                    : undefined,
                 startedAt:
                   typeof nextRecord.startedAt === "number"
                     ? nextRecord.startedAt
@@ -1523,6 +1544,24 @@ const getStoredAutomationSchedules = (
       };
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
+};
+
+const getStoredAutomationVisualObjects = (
+  value: unknown
+): Project["automationVisualObjects"] => {
+  const planning = getProjectPlanning(value);
+  return Array.isArray(planning?.automationVisualObjects)
+    ? (planning.automationVisualObjects as Project["automationVisualObjects"])
+    : [];
+};
+
+const getStoredAutomationLocatorApprovals = (
+  value: unknown
+): Project["automationLocatorApprovals"] => {
+  const planning = getProjectPlanning(value);
+  return Array.isArray(planning?.automationLocatorApprovals)
+    ? (planning.automationLocatorApprovals as Project["automationLocatorApprovals"])
+    : [];
 };
 
 const getStoredGenerationFeedbackLog = (
@@ -2763,6 +2802,8 @@ const toWorkspaceProject = (project: ProjectRecord): Project => {
     automationSelectorPresets: getStoredAutomationSelectorPresets(project.rows),
     automationEnvironmentBindings: getStoredAutomationEnvironmentBindings(project.rows),
     automationSchedules: getStoredAutomationSchedules(project.rows),
+    automationVisualObjects: getStoredAutomationVisualObjects(project.rows),
+    automationLocatorApprovals: getStoredAutomationLocatorApprovals(project.rows),
     activeAutomationEnvironmentId:
       typeof getProjectPlanning(project.rows)?.activeAutomationEnvironmentId === "string"
         ? (getProjectPlanning(project.rows)?.activeAutomationEnvironmentId as string)
@@ -2843,6 +2884,8 @@ const toWorkspaceAutomationProject = (project: AutomationProjectRecord): Project
   automationSelectorPresets: getStoredAutomationSelectorPresets(project.rows),
   automationEnvironmentBindings: getStoredAutomationEnvironmentBindings(project.rows),
   automationSchedules: getStoredAutomationSchedules(project.rows),
+  automationVisualObjects: getStoredAutomationVisualObjects(project.rows),
+  automationLocatorApprovals: getStoredAutomationLocatorApprovals(project.rows),
   activeAutomationEnvironmentId:
     typeof getProjectPlanning(project.rows)?.activeAutomationEnvironmentId === "string"
       ? (getProjectPlanning(project.rows)?.activeAutomationEnvironmentId as string)
@@ -2954,6 +2997,12 @@ const normalizeProject = (project: Project): Project => ({
     : [],
   automationSchedules: Array.isArray(project.automationSchedules)
     ? project.automationSchedules
+    : [],
+  automationVisualObjects: Array.isArray(project.automationVisualObjects)
+    ? project.automationVisualObjects
+    : [],
+  automationLocatorApprovals: Array.isArray(project.automationLocatorApprovals)
+    ? project.automationLocatorApprovals
     : [],
   activeAutomationEnvironmentId: project.activeAutomationEnvironmentId ?? "",
   generationFeedbackLog: Array.isArray(project.generationFeedbackLog)
@@ -3367,6 +3416,8 @@ export const writeProjects = async (projects: Project[]) => {
                   automationSelectorPresets: project.automationSelectorPresets ?? [],
                   automationEnvironmentBindings: project.automationEnvironmentBindings ?? [],
                   automationSchedules: project.automationSchedules ?? [],
+                  automationVisualObjects: project.automationVisualObjects ?? [],
+                  automationLocatorApprovals: project.automationLocatorApprovals ?? [],
                   activeAutomationEnvironmentId:
                     project.activeAutomationEnvironmentId ?? "",
                   generationFeedbackLog: project.generationFeedbackLog ?? [],
@@ -3424,6 +3475,8 @@ export const writeProjects = async (projects: Project[]) => {
                   automationSelectorPresets: project.automationSelectorPresets ?? [],
                   automationEnvironmentBindings: project.automationEnvironmentBindings ?? [],
                   automationSchedules: project.automationSchedules ?? [],
+                  automationVisualObjects: project.automationVisualObjects ?? [],
+                  automationLocatorApprovals: project.automationLocatorApprovals ?? [],
                   activeAutomationEnvironmentId:
                     project.activeAutomationEnvironmentId ?? "",
                   generationFeedbackLog: project.generationFeedbackLog ?? [],

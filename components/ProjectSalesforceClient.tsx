@@ -3,12 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import CaseAutomationPanel from "./CaseAutomationPanel";
 import { OverlayFormShell } from "./FilterWorkspaceSections";
 import ProjectModuleSubnav from "./ProjectModuleSubnav";
 import { useProjectDataState } from "./ProjectDataStateContext";
 import { useProjectIssueState } from "./ProjectIssueStateContext";
-import { getAutomationArtifactsForExecution } from "../utils/automation";
 import { parseResultToRows } from "../utils/parser";
 import { buildProjectReportsSummary } from "../utils/project-reports";
 import {
@@ -44,7 +42,6 @@ import {
 type SalesforceSection =
   | "overview"
   | "cases"
-  | "automation"
   | "runs"
   | "reports"
   | "objects"
@@ -60,7 +57,6 @@ type Props = {
 const navItems = [
   ["overview", "Salesforce Overview", ""],
   ["cases", "Manual Cases", "/cases"],
-  ["automation", "Automated Cases", "/automation"],
   ["runs", "Runs", "/runs"],
   ["reports", "Reports", "/reports"],
   ["objects", "Objects & Modules", "/objects"],
@@ -389,62 +385,10 @@ export default function ProjectSalesforceClient({
     rowId: string,
     options?: { scriptId?: string; executionMode?: "headless" | "headed" }
   ) => {
-    if (!project?.activeRunId) {
-      return {
-        tone: "error" as const,
-        text: "Use shared Runs to initialize an active run before executing Salesforce automation.",
-      };
-    }
-
-    const response = await fetch("/api/automation/execute", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        projectId: project.id,
-        runId: project.activeRunId,
-        caseId: rowId,
-        scriptId: options?.scriptId,
-        executionMode: options?.executionMode,
-      }),
-    });
-    const payload = await parseAutomationApiResponse<{
-      error?: string;
-      execution?: AutomationExecution;
-      artifacts?: Project["automationArtifacts"];
-    }>(response);
-    if (!response.ok || !payload.execution) {
-      return {
-        tone: "error" as const,
-        text: payload.error || "Failed to execute Salesforce automation.",
-      };
-    }
-
-    const refreshed = await persistProject({
-      ...project,
-      automationExecutions: [
-        ...(project.automationExecutions ?? []).filter(
-          (entry) => entry.id !== payload.execution?.id
-        ),
-        payload.execution,
-      ],
-      automationArtifacts: [
-        ...(project.automationArtifacts ?? []).filter(
-          (artifact) =>
-            !payload.artifacts?.some((incoming) => incoming.id === artifact.id)
-        ),
-        ...(payload.artifacts ?? []),
-      ],
-      updatedAt: nowTimestamp(),
-    });
-    setLocalProject(refreshed);
+    void options;
     return {
-      tone:
-        payload.execution.status === "passed"
-          ? ("success" as const)
-          : payload.execution.status === "not-run"
-            ? ("info" as const)
-            : ("error" as const),
-      text: `Salesforce automation ${payload.execution.status} for ${rowId}.`,
+      tone: "info" as const,
+      text: `Automation has been removed. ${rowId} cannot be executed from Salesforce.`,
     };
   };
 
@@ -555,20 +499,6 @@ export default function ProjectSalesforceClient({
         </section>
       ) : null}
 
-      {initialSection === "automation" ? (
-        <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-          <article className={cardClassName}>
-            <div className="mb-4 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950/70 dark:text-zinc-300">
-              {activeRunId
-                ? `Active shared run: ${activeRunId}. Salesforce executions will publish real results and artifacts into the shared run history.`
-                : "No active shared run is open yet. Start one from Runs before executing Salesforce automation."}
-            </div>
-            <div className="space-y-3">{automationRows.map((row) => <button key={row.id} type="button" onClick={() => setSelectedCaseId(row.id)} className={`w-full rounded-[18px] border px-4 py-4 text-left transition ${selectedRow?.id === row.id ? "border-emerald-200 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10" : "border-zinc-200/80 bg-zinc-50/80 hover:bg-white dark:border-zinc-800 dark:bg-zinc-950/70 dark:hover:bg-zinc-900"}`}><p className="font-semibold text-zinc-950 dark:text-zinc-50">{row.id} | {row.title}</p><p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{row.salesforceObjectType || "Object"} | {row.automationProvider || "No provider"}</p></button>)}</div>
-          </article>
-          <article>{selectedRow ? <CaseAutomationPanel context="automation" row={selectedRow} script={selectedRow.automationScriptId ? scriptById[selectedRow.automationScriptId] ?? null : null} steps={selectedRow.automationScriptId ? project?.automationSteps?.[selectedRow.automationScriptId] ?? [] : []} latestExecution={latestExecutionByCaseId[selectedRow.id] ?? null} latestArtifacts={latestExecutionByCaseId[selectedRow.id] ? getAutomationArtifactsForExecution(project?.automationArtifacts ?? [], latestExecutionByCaseId[selectedRow.id].id) : []} projectRouteRef={projectKey} reusableBlocks={project?.automationReusableBlocks ?? []} selectorPresets={project?.automationSelectorPresets ?? []} environments={project?.automationEnvironmentBindings ?? []} activeEnvironmentId={activeEnvironmentId} onSave={(payload) => saveAutomationForRow(payload)} onSaveReuseLibrary={(payload) => void saveReuseLibrary(payload)} onRun={(rowId) => runAutomationForRow(rowId)} onRunWithOptions={(payload) => runAutomationForRow(payload.rowId, { scriptId: payload.scriptId, executionMode: payload.executionMode })} /> : <div className={cardClassName}>No Salesforce automation case selected.</div>}</article>
-        </section>
-      ) : null}
-
       {initialSection === "runs" || initialSection === "reports" ? (
         <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
           <article className={cardClassName}>
@@ -637,7 +567,6 @@ export default function ProjectSalesforceClient({
       <section className={cardClassName}>
         <div className="flex flex-wrap gap-2">
           <Link href={`/projects/${encodedProjectKey}/cases`} className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">Shared Cases</Link>
-          <Link href={`/projects/${encodedProjectKey}/automation`} className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">Shared Automation</Link>
           <Link href={`/projects/${encodedProjectKey}/runs`} className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">Shared Runs</Link>
           <Link href={`/projects/${encodedProjectKey}/reports`} className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">Shared Reports</Link>
         </div>
