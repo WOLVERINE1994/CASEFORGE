@@ -40,6 +40,7 @@ export const coverageGapTitles: Record<string, string> = {
   "ui-mode-gap": "Requested UI focus is not strongly reflected",
   "regression-mode-gap": "Regression intent is not visible enough",
   "persona-gap": "Persona-specific coverage is missing",
+  "accessibility-gap": "WCAG accessibility coverage is missing",
 };
 
 export const getCoverageGapTitle = (gapId: string) =>
@@ -143,6 +144,17 @@ export const createManualGapDraft = (gapId: string) => {
           "Open the target page; Interact with the relevant control or field; Observe labels, states, and visible feedback",
         expectedResult:
           "The UI responds correctly and presents the expected labels, states, and feedback",
+      };
+    case "accessibility-gap":
+      return {
+        type: "UI",
+        title: "Verify keyboard focus and accessible feedback for the target flow",
+        preconditions:
+          "Requirement is implemented; User-facing UI is available; WCAG 2.2 AA review is in scope",
+        steps:
+          "Open the target flow; Navigate through interactive controls using keyboard only; Confirm visible focus order and control names; Trigger a validation or status message if relevant",
+        expectedResult:
+          "The flow remains operable and understandable with keyboard navigation, visible focus, accessible names, and clear feedback",
       };
     case "regression-mode-gap":
       return {
@@ -252,6 +264,22 @@ export const analyzeCoverageGaps = (
       : persona === "blocked-user"
       ? hasAny(content, [/\bblocked\b/, /\brestricted\b/, /\bsuspended\b/, /\bdenied\b/])
       : hasAny(content, [new RegExp(`\\b${persona.replace("-", "[- ]")}\\b`)]);
+  const hasAccessibilityCoverage = hasAny(content, [
+    /\bwcag\b/,
+    /\baccessib/,
+    /\bscreen reader\b/,
+    /\baria\b/,
+    /\bkeyboard\b/,
+    /\btab order\b/,
+    /\bfocus\b/,
+    /\bcontrast\b/,
+    /\bzoom\b/,
+    /\breflow\b/,
+    /\balt text\b/,
+    /\bcaption\b/,
+    /\bsemantic\b/,
+    /\blandmark\b/,
+  ]);
 
   if (!hasNegativeCoverage) {
     gaps.push({
@@ -373,6 +401,20 @@ export const analyzeCoverageGaps = (
       recommendation:
         "Add visual state, field behavior, layout, navigation, and interaction validation cases.",
     });
+  }
+
+  if ((mode === "accessibility" || mode === "ui") && !hasAccessibilityCoverage) {
+    gaps.push({
+      id: "accessibility-gap",
+      title: "WCAG accessibility coverage is missing",
+      severity: mode === "accessibility" ? "high" : "medium",
+      summary:
+        "The suite does not clearly validate WCAG-oriented accessibility behavior for the user-facing flow.",
+      recommendation:
+        "Add cases for keyboard navigation, visible focus, accessible names, form error association, contrast, zoom/reflow, screen reader announcements, and alt text where relevant.",
+    });
+  } else if (hasAccessibilityCoverage) {
+    strengths.push("Accessibility or WCAG-oriented validation is represented.");
   }
 
   if (mode === "regression" && !types.has("Regression")) {

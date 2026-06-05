@@ -1,8 +1,4 @@
-import Groq from "groq-sdk";
-
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
+import { getGroqClient } from "../../../utils/groq-client";
 
 type ExistingRow = {
   id?: string;
@@ -20,11 +16,13 @@ const getModeInstructions = (mode: string) => {
     case "edge":
       return "Focus on boundary values, unusual combinations, extreme conditions, empty states, limits, and rare but realistic scenarios.";
     case "ui":
-      return "Focus on UI behavior, field validation, labels, button states, visibility, usability, layout-related validation, and user interaction flows.";
+      return "Focus on UI behavior, field validation, labels, button states, visibility, usability, layout-related validation, user interaction flows, and practical WCAG accessibility checks for user-facing UI.";
     case "api":
       return "Focus on API request and response validation, required fields, status codes, invalid payloads, authentication, authorization, and schema checks.";
     case "regression":
       return "Focus on core workflows that should remain stable after changes, including key business flows and previously working behaviors.";
+    case "accessibility":
+      return "Focus on WCAG 2.2 AA-oriented accessibility defect risks, including keyboard traps, missing visible focus, poor accessible names, form error association gaps, contrast failures, zoom/reflow issues, missing announcements, missing alt text, captions, target-size problems, and motion sensitivity.";
     case "functional":
     default:
       return "Focus on core functional flows, expected user behavior, successful paths, and major business logic.";
@@ -76,6 +74,8 @@ const predictionPromptMap: Record<string, string> = {
     "Create missing cases that validate account scoping, ownership, direct-link protection, and cross-user visibility controls for the current requirement.",
   "persona-gap":
     "Create missing persona-specific cases that validate the selected user journey, including permissions, redirects, restrictions, and visible messaging.",
+  "accessibility-risk":
+    "Create missing WCAG 2.2 AA-oriented accessibility cases that validate keyboard operation, focus visibility and order, accessible names, form error association, contrast, zoom/reflow, screen reader announcements, alt text, captions, target size, and reduced-motion behavior where relevant.",
 };
 
 function countGeneratedRows(result: string) {
@@ -222,7 +222,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const chatCompletion = await groq.chat.completions.create({
+    const chatCompletion = await getGroqClient().chat.completions.create({
       model: "llama-3.1-8b-instant",
       temperature: 0.35,
       messages: [
@@ -286,6 +286,7 @@ IMPORTANT RULES:
 - Do not introduce unrelated billing, invoice, payment, dashboard, or admin behavior unless the requirement explicitly mentions it
 - Do not repeat or lightly rephrase existing cases
 - Preserve realistic business relevance
+- For WCAG-oriented cases, use UI as the Type and describe observable accessibility evidence in the expected result
 
 Format exactly like this:
 TC001 | Functional | Title | Preconditions item 1; Preconditions item 2 | Step 1; Step 2; Step 3 | Expected Result`,

@@ -1,8 +1,4 @@
-import Groq from "groq-sdk";
-
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
+import { getGroqClient } from "../../../utils/groq-client";
 
 type ExistingRow = {
   id?: string;
@@ -20,11 +16,13 @@ const getModeInstructions = (mode: string) => {
     case "edge":
       return "Focus on boundary values, unusual combinations, extreme conditions, empty states, limits, and rare but realistic scenarios.";
     case "ui":
-      return "Focus on UI behavior, field validation, labels, button states, visibility, usability, layout-related validation, and user interaction flows.";
+      return "Focus on UI behavior, field validation, labels, button states, visibility, usability, layout-related validation, user interaction flows, and practical WCAG accessibility checks for user-facing UI.";
     case "api":
       return "Focus on API request and response validation, required fields, status codes, invalid payloads, authentication, authorization, and schema checks.";
     case "regression":
       return "Focus on core workflows that should remain stable after changes, including key business flows and previously working behaviors.";
+    case "accessibility":
+      return "Focus on manual WCAG 2.2 AA-oriented validation covering keyboard operation, focus order and visibility, semantic labels, form associations, screen reader announcements, contrast, zoom/reflow, alt text, captions, target size, and reduced-motion behavior where relevant.";
     case "functional":
     default:
       return "Focus on core functional flows, expected user behavior, successful paths, and major business logic.";
@@ -60,6 +58,8 @@ const gapPromptMap: Record<string, string> = {
     "Create missing API-focused test cases covering endpoints, payload validation, auth tokens, response codes, schema validation, and API error scenarios.",
   "ui-mode-gap":
     "Create missing UI-focused test cases covering control states, labels, field behavior, navigation, interaction flow, and visibility changes.",
+  "accessibility-gap":
+    "Create missing WCAG 2.2 AA-oriented accessibility test cases covering keyboard navigation, focus visibility and order, accessible names, form label and error associations, contrast, zoom/reflow, screen reader announcements, alt text, captions, target size, and reduced-motion behavior where relevant.",
   "regression-mode-gap":
     "Create missing regression-focused test cases that ensure existing flows and core behaviors continue working after change.",
   "persona-gap":
@@ -125,7 +125,7 @@ export async function POST(req: Request) {
       )
       .join("\n");
 
-    const chatCompletion = await groq.chat.completions.create({
+    const chatCompletion = await getGroqClient().chat.completions.create({
       model: "llama-3.1-8b-instant",
       temperature: 0.35,
       messages: [
@@ -184,6 +184,7 @@ IMPORTANT RULES:
 - Do not repeat or lightly rephrase existing cases
 - Keep expected results concise but meaningful
 - Preserve realistic business relevance
+- For WCAG-oriented cases, use UI as the Type and make the expected result observable through keyboard behavior, focus state, accessible names, screen reader announcement, contrast, zoom/reflow, alt text, captions, or form error association
 - Use temporary IDs in the first column if needed; the app will resequence them
 
 Format exactly like this:

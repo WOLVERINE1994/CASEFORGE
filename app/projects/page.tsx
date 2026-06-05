@@ -2,6 +2,7 @@
 import ActiveReviewerBanner from "../../components/ActiveReviewerBanner";
 import AppSidebar from "../../components/AppSidebar";
 import BarChart from "../../components/charts/BarChart";
+import DeleteProjectButton from "../../components/DeleteProjectButton";
 import TrendChart from "../../components/charts/TrendChart";
 import ResponsiveShell from "../../components/ResponsiveShell";
 import {
@@ -983,12 +984,6 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
 
             <div className="flex flex-wrap gap-3">
               <Link
-                href="/"
-                className="rounded-2xl border border-zinc-200 bg-white px-5 py-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
-              >
-                Back to Dashboard
-              </Link>
-              <Link
                 href="/projects/new"
                 className="rounded-2xl bg-[linear-gradient(135deg,_#0f766e_0%,_#14532d_100%)] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_35px_-18px_rgba(5,150,105,0.7)] transition hover:brightness-110"
               >
@@ -1907,6 +1902,10 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                           >
                             Release
                           </Link>
+                          <DeleteProjectButton
+                            projectId={project.id}
+                            projectName={project.name}
+                          />
                         </div>
                       </article>
                     );

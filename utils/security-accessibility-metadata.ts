@@ -75,6 +75,11 @@ const detectAccessibilityCategory = (
   return "keyboard-navigation";
 };
 
+const hasAccessibilitySignals = (content: string) =>
+  /\b(wcag|accessibility|accessible|screen reader|aria|aria-live|keyboard|tab order|focus|focus trap|accessible name|label association|error association|alt text|heading structure|semantic|landmark|contrast|zoom|reflow|caption|transcript|reduced motion|target size)\b/.test(
+    content
+  );
+
 export const enrichGeneratedRowsWithDomainMetadata = (
   rows: TestCaseRow[],
   mode: GenerationMode
@@ -106,16 +111,17 @@ export const enrichGeneratedRowsWithDomainMetadata = (
       };
     }
 
-    if (mode === "accessibility") {
+    if (mode === "accessibility" || hasAccessibilitySignals(content)) {
       const accessibilityCategory = detectAccessibilityCategory(content);
       pushLabel(labels, "accessibility");
       pushLabel(labels, accessibilityCategory ?? "accessibility");
+      pushLabel(labels, "wcag");
 
       return {
         ...row,
         testDomain: "accessibility" as const,
         accessibilityCategory,
-        complianceReference: "WCAG 2.2 review",
+        complianceReference: row.complianceReference ?? "WCAG 2.2 AA review",
         riskLevel:
           accessibilityCategory === "forms" ||
           accessibilityCategory === "keyboard-navigation" ||

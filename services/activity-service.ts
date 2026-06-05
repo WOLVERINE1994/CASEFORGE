@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { Prisma } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 
 export type ActivityRecord = {
@@ -32,8 +31,8 @@ type ActivityRow = {
   actorId: string | null;
   actorName: string | null;
   actorEmail: string | null;
-  beforeJson: Prisma.JsonValue | null;
-  afterJson: Prisma.JsonValue | null;
+  beforeJson: unknown;
+  afterJson: unknown;
   createdAt: Date;
 };
 
@@ -82,7 +81,7 @@ const mapActivityRecord = (row: ActivityRow): ActivityRecord => ({
 
 export const createActivityLog = async (input: CreateActivityInput) =>
   withActivityReadiness(async () => {
-    await prisma.$executeRaw(Prisma.sql`
+    await prisma.$executeRaw`
       INSERT INTO "ActivityLog" (
         "id",
         "entityType",
@@ -103,7 +102,7 @@ export const createActivityLog = async (input: CreateActivityInput) =>
         ${input.afterJson === undefined ? null : JSON.stringify(input.afterJson)}::jsonb,
         CURRENT_TIMESTAMP
       )
-    `);
+    `;
   });
 
 export const listEntityActivity = async (
@@ -111,7 +110,7 @@ export const listEntityActivity = async (
   entityId: string
 ): Promise<ActivityRecord[]> =>
   withActivityReadiness(async () => {
-    const rows = await prisma.$queryRaw<ActivityRow[]>(Prisma.sql`
+    const rows = await prisma.$queryRaw<ActivityRow[]>`
       SELECT
         a."id",
         a."entityType",
@@ -128,7 +127,7 @@ export const listEntityActivity = async (
       WHERE a."entityType" = ${entityType}
         AND a."entityId" = ${entityId}
       ORDER BY a."createdAt" DESC
-    `);
+    `;
 
     return rows.map(mapActivityRecord);
   });

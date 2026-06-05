@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/vercel-migrate.mjs && prisma generate",
     "build": "next build",
     "agent": "node scripts/caseforge-agent.mjs",
     "agent:desktop": "npm --prefix desktop-agent run dev",
@@ -15,6 +16,9 @@
     "worker:browser-sessions": "node workers/browser-session-service/server.mjs",
     "worker:automation-execution": "node workers/automation-execution-service/server.mjs",
     "start": "next start",
+    "agent": "node scripts/caseforge-local-agent.mjs",
+    "agent:desktop": "npm --prefix desktop-agent run dev",
+    "agent:desktop:dist": "npm --prefix desktop-agent run dist:win",
     "lint": "eslint",
     "lint:strict": "eslint . --max-warnings=0",
     "test:automation": "node --test tests/automation/*.test.mjs",

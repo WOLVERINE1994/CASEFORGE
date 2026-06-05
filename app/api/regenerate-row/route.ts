@@ -1,8 +1,4 @@
-import Groq from "groq-sdk";
-
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
+import { getGroqClient } from "../../../utils/groq-client";
 
 type RowPayload = {
   id: string;
@@ -26,11 +22,13 @@ const getModeInstructions = (mode: string) => {
     case "edge":
       return "Focus on boundary values, unusual combinations, extreme conditions, empty states, limits, and rare but realistic scenarios.";
     case "ui":
-      return "Focus on UI behavior, field validation, labels, button states, visibility, usability, layout-related validation, and user interaction flows.";
+      return "Focus on UI behavior, field validation, labels, button states, visibility, usability, layout-related validation, user interaction flows, and practical WCAG accessibility checks for user-facing UI.";
     case "api":
       return "Focus on API request and response validation, required fields, status codes, invalid payloads, authentication, authorization, and schema checks.";
     case "regression":
       return "Focus on core workflows that should remain stable after changes, including key business flows and previously working behaviors.";
+    case "accessibility":
+      return "Focus on strengthening this as a WCAG 2.2 AA-oriented manual accessibility case. Use observable checks for keyboard navigation, visible focus, semantic labels, form associations, screen reader announcement, contrast, zoom/reflow, alt text, captions, target size, or reduced motion where relevant.";
     case "functional":
     default:
       return "Focus on core functional flows, expected user behavior, successful paths, and major business logic.";
@@ -101,7 +99,7 @@ export async function POST(req: Request) {
     const coverageInstructions = getCoverageInstructions(coverage);
     const personaInstructions = getPersonaInstructions(persona);
 
-    const chatCompletion = await groq.chat.completions.create({
+    const chatCompletion = await getGroqClient().chat.completions.create({
       model: "llama-3.1-8b-instant",
       temperature: 0.25,
       messages: [
@@ -173,6 +171,7 @@ IMPORTANT RULES:
 - Test Data should include concrete sample input or environment detail when useful; otherwise use None
 - Preserve the same test case ID in the first column
 - Keep the rewritten case grounded in the requirement and avoid introducing unrelated product behavior
+- For accessibility mode or WCAG-related rewrite priorities, use UI as the Type and make the expected result explicitly observable against WCAG 2.2 AA behavior
 
 Format exactly like this:
 TC001 | Functional | Title | Preconditions item 1; Preconditions item 2 | Step 1; Step 2; Step 3 | Expected Result | Test Data item 1; Test Data item 2`,

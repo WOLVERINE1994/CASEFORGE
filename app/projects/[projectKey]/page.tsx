@@ -312,13 +312,13 @@ export default async function ProjectOverviewPage({
             </Link>
             <Link
               href={buildProjectHref(`/projects/${encodedProjectKey}/reports`)}
-              className="rounded-2xl border border-zinc-200 bg-white px-5 py-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
+              className="rounded-2xl border border-zinc-300 bg-white px-5 py-3 text-sm font-semibold !text-zinc-900 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:!text-zinc-100 dark:hover:bg-zinc-900"
             >
               Open Reports
             </Link>
             <Link
               href={buildProjectHref(`/projects/${encodedProjectKey}/board`)}
-              className="rounded-2xl border border-zinc-200 bg-white px-5 py-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
+              className="rounded-2xl border border-zinc-300 bg-white px-5 py-3 text-sm font-semibold !text-zinc-900 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:!text-zinc-100 dark:hover:bg-zinc-900"
             >
               Open Board
             </Link>
@@ -984,7 +984,7 @@ export default async function ProjectOverviewPage({
             </div>
             <Link
               href={buildProjectHref(`/projects/${encodedProjectKey}/board`)}
-              className="rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              className="rounded-2xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold !text-zinc-900 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:!text-zinc-200 dark:hover:bg-zinc-900"
             >
               Open Board
             </Link>
