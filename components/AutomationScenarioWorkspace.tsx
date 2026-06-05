@@ -183,6 +183,9 @@ const assertionOptions = [
   { label: "Element is hidden", value: "hidden" },
 ];
 const cssPropertyOptions = ["color", "background-color", "font-size", "font-weight", "font-family", "background-image"];
+const publicTargetUrlFallback = "https://example.com";
+const hostedTargetMessage =
+  "Localhost URLs cannot be opened from Vercel. Use a public URL or run through the desktop/local connector.";
 
 function draftCacheKey(projectKey: string, scenarioId: string) {
   return `caseforge:automation:draft-cache:${projectKey}:${scenarioId}`;
@@ -217,6 +220,31 @@ function shouldUsePrivateConnector(url: string) {
 
 function shouldUseLegacyDesktopBridge(url: string) {
   return Boolean(localAgentUrl && legacyDesktopBridgeEnabled && shouldUsePrivateConnector(url));
+}
+
+function isHostedAutomationUi() {
+  if (typeof window === "undefined") return false;
+  return !isRestrictedHostname(window.location.hostname);
+}
+
+function isRestrictedTargetUrl(value: string) {
+  try {
+    return isRestrictedHostname(new URL(normalizeUrl(value)).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function hostedSafeTargetUrl(value: string) {
+  return isHostedAutomationUi() && isRestrictedTargetUrl(value)
+    ? publicTargetUrlFallback
+    : value;
+}
+
+function assertHostedTargetReachable(value: string) {
+  if (isHostedAutomationUi() && isRestrictedTargetUrl(value)) {
+    throw new Error(hostedTargetMessage);
+  }
 }
 
 function isUsableBrokerSession(
@@ -1695,6 +1723,7 @@ function mergeHealingEvents(events: HealingReviewEvent[]) {
 
 export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: Props) {
   const [targetUrl, setTargetUrl] = useState("https://www.google.com");
+  const [targetUrlNotice, setTargetUrlNotice] = useState("");
   const [browserMode, setBrowserMode] = useState<"headed" | "headless">("headed");
   const [scenario, setScenario] = useState<AutomationScenario | null>(null);
   const [session, setSession] = useState<BrokerSessionMetadata | null>(null);
@@ -1844,6 +1873,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     : visibleSteps.find((step) => step.id === locatorFlyout?.stepId) ?? null;
   const locatorFlyoutQuality = locatorFlyoutStep ? locatorQualityForStep(locatorFlyoutStep) : null;
   const recordingActive = recording;
+  const targetUrlBlocked = useMemo(
+    () => isHostedAutomationUi() && isRestrictedTargetUrl(targetUrl),
+    [targetUrl],
+  );
   const healingEventsByStepId = useMemo(() => {
     const byStep = new Map<string, HealingReviewEvent[]>();
     for (const event of healingEvents) {
@@ -1900,7 +1933,13 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     if (!scenario || targetInitializedForScenario.current === scenarioId) return;
     targetInitializedForScenario.current = scenarioId;
     const savedUrl = lastNavigationUrl(finalizedSteps);
-    if (savedUrl) setTargetUrl(savedUrl);
+    if (savedUrl) {
+      const nextUrl = hostedSafeTargetUrl(savedUrl);
+      setTargetUrl(nextUrl);
+      if (nextUrl !== savedUrl) {
+        setTargetUrlNotice(hostedTargetMessage);
+      }
+    }
   }, [finalizedSteps, scenario, scenarioId]);
 
   useEffect(() => {
@@ -2095,6 +2134,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
 
   const createSession = useCallback(async (targetUrlOverride?: string) => {
     const url = normalizeUrl(targetUrlOverride || targetUrl);
+    assertHostedTargetReachable(url);
     const response = await fetch("/api/automation/sessions", {
       body: JSON.stringify({
         projectKey,
@@ -2201,6 +2241,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     setBusy(true);
     const url = normalizeUrl(targetUrl);
     try {
+      assertHostedTargetReachable(url);
+      setTargetUrlNotice("");
       const navigateStep = makeNavigateStep(url);
       if (!visibleSteps.some((step) => step.action === "navigate" && step.target.value === url)) {
         void persistSteps([...finalizedSteps, navigateStep]);
@@ -2225,6 +2267,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     setBusy(true);
     try {
       const url = normalizeUrl(targetUrl);
+      assertHostedTargetReachable(url);
+      setTargetUrlNotice("");
       if (!shouldUseLegacyDesktopBridge(url)) {
         if (recordingActive) {
           let recordedEvents = events;
@@ -5165,7 +5209,17 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         >
           <input
             value={targetUrl}
-            onChange={(event) => setTargetUrl(event.target.value)}
+            onChange={(event) => {
+              setTargetUrl(event.target.value);
+              if (targetUrlNotice) setTargetUrlNotice("");
+            }}
+            onBlur={() => {
+              const nextUrl = hostedSafeTargetUrl(targetUrl);
+              if (nextUrl !== targetUrl) {
+                setTargetUrl(nextUrl);
+                setTargetUrlNotice(hostedTargetMessage);
+              }
+            }}
             className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-950 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
             placeholder="https://example.com"
           />
@@ -5195,7 +5249,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           </div>
           <button
             type="submit"
-            disabled={busy || recordingActive || verifyPicking}
+            disabled={busy || recordingActive || verifyPicking || targetUrlBlocked}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
           >
             Open
@@ -5203,7 +5257,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           <button
             type="button"
             onClick={() => void toggleRecording()}
-            disabled={busy || verifyPicking}
+            disabled={busy || verifyPicking || targetUrlBlocked}
             className={`rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition disabled:opacity-50 ${
               recordingActive ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"
             }`}
@@ -5213,11 +5267,16 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           <button
             type="button"
             onClick={runScenario}
-            disabled={busy || verifyPicking}
+            disabled={busy || verifyPicking || targetUrlBlocked}
             className="rounded-lg bg-zinc-950 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-300 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white dark:disabled:bg-zinc-800"
           >
             Run
           </button>
+          {targetUrlNotice || targetUrlBlocked ? (
+            <p className="basis-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+              {targetUrlNotice || hostedTargetMessage}
+            </p>
+          ) : null}
         </form>
       </div>
 
