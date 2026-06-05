@@ -5859,7 +5859,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:justify-end lg:max-w-4xl">
           <a
             href={companionDownloadUrl}
-            className="rounded-lg border border-zinc-950 bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold text-white transition hover:bg-white hover:text-zinc-950 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-white"
+            className="rounded-lg border border-zinc-950 bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold text-white transition hover:bg-white hover:text-zinc-950 dark:border-zinc-950 dark:bg-zinc-950 dark:text-white dark:hover:bg-white dark:hover:text-zinc-950"
           >
             Download Companion
           </a>
