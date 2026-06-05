@@ -228,7 +228,7 @@ const localAgentUrl =
   process.env.NEXT_PUBLIC_AUTOMATION_LOCAL_AGENT_URL || "http://127.0.0.1:4873";
 const companionDownloadUrl =
   process.env.NEXT_PUBLIC_COMPANION_DOWNLOAD_URL ||
-  "/downloads/CaseForge-Companion-Setup-0.1.6.exe";
+  "/downloads/CaseForge-Companion-Setup-0.1.6.exe?v=0.1.6";
 const privateConnectorEnabled =
   process.env.NEXT_PUBLIC_AUTOMATION_PRIVATE_CONNECTOR_ENABLED === "true";
 const legacyDesktopBridgeEnabled =
@@ -5860,7 +5860,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             href={companionDownloadUrl}
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion
+            Download Companion 0.1.6
           </a>
           <button
             type="button"
