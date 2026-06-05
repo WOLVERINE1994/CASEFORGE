@@ -3109,6 +3109,15 @@ export function createPlaywrightWorkerServer({
         await session.context.setExtraHTTPHeaders({
           Authorization: authorizationHeader,
         });
+        await session.context.route("**/*", async (route) => {
+          const request = route.request();
+          await route.continue({
+            headers: {
+              ...request.headers(),
+              authorization: authorizationHeader,
+            },
+          });
+        });
       }
       session.context.on?.("page", (page) => {
         void activateSessionPage(session, page, "new_page");
