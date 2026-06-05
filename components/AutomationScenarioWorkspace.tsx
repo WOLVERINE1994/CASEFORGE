@@ -7551,9 +7551,21 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                         Base URL
                         <input
                           value={environment.baseUrl}
-                          onChange={(event) =>
-                            updateRunEnvironment(environment.id, { baseUrl: event.target.value })
-                          }
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            const urlAuth = authFromUrl(nextValue);
+                            updateRunEnvironment(
+                              environment.id,
+                              urlAuth
+                                ? {
+                                    baseUrl: cleanUrlAuth(nextValue),
+                                    basicAuthEnabled: true,
+                                    password: urlAuth.password,
+                                    username: urlAuth.username,
+                                  }
+                                : { baseUrl: nextValue },
+                            );
+                          }}
                           className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 outline-none focus:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
                           placeholder="https://example.com"
                         />

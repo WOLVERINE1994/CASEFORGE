@@ -83,6 +83,11 @@ function isConnectionRefusedError(error) {
   return /ERR_CONNECTION_REFUSED|ECONNREFUSED|net::ERR_CONNECTION_REFUSED/i.test(message);
 }
 
+function basicAuthHeader(credentials) {
+  if (!credentials?.username) return null;
+  return `Basic ${Buffer.from(`${credentials.username}:${credentials.password || ""}`, "utf8").toString("base64")}`;
+}
+
 async function gotoWithLoopbackFallback(page, destination, options = {}) {
   const candidates = loopbackNavigationCandidates(destination);
   let lastError = null;
@@ -3099,6 +3104,12 @@ export function createPlaywrightWorkerServer({
         isMobile: Boolean(payload.viewport?.isMobile),
         viewport: requestedViewport,
       });
+      const authorizationHeader = basicAuthHeader(httpCredentials);
+      if (authorizationHeader) {
+        await session.context.setExtraHTTPHeaders({
+          Authorization: authorizationHeader,
+        });
+      }
       session.context.on?.("page", (page) => {
         void activateSessionPage(session, page, "new_page");
       });
