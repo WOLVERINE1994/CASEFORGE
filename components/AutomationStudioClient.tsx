@@ -57,10 +57,9 @@ type BrowserRecorderResponse = {
 };
 
 const localAgentOrigin = "http://127.0.0.1:4873";
-const companionVersion = "0.1.5";
 const companionDownloadUrl =
   process.env.NEXT_PUBLIC_COMPANION_DOWNLOAD_URL ||
-  `https://github.com/WOLVERINE1994/CASEFORGE/releases/download/caseforge-companion-v${companionVersion}/CaseForge-Companion-Setup-${companionVersion}.exe`;
+  "https://github.com/WOLVERINE1994/CASEFORGE/releases";
 
 const isBrowserOnLocalCaseForge = () =>
   typeof window !== "undefined" &&

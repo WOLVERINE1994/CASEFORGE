@@ -226,10 +226,9 @@ type RunConfig = {
 
 const localAgentUrl =
   process.env.NEXT_PUBLIC_AUTOMATION_LOCAL_AGENT_URL || "http://127.0.0.1:4873";
-const companionVersion = "0.1.5";
 const companionDownloadUrl =
   process.env.NEXT_PUBLIC_COMPANION_DOWNLOAD_URL ||
-  `https://github.com/WOLVERINE1994/CASEFORGE/releases/download/caseforge-companion-v${companionVersion}/CaseForge-Companion-Setup-${companionVersion}.exe`;
+  "https://github.com/WOLVERINE1994/CASEFORGE/releases";
 const privateConnectorEnabled =
   process.env.NEXT_PUBLIC_AUTOMATION_PRIVATE_CONNECTOR_ENABLED === "true";
 const legacyDesktopBridgeEnabled =
