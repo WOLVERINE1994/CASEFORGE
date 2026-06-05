@@ -317,6 +317,15 @@ function environmentDraftFromUrl(value: string): RunEnvironmentDraft {
   };
 }
 
+function authFromUrl(value: string) {
+  const url = safeUrl(value);
+  if (!url?.username) return null;
+  return {
+    password: url.password ? decodeURIComponent(url.password) : "",
+    username: decodeURIComponent(url.username),
+  };
+}
+
 function makeEmptyEnvironmentDraft(index: number): RunEnvironmentDraft {
   return {
     baseUrl: "",
@@ -2484,26 +2493,29 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     } = {},
   ) => {
     const url = normalizeUrl(targetUrlOverride || targetUrl);
+    const targetAuth = authFromUrl(url);
+    const navigationUrl = cleanUrlAuth(url);
+    const httpCredentials =
+      options.environment?.basicAuthEnabled &&
+      options.environment.username.trim()
+        ? {
+            password: options.environment.password,
+            username: options.environment.username,
+          }
+        : targetAuth;
     const selectedBrowserMode = options.browserMode ?? browserMode;
     const response = await fetch("/api/automation/sessions", {
       body: JSON.stringify({
-        httpCredentials:
-          options.environment?.basicAuthEnabled &&
-          options.environment.username.trim()
-            ? {
-                password: options.environment.password,
-                username: options.environment.username,
-              }
-            : null,
+        httpCredentials,
         projectKey,
         provider:
-          privateConnectorEnabled && shouldUsePrivateConnector(url)
+          privateConnectorEnabled && shouldUsePrivateConnector(navigationUrl)
             ? "optional_local_connector"
             : undefined,
         scenarioId,
         browserMode: selectedBrowserMode,
         headless: selectedBrowserMode === "headless",
-        targetUrl: url,
+        targetUrl: navigationUrl,
         viewport: options.viewport ?? null,
       }),
       headers: { "Content-Type": "application/json" },
@@ -2598,7 +2610,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const openBrowser = async () => {
     if (recordingActive) return;
     setBusy(true);
-    const url = normalizeUrl(targetUrl);
+    const url = cleanUrlAuth(targetUrl);
     try {
       const navigateStep = makeNavigateStep(url);
       if (!visibleSteps.some((step) => step.action === "navigate" && step.target.value === url)) {
@@ -2640,7 +2652,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const toggleRecording = async () => {
     setBusy(true);
     try {
-      const url = normalizeUrl(targetUrl);
+      const url = cleanUrlAuth(targetUrl);
       if (!shouldUseLegacyDesktopBridge(url)) {
         if (recordingActive) {
           let recordedEvents = events;
