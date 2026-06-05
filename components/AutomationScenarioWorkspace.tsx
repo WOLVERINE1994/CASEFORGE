@@ -226,6 +226,10 @@ type RunConfig = {
 
 const localAgentUrl =
   process.env.NEXT_PUBLIC_AUTOMATION_LOCAL_AGENT_URL || "http://127.0.0.1:4873";
+const companionVersion = "0.1.5";
+const companionDownloadUrl =
+  process.env.NEXT_PUBLIC_COMPANION_DOWNLOAD_URL ||
+  `https://github.com/WOLVERINE1994/CASEFORGE/releases/download/caseforge-companion-v${companionVersion}/CaseForge-Companion-Setup-${companionVersion}.exe`;
 const privateConnectorEnabled =
   process.env.NEXT_PUBLIC_AUTOMATION_PRIVATE_CONNECTOR_ENABLED === "true";
 const legacyDesktopBridgeEnabled =
@@ -5853,6 +5857,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           </p>
         </div>
         <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:justify-end lg:max-w-4xl">
+          <a
+            href={companionDownloadUrl}
+            className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-center text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+          >
+            Download Companion
+          </a>
           <button
             type="button"
             onClick={() => void (recordingActive ? toggleRecording() : openRecordModal())}
