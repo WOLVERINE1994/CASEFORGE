@@ -14,8 +14,18 @@ export async function requestAutomationSession(input: {
   scenarioId?: string | null;
   environmentId?: string | null;
   headless?: boolean;
+  httpCredentials?: {
+    password: string;
+    username: string;
+  } | null;
   targetUrl?: string;
   providerId?: string;
+  viewport?: {
+    deviceScaleFactor?: number;
+    height: number;
+    isMobile?: boolean;
+    width: number;
+  } | null;
 }) {
   const providerId = normalizeProviderId(input.providerId);
   assertTargetReachableFromProvider(input.targetUrl, providerId);

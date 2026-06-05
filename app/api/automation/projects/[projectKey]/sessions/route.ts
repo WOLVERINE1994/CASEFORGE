@@ -50,6 +50,34 @@ export async function POST(request: Request, context: RouteContext) {
       providerId: typeof body.provider === "string" ? body.provider : undefined,
       scenarioId: typeof body.scenarioId === "string" ? body.scenarioId : null,
       targetUrl: typeof body.targetUrl === "string" ? body.targetUrl : undefined,
+      httpCredentials:
+        body.httpCredentials &&
+        typeof body.httpCredentials === "object" &&
+        typeof body.httpCredentials.username === "string" &&
+        typeof body.httpCredentials.password === "string"
+          ? {
+              password: body.httpCredentials.password,
+              username: body.httpCredentials.username,
+            }
+          : null,
+      viewport:
+        body.viewport &&
+        typeof body.viewport === "object" &&
+        typeof body.viewport.width === "number" &&
+        typeof body.viewport.height === "number"
+          ? {
+              deviceScaleFactor:
+                typeof body.viewport.deviceScaleFactor === "number"
+                  ? body.viewport.deviceScaleFactor
+                  : undefined,
+              height: body.viewport.height,
+              isMobile:
+                typeof body.viewport.isMobile === "boolean"
+                  ? body.viewport.isMobile
+                  : undefined,
+              width: body.viewport.width,
+            }
+          : null,
     });
 
     return Response.json(

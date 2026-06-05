@@ -195,6 +195,35 @@ type ScenarioTestCase = {
   data: Record<string, string>;
 };
 
+type RunBrowserMode = "headed" | "headless";
+
+type RunDeviceKey = "desktop" | "mobile" | "tablet" | "custom";
+
+type RunEnvironmentDraft = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  baseUrl: string;
+  basicAuthEnabled: boolean;
+  username: string;
+  password: string;
+};
+
+type RunViewport = {
+  width: number;
+  height: number;
+  isMobile?: boolean;
+  deviceScaleFactor?: number;
+};
+
+type RunConfig = {
+  browserMode: RunBrowserMode;
+  customHeight: number;
+  customWidth: number;
+  device: RunDeviceKey;
+  environments: RunEnvironmentDraft[];
+};
+
 const localAgentUrl =
   process.env.NEXT_PUBLIC_AUTOMATION_LOCAL_AGENT_URL || "http://127.0.0.1:4873";
 const privateConnectorEnabled =
@@ -213,6 +242,37 @@ const assertionOptions = [
   { label: "Element is hidden", value: "hidden" },
 ];
 const cssPropertyOptions = ["color", "background-color", "font-size", "font-weight", "font-family", "background-image"];
+const runDeviceOptions: Array<{
+  description: string;
+  key: RunDeviceKey;
+  label: string;
+  viewport: RunViewport;
+}> = [
+  {
+    description: "1440 x 900",
+    key: "desktop",
+    label: "Desktop",
+    viewport: { height: 900, width: 1440 },
+  },
+  {
+    description: "390 x 844",
+    key: "mobile",
+    label: "Mobile",
+    viewport: { deviceScaleFactor: 3, height: 844, isMobile: true, width: 390 },
+  },
+  {
+    description: "820 x 1180",
+    key: "tablet",
+    label: "Tablet",
+    viewport: { deviceScaleFactor: 2, height: 1180, isMobile: true, width: 820 },
+  },
+  {
+    description: "Set manually",
+    key: "custom",
+    label: "Custom",
+    viewport: { height: 768, width: 1366 },
+  },
+];
 
 function draftCacheKey(projectKey: string, scenarioId: string) {
   return `caseforge:automation:draft-cache:${projectKey}:${scenarioId}`;
@@ -221,6 +281,83 @@ function draftCacheKey(projectKey: string, scenarioId: string) {
 function normalizeUrl(value: string) {
   if (value === "about:blank") return value;
   return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
+
+function safeUrl(value: string) {
+  try {
+    return new URL(normalizeUrl(value));
+  } catch {
+    return null;
+  }
+}
+
+function cleanUrlAuth(value: string) {
+  const url = safeUrl(value);
+  if (!url) return normalizeUrl(value);
+  url.username = "";
+  url.password = "";
+  return url.toString();
+}
+
+function environmentDraftFromUrl(value: string): RunEnvironmentDraft {
+  const url = safeUrl(value);
+  const name = url?.hostname
+    ? url.hostname.includes("stg") || url.hostname.includes("stage")
+      ? "Staging"
+      : "Current"
+    : "Current";
+  return {
+    baseUrl: cleanUrlAuth(value),
+    basicAuthEnabled: Boolean(url?.username || url?.password),
+    enabled: true,
+    id: makeStepId(),
+    name,
+    password: url?.password ? decodeURIComponent(url.password) : "",
+    username: url?.username ? decodeURIComponent(url.username) : "",
+  };
+}
+
+function makeEmptyEnvironmentDraft(index: number): RunEnvironmentDraft {
+  return {
+    baseUrl: "",
+    basicAuthEnabled: false,
+    enabled: true,
+    id: makeStepId(),
+    name: `Environment ${index}`,
+    password: "",
+    username: "",
+  };
+}
+
+function defaultRunConfig(targetUrl: string): RunConfig {
+  return {
+    browserMode: "headed",
+    customHeight: 768,
+    customWidth: 1366,
+    device: "desktop",
+    environments: [environmentDraftFromUrl(targetUrl)],
+  };
+}
+
+function viewportForRunConfig(config: RunConfig): RunViewport {
+  if (config.device === "custom") {
+    return {
+      height: Math.max(320, Number(config.customHeight) || 768),
+      width: Math.max(320, Number(config.customWidth) || 1366),
+    };
+  }
+  return runDeviceOptions.find((option) => option.key === config.device)?.viewport ?? {
+    height: 900,
+    width: 1440,
+  };
+}
+
+function deviceLabelForRunConfig(config: RunConfig) {
+  if (config.device === "custom") {
+    const viewport = viewportForRunConfig(config);
+    return `Custom ${viewport.width}x${viewport.height}`;
+  }
+  return runDeviceOptions.find((option) => option.key === config.device)?.label ?? "Desktop";
 }
 
 function isRestrictedHostname(hostname: string) {
@@ -939,6 +1076,50 @@ function firstNavigationUrl(steps: AutomationStep[]) {
     if (url) return url;
   }
   return null;
+}
+
+function mergeUrlPath(baseUrl: string, sourceUrl: string) {
+  const base = safeUrl(baseUrl);
+  const source = safeUrl(sourceUrl);
+  if (!base) return normalizeUrl(sourceUrl || baseUrl);
+  if (!source) return base.toString();
+  base.pathname = source.pathname;
+  base.search = source.search;
+  base.hash = source.hash;
+  return base.toString();
+}
+
+function environmentUrlForStep(step: AutomationStep, environmentBaseUrl: string) {
+  const rawValue = textValue(step.inputValue || step.target?.value);
+  if (!rawValue) return normalizeUrl(environmentBaseUrl);
+  if (rawValue.includes("{{baseUrl}}")) {
+    return normalizeUrl(rawValue.replaceAll("{{baseUrl}}", environmentBaseUrl.replace(/\/$/, "")));
+  }
+  return mergeUrlPath(environmentBaseUrl, rawValue);
+}
+
+function applyRunEnvironmentToSteps(
+  steps: AutomationStep[],
+  environment: RunEnvironmentDraft,
+) {
+  const baseUrl = normalizeUrl(environment.baseUrl);
+  return steps.map((step) => {
+    if (displayAction(step.action) !== "navigate") {
+      return step;
+    }
+    const nextUrl = environmentUrlForStep(step, baseUrl);
+    return {
+      ...step,
+      commandText: `Navigate to ${nextUrl}`,
+      description: `Navigate to ${nextUrl}`,
+      inputValue: nextUrl,
+      target: {
+        ...step.target,
+        displayName: nextUrl,
+        value: nextUrl,
+      },
+    };
+  });
 }
 
 function isScenarioInitStep(step: AutomationStep, index: number) {
@@ -1958,6 +2139,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [locatorTestResult, setLocatorTestResult] = useState<string>("");
   const [customLocatorType, setCustomLocatorType] = useState<"css" | "xpath">("css");
   const [customLocatorValue, setCustomLocatorValue] = useState("");
+  const [runModalOpen, setRunModalOpen] = useState(false);
+  const [runModalError, setRunModalError] = useState("");
+  const [runConfig, setRunConfig] = useState<RunConfig>(() =>
+    defaultRunConfig(targetUrl),
+  );
   const [testDataOpen, setTestDataOpen] = useState(false);
   const [testDataSaving, setTestDataSaving] = useState(false);
   const [testDataError, setTestDataError] = useState("");
@@ -2289,19 +2475,36 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     }
   };
 
-  const createSession = useCallback(async (targetUrlOverride?: string) => {
+  const createSession = useCallback(async (
+    targetUrlOverride?: string,
+    options: {
+      browserMode?: RunBrowserMode;
+      environment?: RunEnvironmentDraft | null;
+      viewport?: RunViewport | null;
+    } = {},
+  ) => {
     const url = normalizeUrl(targetUrlOverride || targetUrl);
+    const selectedBrowserMode = options.browserMode ?? browserMode;
     const response = await fetch("/api/automation/sessions", {
       body: JSON.stringify({
+        httpCredentials:
+          options.environment?.basicAuthEnabled &&
+          options.environment.username.trim()
+            ? {
+                password: options.environment.password,
+                username: options.environment.username,
+              }
+            : null,
         projectKey,
         provider:
           privateConnectorEnabled && shouldUsePrivateConnector(url)
             ? "optional_local_connector"
             : undefined,
         scenarioId,
-        browserMode,
-        headless: browserMode === "headless",
+        browserMode: selectedBrowserMode,
+        headless: selectedBrowserMode === "headless",
         targetUrl: url,
+        viewport: options.viewport ?? null,
       }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
@@ -2826,6 +3029,75 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       testCases: enabledTestCases,
     };
   };
+
+  const openRunModal = () => {
+    setRunConfig((current) => {
+      const firstEnvironment = environmentDraftFromUrl(targetUrl);
+      return {
+        ...current,
+        browserMode,
+        environments: current.environments.length
+          ? current.environments.map((environment, index) =>
+              index === 0
+                ? {
+                    ...environment,
+                    baseUrl: environment.baseUrl.trim() || firstEnvironment.baseUrl,
+                    basicAuthEnabled:
+                      environment.basicAuthEnabled || firstEnvironment.basicAuthEnabled,
+                    name: environment.name.trim() || firstEnvironment.name,
+                    password: environment.password || firstEnvironment.password,
+                    username: environment.username || firstEnvironment.username,
+                  }
+                : environment,
+            )
+          : [firstEnvironment],
+      };
+    });
+    setRunModalError("");
+    setRunModalOpen(true);
+  };
+
+  const updateRunEnvironment = (
+    environmentId: string,
+    update: Partial<RunEnvironmentDraft>,
+  ) => {
+    setRunConfig((current) => ({
+      ...current,
+      environments: current.environments.map((environment) =>
+        environment.id === environmentId
+          ? { ...environment, ...update }
+          : environment,
+      ),
+    }));
+  };
+
+  const addRunEnvironment = () => {
+    setRunConfig((current) => ({
+      ...current,
+      environments: [
+        ...current.environments,
+        makeEmptyEnvironmentDraft(current.environments.length + 1),
+      ],
+    }));
+  };
+
+  const removeRunEnvironment = (environmentId: string) => {
+    setRunConfig((current) => ({
+      ...current,
+      environments:
+        current.environments.length <= 1
+          ? current.environments
+          : current.environments.filter((environment) => environment.id !== environmentId),
+    }));
+  };
+
+  const selectedRunEnvironments = (config: RunConfig) =>
+    config.environments
+      .filter((environment) => environment.enabled && environment.baseUrl.trim())
+      .map((environment) => ({
+        ...environment,
+        baseUrl: cleanUrlAuth(environment.baseUrl),
+      }));
 
   const resumeRunParameterContext = () => {
     const runTestData = activeRunTestData();
@@ -4680,7 +4952,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
 
   const startSessionRun = async (input: {
     actionId?: string | null;
+    browserMode?: RunBrowserMode;
     closeOnComplete: boolean;
+    deviceLabel?: string;
+    environment?: RunEnvironmentDraft | null;
+    forceNewSession?: boolean;
     keepSessionOpen?: boolean;
     name: string;
     parameterData?: Record<string, string>;
@@ -4688,10 +4964,22 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     startUrl?: string;
     summarySteps: AutomationStep[];
     testCase?: ScenarioTestCase | null;
+    viewport?: RunViewport | null;
   }) => {
-    const activeSession = isUsableBrokerSession(session)
+    const summaryParameterData = { ...(input.parameterData ?? {}) };
+    if ("basicAuthPassword" in summaryParameterData) {
+      summaryParameterData.basicAuthPassword = "***";
+    }
+    if (input.forceNewSession && session?.sessionId) {
+      await closeSession("Previous run session closed.");
+    }
+    const activeSession = !input.forceNewSession && isUsableBrokerSession(session)
       ? session
-      : await createSession(sessionStartUrlForRun(input.runSteps, input.startUrl));
+      : await createSession(sessionStartUrlForRun(input.runSteps, input.startUrl), {
+          browserMode: input.browserMode,
+          environment: input.environment,
+          viewport: input.viewport,
+        });
     if (!activeSession.sessionId) {
       throw new Error("Browser session was not created.");
     }
@@ -4703,8 +4991,16 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         scenarioId,
         sessionId: activeSession.sessionId,
         summary: {
+          device: input.deviceLabel ?? null,
+          environment: input.environment
+            ? {
+                baseUrl: cleanUrlAuth(input.environment.baseUrl),
+                basicAuthEnabled: input.environment.basicAuthEnabled,
+                name: input.environment.name,
+              }
+            : null,
           name: input.name,
-          parameterData: input.parameterData ?? {},
+          parameterData: summaryParameterData,
           queuedFrom: "recorder-workspace",
           stepResults: input.summarySteps.map((step, index) => ({
             id: step.id,
@@ -4799,7 +5095,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       await updateRunSummary(data.run.id, runPassed ? "passed" : "failed", {
         failed: runPassed ? 0 : 1,
         passed: runPassed ? input.runSteps.length : Math.max(0, input.runSteps.length - 1),
-        parameterData: input.parameterData ?? {},
+        parameterData: summaryParameterData,
         selfHealedCount: persistedHealingEvents?.length ?? 0,
         stepResults: stepResults.length ? stepResults : input.summarySteps.map((step, index) => ({
           id: step.id,
@@ -4905,10 +5201,17 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     }
   };
 
-  const runScenario = async () => {
+  const runScenario = async (config: RunConfig) => {
     setBusy(true);
     try {
       if (!(await saveOpenCommandPromptDraft())) return;
+      const environments = selectedRunEnvironments(config);
+      if (!environments.length) {
+        setRunModalError("Select at least one environment with a URL.");
+        return;
+      }
+      const viewport = viewportForRunConfig(config);
+      const deviceLabel = deviceLabelForRunConfig(config);
       const runTestData = activeRunTestData();
       const latestSteps = await fetchLatestScenarioSteps();
       const runSteps = mergeStepsById([...finalizedSteps, ...liveSteps, ...latestSteps]);
@@ -4956,37 +5259,64 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         selectedActionStepIds,
       })).steps;
       const activeTestCases = runTestData.testCases;
-      if (activeTestCases.length) {
-        appendLog(`Running ${activeTestCases.length} test case${activeTestCases.length === 1 ? "" : "s"}.`);
-        for (const [index, testCase] of activeTestCases.entries()) {
-          const parameterData = dataForTestCase(testCase, runTestData.parameters);
-          const parameterizedExecutableSteps = substituteStepsParameters(executableSteps, parameterData);
-          const parameterizedSummarySteps = substituteStepsParameters(scopedRunSteps, parameterData);
-          appendLog(`Starting ${testCase.name}.`);
+      const runRows = activeTestCases.length
+        ? activeTestCases
+        : [null];
+      const totalRuns = environments.length * runRows.length;
+      appendLog(
+        `Queued ${totalRuns} run${totalRuns === 1 ? "" : "s"} across ${environments.length} environment${
+          environments.length === 1 ? "" : "s"
+        } on ${deviceLabel}.`,
+      );
+      let runIndex = 0;
+      for (const environment of environments) {
+        for (const testCase of runRows) {
+          runIndex += 1;
+          const baseParameterData = testCase
+            ? dataForTestCase(testCase, runTestData.parameters)
+            : defaultParameterData(runTestData.parameters);
+          const parameterData = {
+            ...baseParameterData,
+            baseUrl: environment.baseUrl.replace(/\/$/, ""),
+            basicAuthUsername: environment.username,
+            environmentName: environment.name,
+          };
+          const parameterizedExecutableSteps = applyRunEnvironmentToSteps(
+            substituteStepsParameters(executableSteps, parameterData),
+            environment,
+          );
+          const parameterizedSummarySteps = applyRunEnvironmentToSteps(
+            substituteStepsParameters(scopedRunSteps, parameterData),
+            environment,
+          );
+          const runLabel = [
+            scenarioName,
+            environment.name,
+            deviceLabel,
+            testCase?.name,
+          ]
+            .filter(Boolean)
+            .join(" / ");
+          appendLog(`Starting run ${runIndex}/${totalRuns}: ${runLabel}.`);
           await startSessionRun({
-            closeOnComplete: index === activeTestCases.length - 1,
-            keepSessionOpen: index !== activeTestCases.length - 1,
-            name: `${scenarioName} / ${testCase.name}`,
+            browserMode: config.browserMode,
+            closeOnComplete: true,
+            deviceLabel,
+            environment,
+            forceNewSession: true,
+            name: runLabel,
             parameterData,
             runSteps: parameterizedExecutableSteps,
-            startUrl: firstNavigationUrl(parameterizedExecutableSteps) || normalizeUrl(targetUrl),
+            startUrl:
+              firstNavigationUrl(parameterizedExecutableSteps) ||
+              normalizeUrl(environment.baseUrl),
             summarySteps: parameterizedSummarySteps,
             testCase,
+            viewport,
           });
         }
-      } else {
-        const parameterData = defaultParameterData(runTestData.parameters);
-        const parameterizedExecutableSteps = substituteStepsParameters(executableSteps, parameterData);
-        const parameterizedSummarySteps = substituteStepsParameters(scopedRunSteps, parameterData);
-        await startSessionRun({
-          closeOnComplete: true,
-          name: `${scenarioName} run`,
-          parameterData,
-          runSteps: parameterizedExecutableSteps,
-          startUrl: firstNavigationUrl(parameterizedExecutableSteps) || normalizeUrl(targetUrl),
-          summarySteps: parameterizedSummarySteps,
-        });
       }
+      setRunModalOpen(false);
       setRecording(false);
       setRecordingPaused(false);
       setRecordingSessionId(null);
@@ -5503,7 +5833,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           </button>
           <button
             type="button"
-            onClick={runScenario}
+            onClick={openRunModal}
             disabled={busy || verifyPicking}
             className="rounded-lg bg-zinc-950 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-300 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white dark:disabled:bg-zinc-800"
           >
@@ -7115,6 +7445,249 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         </div>
         );
       })() : null}
+
+      {runModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+          <div className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-[16px] border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+              <div>
+                <h3 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
+                  Run Scenario
+                </h3>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  Choose runtime context for this run only.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRunModalOpen(false)}
+                className="rounded-lg px-2 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              >
+                Close
+              </button>
+            </div>
+            <div className="grid gap-5 overflow-y-auto px-5 py-4">
+              {runModalError ? (
+                <div
+                  role="alert"
+                  className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
+                >
+                  {runModalError}
+                </div>
+              ) : null}
+              <section>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                      Environments
+                    </h4>
+                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                      Selected rows run one by one.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addRunEnvironment}
+                    className="rounded-xl border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                  >
+                    Add Environment
+                  </button>
+                </div>
+                <div className="mt-3 grid gap-3">
+                  {runConfig.environments.map((environment, index) => (
+                    <div
+                      key={environment.id}
+                      className="grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/70 lg:grid-cols-[auto_minmax(120px,0.75fr)_minmax(220px,1.4fr)_auto]"
+                    >
+                      <label className="flex items-center gap-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                        <input
+                          type="checkbox"
+                          checked={environment.enabled}
+                          onChange={(event) =>
+                            updateRunEnvironment(environment.id, { enabled: event.target.checked })
+                          }
+                        />
+                        Run
+                      </label>
+                      <label className="grid gap-1 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                        Name
+                        <input
+                          value={environment.name}
+                          onChange={(event) =>
+                            updateRunEnvironment(environment.id, { name: event.target.value })
+                          }
+                          className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 outline-none focus:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                          placeholder={`Environment ${index + 1}`}
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                        Base URL
+                        <input
+                          value={environment.baseUrl}
+                          onChange={(event) =>
+                            updateRunEnvironment(environment.id, { baseUrl: event.target.value })
+                          }
+                          className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 outline-none focus:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                          placeholder="https://example.com"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => removeRunEnvironment(environment.id)}
+                        disabled={runConfig.environments.length <= 1}
+                        className="self-end rounded-lg px-2 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-40 dark:text-rose-200 dark:hover:bg-rose-500/10"
+                      >
+                        Remove
+                      </button>
+                      <div className="lg:col-span-4">
+                        <label className="flex items-center gap-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                          <input
+                            type="checkbox"
+                            checked={environment.basicAuthEnabled}
+                            onChange={(event) =>
+                              updateRunEnvironment(environment.id, {
+                                basicAuthEnabled: event.target.checked,
+                              })
+                            }
+                          />
+                          Basic Auth
+                        </label>
+                        {environment.basicAuthEnabled ? (
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            <input
+                              value={environment.username}
+                              onChange={(event) =>
+                                updateRunEnvironment(environment.id, { username: event.target.value })
+                              }
+                              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 outline-none focus:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                              placeholder="Username"
+                            />
+                            <input
+                              value={environment.password}
+                              onChange={(event) =>
+                                updateRunEnvironment(environment.id, { password: event.target.value })
+                              }
+                              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 outline-none focus:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                              placeholder="Password"
+                              type="password"
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                    Device
+                  </h4>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {runDeviceOptions.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() =>
+                          setRunConfig((current) => ({ ...current, device: option.key }))
+                        }
+                        className={`rounded-xl border px-3 py-2 text-left transition ${
+                          runConfig.device === option.key
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-950 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-100"
+                            : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                        }`}
+                      >
+                        <span className="block text-sm font-semibold">{option.label}</span>
+                        <span className="mt-1 block text-xs opacity-70">{option.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {runConfig.device === "custom" ? (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <label className="grid gap-1 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                        Width
+                        <input
+                          type="number"
+                          min={320}
+                          value={runConfig.customWidth}
+                          onChange={(event) =>
+                            setRunConfig((current) => ({
+                              ...current,
+                              customWidth: Number(event.target.value),
+                            }))
+                          }
+                          className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                        Height
+                        <input
+                          type="number"
+                          min={320}
+                          value={runConfig.customHeight}
+                          onChange={(event) =>
+                            setRunConfig((current) => ({
+                              ...current,
+                              customHeight: Number(event.target.value),
+                            }))
+                          }
+                          className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                    Browser Mode
+                  </h4>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {(["headed", "headless"] as RunBrowserMode[]).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() =>
+                          setRunConfig((current) => ({ ...current, browserMode: mode }))
+                        }
+                        className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${
+                          runConfig.browserMode === mode
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-950 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-100"
+                            : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                        }`}
+                      >
+                        {mode === "headed" ? "Visible" : "Headless"}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+                    {selectedRunEnvironments(runConfig).length} environment
+                    {selectedRunEnvironments(runConfig).length === 1 ? "" : "s"} selected |{" "}
+                    {deviceLabelForRunConfig(runConfig)} |{" "}
+                    {runConfig.browserMode === "headed" ? "Visible browser" : "Headless"}
+                  </div>
+                </div>
+              </section>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setRunModalOpen(false)}
+                className="rounded-xl border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-700 dark:border-zinc-800 dark:text-zinc-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void runScenario(runConfig)}
+                disabled={busy}
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {busy ? "Running..." : "Run"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {testDataOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">

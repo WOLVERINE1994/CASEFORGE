@@ -11,8 +11,18 @@ export type CreateSessionInput = {
   executionMode?: "interactive_persistent" | "ephemeral_ci";
   hardTimeoutMs?: number;
   headless?: boolean;
+  httpCredentials?: {
+    password: string;
+    username: string;
+  } | null;
   idleTimeoutMs?: number;
   targetUrl?: string;
+  viewport?: {
+    deviceScaleFactor?: number;
+    height: number;
+    isMobile?: boolean;
+    width: number;
+  } | null;
 };
 
 export type ProviderSessionMetadata = {

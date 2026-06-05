@@ -3068,9 +3068,36 @@ export function createPlaywrightWorkerServer({
         channel: process.env.AUTOMATION_WORKER_BROWSER_CHANNEL || undefined,
         headless: effectiveHeadless,
       });
+      const requestedViewport =
+        payload.viewport &&
+        typeof payload.viewport === "object" &&
+        Number.isFinite(Number(payload.viewport.width)) &&
+        Number.isFinite(Number(payload.viewport.height))
+          ? {
+              height: Math.max(320, Number(payload.viewport.height)),
+              width: Math.max(320, Number(payload.viewport.width)),
+            }
+          : { height: 720, width: 1280 };
+      const httpCredentials =
+        payload.httpCredentials &&
+        typeof payload.httpCredentials === "object" &&
+        typeof payload.httpCredentials.username === "string" &&
+        typeof payload.httpCredentials.password === "string"
+          ? {
+              password: payload.httpCredentials.password,
+              username: payload.httpCredentials.username,
+            }
+          : undefined;
       session.context = await session.browser.newContext({
         acceptDownloads: true,
-        viewport: { height: 720, width: 1280 },
+        deviceScaleFactor:
+          payload.viewport && typeof payload.viewport.deviceScaleFactor === "number"
+            ? payload.viewport.deviceScaleFactor
+            : undefined,
+        hasTouch: Boolean(payload.viewport?.isMobile),
+        httpCredentials,
+        isMobile: Boolean(payload.viewport?.isMobile),
+        viewport: requestedViewport,
       });
       session.context.on?.("page", (page) => {
         void activateSessionPage(session, page, "new_page");
