@@ -86,11 +86,40 @@ function normalizeBrokerSessionMetadata(
   };
 }
 
-type AgentRecordResponse = {
+type CompanionCommand = {
+  id?: string;
+  type?: string;
+  name?: string;
+  description?: string;
+  locator?: {
+    strategy?: string;
+    value?: string;
+    text?: string;
+    label?: string;
+    role?: string;
+    tagName?: string;
+  };
+  inputValue?: string;
+  expectedValue?: string;
+  url?: string;
+  key?: string;
+  meta?: Record<string, unknown>;
+};
+
+type CompanionBrowserResponse = {
   error?: string;
-  events?: RecorderEvent[];
+  started?: boolean;
+  stopped?: boolean;
+  sessionId?: string;
+  status?: "starting" | "recording" | "stopping" | "stopped" | "failed";
+  cursor?: number;
+  url?: string;
+  commands?: CompanionCommand[];
   logs?: string[];
-  recording?: boolean;
+  agent?: {
+    name?: string;
+    version?: string;
+  };
 };
 
 type HealingReviewEvent = {
@@ -166,11 +195,12 @@ type ScenarioTestCase = {
   data: Record<string, string>;
 };
 
-const localAgentUrl = process.env.NEXT_PUBLIC_AUTOMATION_LOCAL_AGENT_URL;
+const localAgentUrl =
+  process.env.NEXT_PUBLIC_AUTOMATION_LOCAL_AGENT_URL || "http://127.0.0.1:4873";
 const privateConnectorEnabled =
   process.env.NEXT_PUBLIC_AUTOMATION_PRIVATE_CONNECTOR_ENABLED === "true";
 const legacyDesktopBridgeEnabled =
-  process.env.NEXT_PUBLIC_AUTOMATION_LOCAL_CONNECTOR_ENABLED === "true";
+  process.env.NEXT_PUBLIC_AUTOMATION_LOCAL_CONNECTOR_ENABLED !== "false";
 
 const commandActions = ["navigate", "switchPage", "click", "fill", "select", "hover", "assert", "wait", "action"];
 const locatorOrder = ["testid", "role", "label", "placeholder", "alt", "title", "text", "css", "xpath"];
@@ -215,8 +245,17 @@ function shouldUsePrivateConnector(url: string) {
   }
 }
 
+function isBrowserOnLocalCaseForge() {
+  if (typeof window === "undefined") return false;
+  return isRestrictedHostname(window.location.hostname);
+}
+
 function shouldUseLegacyDesktopBridge(url: string) {
-  return Boolean(localAgentUrl && legacyDesktopBridgeEnabled && shouldUsePrivateConnector(url));
+  return Boolean(
+    localAgentUrl &&
+      legacyDesktopBridgeEnabled &&
+      (!isBrowserOnLocalCaseForge() || shouldUsePrivateConnector(url)),
+  );
 }
 
 function isUsableBrokerSession(
@@ -1306,12 +1345,168 @@ function normalizeSteps(steps: unknown): AutomationStep[] {
   });
 }
 
-async function agentRecordRequest(path: string, init?: RequestInit) {
-  if (!localAgentUrl) throw new Error("Private connector URL is not configured.");
-  const response = await fetch(`${localAgentUrl}${path}`, init);
-  const data = await readJsonResponse<AgentRecordResponse>(response, {});
-  if (!response.ok) throw new Error(data.error || "Private connector request failed.");
-  return data;
+function companionOfflineMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (/failed to fetch|networkerror|load failed/i.test(message)) {
+    return "CaseForge Companion is not reachable. Open the desktop app on this computer, wait until it shows Agent running, then try again.";
+  }
+  if (/unknown caseforge agent route|not found/i.test(message)) {
+    return "Your CaseForge Companion is outdated. Install or start the latest Companion, then try again.";
+  }
+  return message || "CaseForge Companion could not complete the request.";
+}
+
+async function companionBrowserRequest(
+  init?: RequestInit,
+  query?: URLSearchParams,
+) {
+  const path = query
+    ? `/automation/browser?${query.toString()}`
+    : "/automation/browser";
+  try {
+    const response = await fetch(`${localAgentUrl}${path}`, init);
+    const data = await readJsonResponse<CompanionBrowserResponse>(response, {});
+    if (!response.ok) {
+      throw new Error(data.error || "CaseForge Companion request failed.");
+    }
+    return data;
+  } catch (error) {
+    throw new Error(companionOfflineMessage(error));
+  }
+}
+
+function companionCommandToRecorderEvent(command: CompanionCommand): RecorderEvent | null {
+  const commandType = textValue(command.type);
+  const recordedUrl = textValue(command.url || command.meta?.recordedUrl);
+  const value = textValue(command.inputValue || command.expectedValue);
+  const locator = command.locator;
+  const locatorValue = textValue(locator?.value);
+  const locatorType = textValue(locator?.strategy) || "css";
+  const element = locator
+    ? {
+        ariaLabel: locator.label,
+        elementKind: locator.tagName || "web element",
+        labelText: locator.label,
+        role: locator.role,
+        tag: locator.tagName,
+        text: locator.text,
+      }
+    : undefined;
+  const locatorCandidates =
+    locator && locatorValue
+      ? [
+          {
+            score: 0.9,
+            source: "caseforge-companion",
+            type: locatorType,
+            value: locatorValue,
+          },
+        ]
+      : [];
+
+  if (commandType === "navigate" && recordedUrl) {
+    return {
+      id: command.id || makeStepId(),
+      timestamp: Date.now(),
+      type: "navigation",
+      url: recordedUrl,
+    };
+  }
+
+  if (commandType === "fill") {
+    return {
+      commandLabel: command.description || command.name,
+      element,
+      id: command.id || makeStepId(),
+      locatorCandidates,
+      timestamp: Date.now(),
+      type: "input",
+      url: recordedUrl,
+      value,
+    };
+  }
+
+  if (commandType === "select") {
+    return {
+      commandLabel: command.description || command.name,
+      element,
+      id: command.id || makeStepId(),
+      locatorCandidates,
+      timestamp: Date.now(),
+      type: "select",
+      url: recordedUrl,
+      value,
+    };
+  }
+
+  if (commandType === "press") {
+    return {
+      commandLabel: command.description || command.name,
+      element,
+      id: command.id || makeStepId(),
+      key: command.key,
+      locatorCandidates,
+      timestamp: Date.now(),
+      type: "press",
+      url: recordedUrl,
+      value: command.key,
+    };
+  }
+
+  if (commandType === "hover") {
+    return {
+      commandLabel: command.description || command.name,
+      element,
+      id: command.id || makeStepId(),
+      locatorCandidates,
+      timestamp: Date.now(),
+      type: "hover",
+      url: recordedUrl,
+    };
+  }
+
+  if (commandType.startsWith("assert")) {
+    const assertionType =
+      commandType === "assert-text"
+        ? "text_contains"
+        : commandType === "assert-image"
+          ? "image_loaded"
+          : commandType === "assert-label"
+            ? "label"
+            : commandType === "assert-focus"
+              ? "focus"
+              : "visible";
+    return {
+      assertionType,
+      commandLabel: command.description || command.name,
+      element,
+      expectedValue: textValue(command.expectedValue || value),
+      id: command.id || makeStepId(),
+      locatorCandidates,
+      timestamp: Date.now(),
+      type: "assert",
+      url: recordedUrl,
+      value,
+    };
+  }
+
+  if (commandType === "click") {
+    return {
+      commandLabel: command.description || command.name,
+      element,
+      id: command.id || makeStepId(),
+      locatorCandidates,
+      timestamp: Date.now(),
+      type: "click",
+      url: recordedUrl,
+    };
+  }
+
+  return null;
+}
+
+function companionCommandsToRecorderEvents(commands: CompanionCommand[] = []) {
+  return commands.map(companionCommandToRecorderEvent).filter(Boolean) as RecorderEvent[];
 }
 
 function mergeStepsById(steps: AutomationStep[]) {
@@ -1769,6 +1964,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [parameterDrafts, setParameterDrafts] = useState<ScenarioParameter[]>([]);
   const [testCaseDrafts, setTestCaseDrafts] = useState<ScenarioTestCase[]>([]);
   const targetInitializedForScenario = useRef<string | null>(null);
+  const companionCursorRef = useRef(0);
   const ignoredRecorderStepIdsRef = useRef<Set<string>>(new Set());
   const timelineStepRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const actionCommandRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -2212,8 +2408,25 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         await createSession(url);
         return;
       }
-      window.open(url, "_blank", "noopener,noreferrer");
-      appendLog(`Opened browser for ${url}`);
+      const data = await companionBrowserRequest({
+        body: JSON.stringify({
+          action: "start",
+          scenarioId,
+          startUrl: url,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (!data.sessionId) {
+        throw new Error(data.error || "CaseForge Companion did not return a browser session.");
+      }
+      companionCursorRef.current = data.cursor ?? 0;
+      setRecording(true);
+      setRecordingPaused(false);
+      setRecordingSessionId(data.sessionId);
+      setEvents(companionCommandsToRecorderEvents(data.commands));
+      if (data.logs) setLogs(data.logs.slice(-50));
+      appendLog(`CaseForge Companion opened ${url}`);
     } catch (error) {
       appendLog(error instanceof Error ? error.message : "Could not open browser.");
     } finally {
@@ -2288,18 +2501,72 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         setRecording(true);
         setRecordingPaused(false);
         appendLog("Starting recording...");
+        const data = await companionBrowserRequest({
+          body: JSON.stringify({
+            action: "start",
+            scenarioId,
+            startUrl: url,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        if (!data.sessionId) {
+          throw new Error(data.error || "CaseForge Companion did not return a browser session.");
+        }
+        companionCursorRef.current = data.cursor ?? 0;
+        setRecordingSessionId(data.sessionId);
+        setProviderEventCaptureAfter(null);
+        setEvents(companionCommandsToRecorderEvents(data.commands));
+        if (data.logs) setLogs(data.logs.slice(-50));
+        appendLog("Recording started in CaseForge Companion.");
+        return;
       }
-      const data = await agentRecordRequest(nextRecording ? "/record/start" : "/record/stop", {
-        body: nextRecording ? JSON.stringify({ clear: true }) : undefined,
+
+      const data = await companionBrowserRequest({
+        body: JSON.stringify({
+          action: "stop",
+          sessionId: recordingSessionId,
+        }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-      setRecording(Boolean(data.recording));
+      const recordedEvents = mergeRecorderEvents([
+        ...events,
+        ...companionCommandsToRecorderEvents(data.commands),
+      ]);
+      const recordedSteps = recordedEvents.map(eventToStep).filter(Boolean) as AutomationStep[];
+      const nextSteps = mergeStepsById([...finalizedSteps, ...recordedSteps]);
+      if (recordedSteps.length) {
+        const selectedActionSteps = actionCandidateSteps(nextSteps).filter((step) =>
+          recordedSteps.some((recordedStep) => recordedStep.id === step.id),
+        );
+        const stepIds = selectedActionSteps.map((step) => step.id).filter(Boolean) as string[];
+        await persistSteps(nextSteps);
+        if (stepIds.length) {
+          setSelectedStepIds(new Set(stepIds));
+          setSelectedStepId(stepIds[0] ?? null);
+          setDrawerOpen(false);
+          setActionName("");
+          setActionDescription("");
+          setActionModalStepIds(stepIds);
+          setActionModalTimelineSteps(nextSteps);
+          setActionModalError("");
+          setActionModalOpen(true);
+        }
+      }
+      setRecording(false);
       setRecordingPaused(false);
       setRecordingSessionId(null);
       setProviderEventCaptureAfter(null);
-      setEvents(data.events ?? []);
+      setEvents([]);
       if (data.logs) setLogs(data.logs.slice(-50));
+      appendLog(
+        recordedSteps.length
+          ? `Recording stopped. Saved ${recordedSteps.length} command${
+              recordedSteps.length === 1 ? "" : "s"
+            }.`
+          : "Recording stopped.",
+      );
     } catch (error) {
       setRecording(false);
       setRecordingPaused(false);
@@ -4989,6 +5256,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     if (!recording || !sessionId) return;
     const nextPaused = !recordingPaused;
     try {
+      if (shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl))) {
+        setRecordingPaused(nextPaused);
+        appendLog(nextPaused ? "Companion sync paused." : "Companion sync resumed.");
+        return;
+      }
       await setSessionRecorderMode(sessionId, nextPaused ? "off" : "record");
       setRecordingPaused(nextPaused);
       appendLog(nextPaused ? "Recording paused." : "Recording resumed.");
@@ -5031,19 +5303,38 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   }, [appendLog, projectKey, scenarioId]);
 
   useEffect(() => {
-    if (!shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl)) || !recordingActive) return;
+    if (
+      !shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl)) ||
+      !recordingActive ||
+      recordingPaused ||
+      !recordingSessionId
+    ) {
+      return;
+    }
     const poll = () => {
-      void agentRecordRequest("/record/events")
+      const params = new URLSearchParams({
+        cursor: String(companionCursorRef.current),
+        sessionId: recordingSessionId,
+      });
+      void companionBrowserRequest(undefined, params)
         .then((data) => {
-          setRecording(Boolean(data.recording));
-          setEvents(data.events ?? []);
+          companionCursorRef.current = data.cursor ?? companionCursorRef.current;
+          if (data.url) setTargetUrl(data.url);
+          if (data.status === "stopped" || data.status === "failed") {
+            setRecording(false);
+          }
+          const recorderEvents = companionCommandsToRecorderEvents(data.commands);
+          if (recorderEvents.length) {
+            setEvents((current) => mergeRecorderEvents([...current, ...recorderEvents]));
+          }
+          if (data.logs) setLogs(data.logs.slice(-50));
         })
         .catch(() => undefined);
     };
     poll();
     const intervalId = window.setInterval(poll, 1000);
     return () => window.clearInterval(intervalId);
-  }, [recordingActive, targetUrl]);
+  }, [recordingActive, recordingPaused, recordingSessionId, targetUrl]);
 
   useEffect(() => {
     if (shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl)) || !session?.sessionId) return;

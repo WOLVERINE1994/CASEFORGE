@@ -31,8 +31,8 @@
     ],
     "extraResources": [
       {
-        "from": "../scripts/caseforge-agent.mjs",
-        "to": "app.asar.unpacked/scripts/caseforge-agent.mjs"
+        "from": "../scripts/caseforge-local-agent.mjs",
+        "to": "app.asar.unpacked/scripts/caseforge-local-agent.mjs"
       }
     ],
     "asarUnpack": [
