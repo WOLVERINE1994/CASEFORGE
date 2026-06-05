@@ -1,6 +1,6 @@
 {
   "name": "@caseforge/desktop-agent",
-  "version": "0.1.1",
+  "version": "0.1.6",
   "private": true,
   "description": "Legacy CaseForge desktop bridge for optional local automation compatibility.",
   "type": "module",
@@ -20,8 +20,8 @@
   },
   "build": {
     "appId": "com.caseforge.agent",
-    "productName": "CaseForge Agent",
-    "artifactName": "CaseForge-Agent-Setup-${version}.${ext}",
+    "productName": "CaseForge Companion",
+    "artifactName": "CaseForge-Companion-Setup-${version}.${ext}",
     "directories": {
       "output": "dist"
     },
@@ -51,7 +51,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "CaseForge Agent"
+      "shortcutName": "CaseForge Companion"
     }
   }
 }

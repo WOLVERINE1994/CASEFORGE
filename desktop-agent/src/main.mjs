@@ -82,14 +82,14 @@ const startAgent = async () => {
   const existingHealth = await checkHealth();
   if (existingHealth.ok) {
     externalAgentDetected = true;
-    pushLog("info", `Existing CaseForge Agent detected at ${HEALTH_URL}.`);
+    pushLog("info", `Existing CaseForge Companion detected at ${HEALTH_URL}.`);
     return getStatus();
   }
 
   externalAgentDetected = false;
   const scriptPath = getAgentScriptPath();
 
-  pushLog("info", `Starting CaseForge Agent on ${AGENT_HOST}:${AGENT_PORT}.`);
+  pushLog("info", `Starting CaseForge Companion on ${AGENT_HOST}:${AGENT_PORT}.`);
 
   agentProcess = spawn(process.execPath, [scriptPath], {
     env: {
@@ -129,7 +129,7 @@ const stopAgent = async () => {
     return getStatus();
   }
 
-  pushLog("info", "Stopping CaseForge Agent.");
+  pushLog("info", "Stopping CaseForge Companion.");
   agentProcess.kill();
   agentProcess = undefined;
   await new Promise((resolve) => setTimeout(resolve, 500));
@@ -142,7 +142,7 @@ const createWindow = () => {
     height: 700,
     minWidth: 860,
     minHeight: 620,
-    title: "CaseForge Agent",
+    title: "CaseForge Companion",
     backgroundColor: "#f6f8fb",
     webPreferences: {
       preload: path.join(app.getAppPath(), "src", "preload.mjs"),
