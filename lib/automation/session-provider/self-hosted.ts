@@ -28,13 +28,21 @@ async function workerJson<T>(path: string, init?: RequestInit): Promise<T> {
   if (!baseUrl) {
     throw new Error("Self-hosted worker endpoint is not configured.");
   }
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "fetch failed";
+    throw new Error(
+      `Self-hosted automation worker could not be reached (${baseUrl}). Use a public worker URL from Vercel, or run this flow through the local desktop connector. ${message}`,
+    );
+  }
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) {
     const error = new Error(data.error || "Self-hosted worker request failed.");

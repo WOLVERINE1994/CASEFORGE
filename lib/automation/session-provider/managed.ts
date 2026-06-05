@@ -32,10 +32,18 @@ async function providerJson<T>(path: string, init?: RequestInit): Promise<T> {
   headers.set("Content-Type", "application/json");
   const token = process.env.AUTOMATION_MANAGED_BROWSER_TOKEN;
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "fetch failed";
+    throw new Error(
+      `Managed browser endpoint could not be reached (${baseUrl}). Check AUTOMATION_MANAGED_BROWSER_ENDPOINT and network access. ${message}`,
+    );
+  }
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) {
     throw new Error(data.error || "Managed browser provider request failed.");

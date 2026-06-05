@@ -52,4 +52,13 @@ export function assertProviderAllowed(providerId: AutomationSessionProviderId) {
   ) {
     throw new Error("Managed browser endpoint must not point at localhost.");
   }
+  if (
+    providerId === "self_hosted_playwright" &&
+    process.env.VERCEL === "1" &&
+    isLocalEndpoint(process.env.AUTOMATION_SELF_HOSTED_WORKER_ENDPOINT)
+  ) {
+    throw new Error(
+      "Self-hosted automation worker endpoint cannot point at localhost on Vercel. Use a public worker URL or the CaseForge desktop/local connector.",
+    );
+  }
 }

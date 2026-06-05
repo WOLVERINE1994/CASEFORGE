@@ -18,6 +18,7 @@ export async function requestAutomationSession(input: {
   providerId?: string;
 }) {
   const providerId = normalizeProviderId(input.providerId);
+  assertTargetReachableFromProvider(input.targetUrl, providerId);
   assertProviderAllowed(providerId);
   const provider = getSessionProvider(providerId);
   const providerSession = await provider.createSession(input);
@@ -245,6 +246,43 @@ export async function runAutomationSessionSteps(
       status: (error as Error & { code?: string }).code === "SESSION_BUSY" ? "running" : "broken",
     });
     throw error;
+  }
+}
+
+function assertTargetReachableFromProvider(
+  targetUrl: string | undefined,
+  providerId: AutomationSessionProviderId,
+) {
+  if (
+    providerId === "optional_local_connector" ||
+    process.env.VERCEL !== "1" ||
+    !targetUrl
+  ) {
+    return;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    return;
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  const isLocalhost =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname.endsWith(".localhost");
+  const isPrivateIp =
+    /^10\./.test(hostname) ||
+    /^192\.168\./.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname);
+
+  if (isLocalhost || isPrivateIp) {
+    throw new Error(
+      "Vercel automation cannot open localhost or private-network URLs. Use a publicly reachable URL, or run the flow with the CaseForge desktop/local connector.",
+    );
   }
 }
 
