@@ -2627,6 +2627,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       const data = await companionBrowserRequest({
         body: JSON.stringify({
           action: "start",
+          httpCredentials: authFromUrl(targetUrl),
           scenarioId,
           startUrl: url,
         }),
@@ -2720,6 +2721,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         const data = await companionBrowserRequest({
           body: JSON.stringify({
             action: "start",
+            httpCredentials: authFromUrl(targetUrl),
             scenarioId,
             startUrl: url,
           }),

@@ -50,7 +50,11 @@ const checkHealth = async () => {
     const payload = await response.json();
     return { ok: true, payload };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Agent is not reachable." };
+    return {
+      ok: false,
+      message: "Companion is stopped. Click Start when you are ready to record.",
+      rawMessage: error instanceof Error ? error.message : "Agent is not reachable.",
+    };
   }
 };
 

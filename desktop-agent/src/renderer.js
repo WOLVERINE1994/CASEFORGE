@@ -51,6 +51,8 @@ const renderStatus = () => {
     detailText.textContent = "Legacy desktop bridge is running for compatibility workflows.";
   } else if (running && external) {
     detailText.textContent = "An agent is already running outside this app. Stop it from the original terminal if needed.";
+  } else if (!running) {
+    detailText.textContent = "Companion is stopped. Click Start when you are ready to record.";
   } else if (status?.health?.message) {
     detailText.textContent = status.health.message;
   } else {

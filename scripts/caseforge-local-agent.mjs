@@ -112,6 +112,63 @@ const normalizeCommandType = (value) => {
   return "navigate";
 };
 
+const safeUrl = (value) => {
+  try {
+    return new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+  } catch {
+    return null;
+  }
+};
+
+const cleanUrlAuth = (value) => {
+  const url = safeUrl(value);
+  if (!url) return value;
+  url.username = "";
+  url.password = "";
+  return url.toString();
+};
+
+const authFromUrl = (value) => {
+  const url = safeUrl(value);
+  if (!url?.username) return null;
+  return {
+    password: url.password ? decodeURIComponent(url.password) : "",
+    username: decodeURIComponent(url.username),
+  };
+};
+
+const basicAuthHeader = (credentials) => {
+  if (!credentials?.username) return null;
+  return `Basic ${Buffer.from(`${credentials.username}:${credentials.password || ""}`, "utf8").toString("base64")}`;
+};
+
+const credentialsFromBody = (body, startUrl) => {
+  const bodyCredentials =
+    body?.httpCredentials &&
+    typeof body.httpCredentials === "object" &&
+    typeof body.httpCredentials.username === "string"
+      ? {
+          password:
+            typeof body.httpCredentials.password === "string"
+              ? body.httpCredentials.password
+              : "",
+          username: body.httpCredentials.username,
+        }
+      : null;
+  return bodyCredentials || authFromUrl(startUrl);
+};
+
+const viewportFromBody = (body) =>
+  body?.viewport &&
+  typeof body.viewport === "object" &&
+  Number.isFinite(Number(body.viewport.width)) &&
+  Number.isFinite(Number(body.viewport.height))
+    ? {
+        height: Math.max(320, Number(body.viewport.height)),
+        width: Math.max(320, Number(body.viewport.width)),
+      }
+    : { width: 1440, height: 900 };
+
 const inferLocator = (type, payload) => {
   if (type === "navigate") return undefined;
 
@@ -640,6 +697,9 @@ const startRecorder = async (body) => {
     typeof body?.startUrl === "string" && body.startUrl.trim()
       ? body.startUrl.trim()
       : "https://example.com";
+  const navigationUrl = cleanUrlAuth(startUrl);
+  const httpCredentials = credentialsFromBody(body, startUrl);
+  const authorizationHeader = basicAuthHeader(httpCredentials);
 
   if (!scenarioId) {
     return { status: 400, payload: { error: "A valid scenario id is required." } };
@@ -649,8 +709,20 @@ const startRecorder = async (body) => {
 
   const browser = await launchVisibleBrowser();
   const context = await browser.newContext({
-    viewport: { width: 1440, height: 900 },
+    httpCredentials: httpCredentials || undefined,
+    viewport: viewportFromBody(body),
   });
+  if (authorizationHeader) {
+    await context.setExtraHTTPHeaders({ Authorization: authorizationHeader });
+    await context.route("**/*", async (route) => {
+      await route.continue({
+        headers: {
+          ...route.request().headers(),
+          authorization: authorizationHeader,
+        },
+      });
+    });
+  }
   const page = await context.newPage();
   const session = {
     id: randomUUID(),
@@ -658,8 +730,8 @@ const startRecorder = async (body) => {
     status: "starting",
     startedAt: Date.now(),
     updatedAt: Date.now(),
-    startUrl,
-    currentUrl: startUrl,
+    startUrl: navigationUrl,
+    currentUrl: navigationUrl,
     commands: [],
     logs: [
       "CaseForge Companion connected.",
@@ -673,14 +745,14 @@ const startRecorder = async (body) => {
   state.session = session;
 
   await attachRecorder(page, session);
-  await page.goto(startUrl, {
+  await page.goto(navigationUrl, {
     waitUntil: "domcontentloaded",
     timeout: 20000,
   });
 
   session.status = "recording";
   session.updatedAt = Date.now();
-  session.logs = [`Browser opened at ${startUrl}.`, ...session.logs];
+  session.logs = [`Browser opened at ${navigationUrl}.`, ...session.logs];
 
   browser.on("disconnected", () => {
     session.status = "stopped";
