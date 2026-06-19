@@ -1,0 +1,63 @@
+name: Companion Release
+
+on:
+  push:
+    tags:
+      - "companion-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Companion version to release, for example 0.1.25"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop-agent/package-lock.json
+
+      - name: Install Companion dependencies
+        run: npm ci --prefix desktop-agent
+
+      - name: Build Windows installer
+        run: npm --prefix desktop-agent run dist:win
+
+      - name: Upload release asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "companion-v${{ inputs.version }}"
+          }
+
+          $version = $tag -replace "^companion-v", ""
+          $asset = "desktop-agent/dist/CaseForge-Companion-Setup-$version.exe"
+
+          if (!(Test-Path -LiteralPath $asset)) {
+            throw "Release asset not found: $asset"
+          }
+
+          $notes = "CaseForge Companion Windows installer $version."
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $asset --repo $env:GITHUB_REPOSITORY --clobber
+            gh release edit $tag --repo $env:GITHUB_REPOSITORY --title "CaseForge Companion $version" --notes $notes --latest=false
+          } else {
+            gh release create $tag $asset --repo $env:GITHUB_REPOSITORY --title "CaseForge Companion $version" --notes $notes --latest=false
+          }
