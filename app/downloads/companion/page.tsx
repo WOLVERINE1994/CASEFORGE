@@ -1,5 +1,5 @@
 const windowsInstallerUrl =
-  "https://github.com/WOLVERINE1994/CASEFORGE/releases/download/companion-v0.1.26/CaseForge-Companion-Setup-0.1.26.exe";
+  "https://github.com/WOLVERINE1994/CASEFORGE/releases/download/companion-v0.1.27/CaseForge-Companion-Setup-0.1.27.exe";
 
 const osCards = [
   {

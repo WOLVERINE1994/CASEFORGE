@@ -3647,6 +3647,15 @@ function substituteTemplateValue(value, parameterData) {
   );
 }
 
+function substituteJavaScriptTemplateValue(value, parameterData) {
+  if (typeof value !== "string") return value;
+  return value.replace(/\{\{\s*([a-zA-Z_][\w.-]*)\s*\}\}/g, (match, name) =>
+    Object.prototype.hasOwnProperty.call(parameterData, name)
+      ? JSON.stringify(parameterData[name] ?? "")
+      : match,
+  );
+}
+
 function substituteParameterValue(value, parameterData) {
   if (typeof value === "string") return substituteTemplateValue(value, parameterData);
   if (Array.isArray(value)) return value.map((item) => substituteParameterValue(item, parameterData));
@@ -3660,6 +3669,17 @@ function substituteParameterValue(value, parameterData) {
 
 function substituteStepParameters(step, parameterData) {
   if (!step || typeof step !== "object") return step;
+  if (String(step.action || "") === "runJavaScriptSnippet") {
+    const nextStep = substituteParameterValue(step, parameterData);
+    return {
+      ...nextStep,
+      inputValue: substituteJavaScriptTemplateValue(step.inputValue, parameterData),
+      options: {
+        ...(nextStep.options || {}),
+        script: substituteJavaScriptTemplateValue(step.options?.script || "", parameterData),
+      },
+    };
+  }
   return substituteParameterValue(step, parameterData);
 }
 

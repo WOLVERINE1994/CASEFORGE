@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.26";
+const AGENT_VERSION = "0.1.27";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -2364,10 +2364,51 @@ function interpolateRuntimeVariables(value, variables) {
   });
 }
 
+function stringifyJavaScriptRuntimeValue(value) {
+  if (value === undefined) return "undefined";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return JSON.stringify(String(value));
+  }
+}
+
+function interpolateJavaScriptRuntimeVariables(value, variables) {
+  if (typeof value !== "string") return value;
+  return value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, name) => {
+    const key = String(name || "").trim();
+    if (!key || !Object.prototype.hasOwnProperty.call(variables, key)) return match;
+    return stringifyJavaScriptRuntimeValue(variables[key]);
+  });
+}
+
 function resolveRuntimeValue(value, variables) {
   if (typeof value === "string") return interpolateRuntimeVariables(value, variables);
   if (Array.isArray(value)) return value.map((item) => resolveRuntimeValue(item, variables));
   if (value && typeof value === "object") {
+    if (String(value.action || "") === "runJavaScriptSnippet") {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => {
+          if (key === "options" && item && typeof item === "object" && !Array.isArray(item)) {
+            return [
+              key,
+              Object.fromEntries(
+                Object.entries(item).map(([optionKey, optionValue]) => [
+                  optionKey,
+                  optionKey === "script"
+                    ? interpolateJavaScriptRuntimeVariables(optionValue, variables)
+                    : resolveRuntimeValue(optionValue, variables),
+                ]),
+              ),
+            ];
+          }
+          if (key === "inputValue" || key === "script") {
+            return [key, interpolateJavaScriptRuntimeVariables(item, variables)];
+          }
+          return [key, resolveRuntimeValue(item, variables)];
+        })
+      );
+    }
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [key, resolveRuntimeValue(item, variables)])
     );

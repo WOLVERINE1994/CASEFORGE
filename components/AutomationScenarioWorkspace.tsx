@@ -3098,6 +3098,14 @@ function substituteTemplate(value: string | undefined, data: Record<string, stri
   );
 }
 
+function substituteJavaScriptTemplate(value: string | undefined, data: Record<string, string>) {
+  return String(value ?? "").replace(/\{\{\s*([a-zA-Z_][\w.-]*)\s*\}\}/g, (match, name: string) =>
+    Object.prototype.hasOwnProperty.call(data, name)
+      ? JSON.stringify(data[name] ?? "")
+      : match,
+  );
+}
+
 function substituteUnknown(value: unknown, data: Record<string, string>): unknown {
   if (typeof value === "string") return substituteTemplate(value, data);
   if (Array.isArray(value)) return value.map((item) => substituteUnknown(item, data));
@@ -3113,6 +3121,30 @@ function substituteUnknown(value: unknown, data: Record<string, string>): unknow
 }
 
 function substituteStepParameters(step: AutomationStep, data: Record<string, string>): AutomationStep {
+  if (displayAction(step.action) === "runJavaScriptSnippet") {
+    const options = substituteUnknown(step.options ?? {}, data) as Record<string, unknown>;
+    return {
+      ...step,
+      commandText: substituteTemplate(step.commandText, data),
+      description: substituteTemplate(step.description, data),
+      expectedValue: substituteTemplate(step.expectedValue, data),
+      inputValue: substituteJavaScriptTemplate(step.inputValue, data),
+      locatorCandidates: Array.isArray(step.locatorCandidates)
+        ? step.locatorCandidates.map((candidate) => ({
+            ...candidate,
+            value: substituteTemplate(candidate.value, data),
+          }))
+        : step.locatorCandidates,
+      options: {
+        ...options,
+        script: substituteJavaScriptTemplate(
+          typeof step.options?.script === "string" ? step.options.script : "",
+          data,
+        ),
+      },
+      target: substituteUnknown(step.target, data) as AutomationStep["target"],
+    };
+  }
   return {
     ...step,
     commandText: substituteTemplate(step.commandText, data),
@@ -10223,7 +10255,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.26
+            Download Companion 0.1.27
           </a>
           <button
             type="button"
