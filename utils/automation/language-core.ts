@@ -566,6 +566,40 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     outputDefinition: { canSaveAsVariable: true, defaultOutputVariableName: "js.result", outputType: "object" },
     runtimeHandler: "web.executeScript",
   }),
+  command("runJavaScriptSnippet", "Run JavaScript Snippet", [
+    param("script", "expression", {
+      required: true,
+      description: "JavaScript to run in the active browser page. Use return for multi-line snippets, or enter a single expression.",
+    }),
+    param("outputFormat", "select", {
+      defaultValue: "auto",
+      options: [
+        { label: "Auto", value: "auto" },
+        { label: "JSON", value: "json" },
+        { label: "Text", value: "text" },
+        { label: "Boolean", value: "boolean" },
+        { label: "Number", value: "number" },
+      ],
+    }),
+    param("logOutputToConsole", "boolean", { defaultValue: true }),
+    param("failIfEmpty", "boolean", { defaultValue: false }),
+    param("timeoutMs", "number", { defaultValue: 5000 }),
+  ], {
+    aliases: [
+      "Run JS Snippet",
+      "Run custom JavaScript",
+      "Get dataLayer",
+      "Capture dataLayer",
+      "Verify GTM",
+      "Verify GA4",
+      "Inspect page globals",
+      "Debug JavaScript output",
+    ],
+    category: "browser.javascript",
+    description: "Runs a custom JavaScript snippet in the active browser page, logs the returned output, and can save it to a variable.",
+    outputDefinition: { canSaveAsVariable: true, defaultOutputVariableName: "jsSnippet.result", outputType: "object" },
+    runtimeHandler: "web.runJavaScriptSnippet",
+  }),
   command("logMessage", "Log Message to Console", [param("message", "string", { required: true })], {
     aliases: ["Print variable", "Print message", "Debug log", "Log message to Test Report", "Console log"],
     category: "debug.console",

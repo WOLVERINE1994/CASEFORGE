@@ -1232,7 +1232,7 @@ export default function AutomationStudioClient({
           rel="noreferrer"
           className="inline-flex min-h-[42px] items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50"
         >
-          Download Companion 0.1.25
+          Download Companion 0.1.26
         </a>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
@@ -1573,7 +1573,7 @@ export default function AutomationStudioClient({
             rel="noreferrer"
             className="inline-flex h-10 items-center justify-center rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50"
           >
-            Download Companion 0.1.25
+            Download Companion 0.1.26
           </a>
         </header>
 

@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.25";
+const AGENT_VERSION = "0.1.26";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -2401,6 +2401,117 @@ function optionBoolean(value, fallback) {
   return fallback;
 }
 
+function isEmptySnippetOutput(value) {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
+function coerceSnippetOutput(value, outputFormat) {
+  const format = String(outputFormat || "auto").toLowerCase();
+  if (format === "text") {
+    return typeof value === "string" ? value : stringifyRuntimeValue(value);
+  }
+  if (format === "boolean") return Boolean(value);
+  if (format === "number") {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+  if (format === "json") {
+    if (typeof value === "string") {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  }
+  return value;
+}
+
+function snippetOutputPreview(value) {
+  if (value === undefined) return "undefined";
+  if (value === null) return "null";
+  if (typeof value === "string") return value || "(empty string)";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return stringifyRuntimeValue(value);
+}
+
+async function runJavaScriptSnippet(page, step) {
+  const options = step.options || {};
+  const script = String(
+    options.script ||
+      step.script ||
+      step.inputValue ||
+      step.target?.value ||
+      ""
+  ).trim();
+  if (!script) throw new Error("Run JavaScript Snippet requires a script.");
+
+  const timeoutMs = Math.max(1000, optionalNumber(options.timeoutMs || options.timeout) ?? 5000);
+  const rawOutput = await Promise.race([
+    page.evaluate(async (source) => {
+      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+      const serialize = (value, depth = 0, seen = new WeakSet()) => {
+        if (value === undefined || value === null) return value;
+        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+        if (typeof value === "bigint") return String(value);
+        if (typeof value === "function") return `[Function${value.name ? ` ${value.name}` : ""}]`;
+        if (depth > 6) return "[MaxDepth]";
+        if (typeof value === "object") {
+          if (seen.has(value)) return "[Circular]";
+          seen.add(value);
+          if (value instanceof Date) return value.toISOString();
+          if (value instanceof Element) {
+            const id = value.id ? `#${value.id}` : "";
+            const classes = typeof value.className === "string" && value.className.trim()
+              ? `.${value.className.trim().replace(/\s+/g, ".")}`
+              : "";
+            return `<${value.tagName.toLowerCase()}${id}${classes}>`;
+          }
+          if (Array.isArray(value)) return value.slice(0, 500).map((item) => serialize(item, depth + 1, seen));
+          const entries = Object.entries(value).slice(0, 200);
+          return Object.fromEntries(entries.map(([key, item]) => [key, serialize(item, depth + 1, seen)]));
+        }
+        return String(value);
+      };
+      const runAsBody = async () => new AsyncFunction(source).call(window);
+      const runAsExpression = async () => new AsyncFunction(`return (${source});`).call(window);
+      let bodyReturned = false;
+      try {
+        const bodyResult = await runAsBody();
+        bodyReturned = true;
+        if (bodyResult !== undefined || /\breturn\b/.test(source)) return serialize(bodyResult);
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+      }
+      try {
+        return serialize(await runAsExpression());
+      } catch (error) {
+        if (bodyReturned) return undefined;
+        throw error;
+      }
+    }, script),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`JavaScript snippet timed out after ${timeoutMs} ms.`)), timeoutMs)
+    ),
+  ]);
+  const output = coerceSnippetOutput(rawOutput, options.outputFormat);
+  if (optionBoolean(options.failIfEmpty, false) && isEmptySnippetOutput(output)) {
+    const error = new Error("JavaScript snippet returned an empty value.");
+    error.output = output;
+    throw error;
+  }
+  if (state.session && optionBoolean(options.logOutputToConsole, true)) {
+    const preview = snippetOutputPreview(output);
+    state.session.logs = [`JavaScript Snippet Output: ${preview}`, ...state.session.logs].slice(0, 80);
+  }
+  return output;
+}
+
 async function validateAccordionSections(page, step) {
   const options = step.options || {};
   const timeoutMs = Math.max(1000, optionalNumber(options.timeoutMs || options.timeout) ?? 30000);
@@ -3469,6 +3580,9 @@ async function executePlaybackStep(page, step) {
   }
   if (action === "executeScript") {
     return await page.evaluate(String(inputValue || ""));
+  }
+  if (action === "runJavaScriptSnippet") {
+    return await runJavaScriptSnippet(page, step);
   }
   if (action === "logMessage") {
     const message = String(inputValue || options.message || step.message || step.target?.value || "");

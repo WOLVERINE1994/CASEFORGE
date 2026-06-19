@@ -2713,6 +2713,111 @@ function tableStructured(value, fallback) {
   }
 }
 
+function isEmptySnippetOutput(value) {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
+function stringifySnippetOutput(value) {
+  if (value === undefined) return "undefined";
+  if (value === null) return "null";
+  if (typeof value === "string") return value || "(empty string)";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function coerceSnippetOutput(value, outputFormat) {
+  const format = String(outputFormat || "auto").toLowerCase();
+  if (format === "text") return typeof value === "string" ? value : stringifySnippetOutput(value);
+  if (format === "boolean") return Boolean(value);
+  if (format === "number") {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+  if (format === "json" && typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+async function workerRunJavaScriptSnippet(session, page, step, timeout) {
+  const options = step.options || {};
+  const script = String(options.script || step.script || step.inputValue || step.target?.value || "").trim();
+  if (!script) throw new Error("Run JavaScript Snippet requires a script.");
+  const timeoutMs = Math.max(1000, tableNumber(options.timeoutMs || options.timeout) ?? timeout ?? 5000);
+  const rawOutput = await Promise.race([
+    page.evaluate(async (source) => {
+      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+      const serialize = (value, depth = 0, seen = new WeakSet()) => {
+        if (value === undefined || value === null) return value;
+        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+        if (typeof value === "bigint") return String(value);
+        if (typeof value === "function") return `[Function${value.name ? ` ${value.name}` : ""}]`;
+        if (depth > 6) return "[MaxDepth]";
+        if (typeof value === "object") {
+          if (seen.has(value)) return "[Circular]";
+          seen.add(value);
+          if (value instanceof Date) return value.toISOString();
+          if (value instanceof Element) {
+            const id = value.id ? `#${value.id}` : "";
+            const classes = typeof value.className === "string" && value.className.trim()
+              ? `.${value.className.trim().replace(/\s+/g, ".")}`
+              : "";
+            return `<${value.tagName.toLowerCase()}${id}${classes}>`;
+          }
+          if (Array.isArray(value)) return value.slice(0, 500).map((item) => serialize(item, depth + 1, seen));
+          const entries = Object.entries(value).slice(0, 200);
+          return Object.fromEntries(entries.map(([key, item]) => [key, serialize(item, depth + 1, seen)]));
+        }
+        return String(value);
+      };
+      const runAsBody = async () => new AsyncFunction(source).call(window);
+      const runAsExpression = async () => new AsyncFunction(`return (${source});`).call(window);
+      let bodyReturned = false;
+      try {
+        const bodyResult = await runAsBody();
+        bodyReturned = true;
+        if (bodyResult !== undefined || /\breturn\b/.test(source)) return serialize(bodyResult);
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+      }
+      try {
+        return serialize(await runAsExpression());
+      } catch (error) {
+        if (bodyReturned) return undefined;
+        throw error;
+      }
+    }, script),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`JavaScript snippet timed out after ${timeoutMs} ms.`)), timeoutMs)
+    ),
+  ]);
+  const output = coerceSnippetOutput(rawOutput, options.outputFormat);
+  if (tableBoolean(options.failIfEmpty, false) && isEmptySnippetOutput(output)) {
+    const error = new Error("JavaScript snippet returned an empty value.");
+    error.output = output;
+    throw error;
+  }
+  if (tableBoolean(options.logOutputToConsole, true)) {
+    pushEvent(session, "console", {
+      text: `JavaScript Snippet Output: ${stringifySnippetOutput(output)}`,
+      type: "debug",
+    });
+  }
+  return output;
+}
+
 function tableNormalize(value, options = {}) {
   let text = value === undefined || value === null ? "" : String(value);
   if (tableBoolean(options.trimWhitespace, true)) text = text.replace(/\s+/g, " ").trim();
@@ -3056,6 +3161,8 @@ async function executeStep(session, step, index, context = {}) {
     await page.mouse.click(Number(options.x || 0), Number(options.y || 0));
   } else if (action === "scroll") {
     await page.mouse.wheel(0, Number(inputValue || options.deltaY || 600));
+  } else if (action === "runJavaScriptSnippet") {
+    stepOutput = await workerRunJavaScriptSnippet(session, page, step, timeout);
   } else if (tableActionNames.has(action)) {
     stepOutput = await workerExecuteTableCommand(page, step, timeout);
   } else {

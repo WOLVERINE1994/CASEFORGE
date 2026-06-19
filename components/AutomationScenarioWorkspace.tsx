@@ -1425,6 +1425,7 @@ function visibleStepInputValue(step: AutomationStep) {
 }
 
 function primaryValueParameterForCommand(action: string) {
+  if (action === "runJavaScriptSnippet") return undefined;
   const definition = commandDefinitionForAction(action);
   const primaryParameterNames = new Set([
     "actionName",
@@ -1681,6 +1682,23 @@ function commandOutputSummary(output: unknown) {
   }
 }
 
+function javaScriptSnippetSummary(output: unknown) {
+  if (output === undefined) return "undefined";
+  if (output === null) return "null";
+  const summary = commandOutputSummary(output);
+  return summary.length > 500 ? `${summary.slice(0, 497)}...` : summary;
+}
+
+function javaScriptSnippetDetailLines(output: unknown) {
+  if (output === undefined || output === null) return [];
+  if (typeof output !== "object") return [];
+  try {
+    return JSON.stringify(output, null, 2).split("\n").slice(0, 30);
+  } catch {
+    return [];
+  }
+}
+
 function accordionValidationSummary(output: unknown) {
   if (!output || typeof output !== "object" || Array.isArray(output)) return "";
   const record = output as {
@@ -1792,6 +1810,7 @@ function commandConsoleOutputForStep(step: AutomationStep | undefined, output: u
   if (!step) return "";
   const action = displayAction(step.action);
   if (action === "logMessage") return commandOutputSummary(output);
+  if (action === "runJavaScriptSnippet") return javaScriptSnippetSummary(output);
   if (action === "validateAccordionSections") return accordionValidationSummary(output);
   if (action.includes("WebTable") || action === "getWebTableData" || action === "validateWebTable") {
     return tableCommandSummary(output);
@@ -1819,6 +1838,9 @@ function commandConsoleDetailLinesForStep(step: AutomationStep | undefined, outp
     return accordionValidationDetailLines(output);
   }
   const action = displayAction(step.action);
+  if (action === "runJavaScriptSnippet") {
+    return javaScriptSnippetDetailLines(output);
+  }
   if (action.includes("WebTable") || action === "getWebTableData" || action === "validateWebTable") {
     return tableCommandDetailLines(output);
   }
@@ -10061,7 +10083,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.25
+            Download Companion 0.1.26
           </a>
           <button
             type="button"
