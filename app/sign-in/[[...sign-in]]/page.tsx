@@ -1,8 +1,9 @@
 import { SignIn } from "@clerk/nextjs";
 import AuthSetupNotice from "../../../components/AuthSetupNotice";
+import { isClerkAuthActive } from "../../../lib/auth-mode";
 
 export default function SignInPage() {
-  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+  if (!isClerkAuthActive()) {
     return <AuthSetupNotice action="sign in" />;
   }
 

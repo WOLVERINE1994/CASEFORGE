@@ -234,6 +234,11 @@ model Project {
   automationRuns AutomationRun[]
   automationEnvironments AutomationEnvironment[]
   automationSessions AutomationSession[]
+  automationViews AutomationView[]
+  automationElements AutomationElement[]
+  automationElementUsages AutomationElementUsage[]
+  automationPlaybackJobs AutomationPlaybackJob[]
+  automationPlaybackConfigs AutomationPlaybackConfig[]
 }
 
 model Sprint {
@@ -461,6 +466,10 @@ model AutomationEnvironment {
   projectId         String
   version           Int         @default(1)
   name              String
+  businessName      String   @default("")
+  technicalName     String   @default("")
+  aliases           Json     @default("[]")
+  description       String   @default("")
   baseUrl           String      @default("")
   variables         Json        @default("{}")
   authStateArtifactId String?
@@ -541,4 +550,141 @@ model AutomationArtifact {
   run         AutomationRun?          @relation(fields: [runId], references: [id], onDelete: Cascade)
 
   @@index([projectId, runId, type])
+}
+
+model AutomationView {
+  id                   String   @id @default(cuid())
+  projectId            String
+  scenarioId           String?
+  actionId             String?
+  name                 String   @default("")
+  url                  String   @default("")
+  title                String   @default("")
+  screenshotArtifactId String?
+  screenshotUri        String   @default("")
+  viewport             Json     @default("{}")
+  domSnapshot          Json     @default("{}")
+  accessibilityTree    Json     @default("{}")
+  elementSnapshots     Json     @default("[]")
+  metadata             Json     @default("{}")
+  capturedAt           DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  project              Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  elements             AutomationElement[]
+
+  @@index([projectId, capturedAt])
+  @@index([projectId, scenarioId, capturedAt])
+}
+
+model AutomationElement {
+  id                String   @id @default(cuid())
+  projectId         String
+  viewId            String?
+  name              String
+  elementType       String   @default("element")
+  status            String   @default("active")
+  canonicalLocator  Json     @default("{}")
+  locatorCandidates Json     @default("[]")
+  fallbackLocators  Json     @default("[]")
+  boundingBox       Json     @default("{}")
+  elementSnapshot   Json     @default("{}")
+  lastVerifiedAt    DateTime?
+  stabilityScore    Float    @default(0)
+  preferredLocatorStrategy String?
+  metadata          Json     @default("{}")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  view              AutomationView? @relation(fields: [viewId], references: [id], onDelete: SetNull)
+  usages            AutomationElementUsage[]
+
+  @@index([projectId, name])
+  @@index([projectId, viewId])
+}
+
+model AutomationElementUsage {
+  id          String   @id @default(cuid())
+  projectId   String
+  elementId   String
+  scenarioId  String?
+  actionId    String?
+  stepId      String?
+  usageType   String   @default("command")
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  element     AutomationElement @relation(fields: [elementId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, elementId])
+  @@index([projectId, scenarioId])
+  @@index([projectId, actionId])
+}
+
+model AutomationPlaybackJob {
+  id             String   @id @default(cuid())
+  projectId      String
+  scenarioId     String?
+  actionId       String?
+  sessionId      String?
+  status         String   @default("queued")
+  scope          String   @default("fullScenario")
+  configSnapshot Json     @default("{}")
+  logs           Json     @default("[]")
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  items          AutomationPlaybackItem[]
+
+  @@index([projectId, createdAt])
+  @@index([projectId, status, updatedAt])
+}
+
+model AutomationPlaybackItem {
+  id          String   @id @default(cuid())
+  jobId       String
+  stepId      String?
+  orderIndex  Int
+  status      String   @default("pending")
+  command     Json     @default("{}")
+  result      Json     @default("{}")
+  logs        Json     @default("[]")
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  job         AutomationPlaybackJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, orderIndex])
+  @@index([jobId, status])
+}
+
+model AutomationPlaybackConfig {
+  id                   String   @id @default(cuid())
+  projectId            String
+  scenarioId           String?
+  autoPlaybackEnabled  Boolean  @default(true)
+  pauseOnElementErrors Boolean  @default(true)
+  selfHealingEnabled   Boolean  @default(true)
+  environmentId        String?
+  autoElementTimeoutMs Int      @default(5000)
+  manualElementTimeoutMs Int    @default(30000)
+  manualPageTimeoutMs  Int      @default(60000)
+  executionParameters  Json     @default("{}")
+  metadata             Json     @default("{}")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  project              Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, scenarioId])
+  @@index([projectId])
 }

@@ -48,9 +48,9 @@ const renderStatus = () => {
   endpointText.textContent = status ? `${status.host}:${status.port}` : "127.0.0.1:4873";
 
   if (running && managedByApp) {
-    detailText.textContent = "Legacy desktop bridge is running for compatibility workflows.";
+    detailText.textContent = "CaseForge Companion is running and ready for Live Preview workflows.";
   } else if (running && external) {
-    detailText.textContent = "An agent is already running outside this app. Stop it from the original terminal if needed.";
+    detailText.textContent = "A compatible CaseForge agent is already running on this computer. You can use CaseForge now.";
   } else if (!running) {
     detailText.textContent = "Companion is stopped. Click Start when you are ready to record.";
   } else if (status?.health?.message) {
@@ -60,7 +60,10 @@ const renderStatus = () => {
   }
 
   startButton.disabled = state.busy || running;
-  stopButton.disabled = state.busy || !managedByApp;
+  stopButton.disabled = state.busy || !running || external;
+  stopButton.title = external
+    ? "This agent was started outside the Companion app. Close that terminal/process if you need to stop it."
+    : "";
 };
 
 const refreshStatus = async () => {

@@ -35,6 +35,13 @@ function normalizeStrategy(value: string): AutomationLocatorStrategy {
   return strategyAliases[value] ?? "css";
 }
 
+export function normalizeLocatorScore(value: unknown) {
+  const score = Number(value ?? 0);
+  if (!Number.isFinite(score)) return 0;
+  const scaledScore = score > 0 && score <= 1 ? score * 100 : score;
+  return Math.max(0, Math.min(100, Math.round(scaledScore)));
+}
+
 export function normalizeLocatorCandidates(
   candidates: Array<
     Partial<AutomationLocatorCandidate> & { type?: string; unique?: boolean }
@@ -53,7 +60,7 @@ export function normalizeLocatorCandidates(
         {
           isUnique: Boolean(candidate.isUnique ?? candidate.unique),
           metadata: candidate.metadata ?? {},
-          score: Number(candidate.score ?? 0),
+          score: normalizeLocatorScore(candidate.score),
           source: candidate.source ?? "recorded",
           strategy,
           value,

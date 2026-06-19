@@ -1,22 +1,9 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import type { ReactNode } from "react";
 import ProjectRouteHeader from "./ProjectRouteHeader";
 import ProjectSidebar from "./ProjectSidebar";
-
-const ResponsiveShell = dynamic(() => import("./ResponsiveShell"), {
-  ssr: false,
-  loading: () => (
-    <div className="grid gap-5 xl:grid-cols-[240px_minmax(0,1fr)]">
-      <div className="cf-panel hidden min-h-[420px] rounded-[24px] xl:block" />
-      <div className="flex min-w-0 flex-col gap-6">
-        <div className="cf-panel min-h-[160px] rounded-[28px]" />
-        <div className="cf-panel min-h-[360px] rounded-[28px]" />
-      </div>
-    </div>
-  ),
-});
+import ResponsiveShell from "./ResponsiveShell";
 
 type ProjectRouteChromeProps = {
   projectKey: string;

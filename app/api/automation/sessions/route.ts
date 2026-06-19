@@ -75,6 +75,10 @@ export async function POST(request: Request) {
                 typeof body.viewport.isMobile === "boolean"
                   ? body.viewport.isMobile
                   : undefined,
+              maximize:
+                typeof body.viewport.maximize === "boolean"
+                  ? body.viewport.maximize
+                  : undefined,
               width: body.viewport.width,
             }
           : null,

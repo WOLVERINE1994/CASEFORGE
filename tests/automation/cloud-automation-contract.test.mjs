@@ -6,6 +6,10 @@ const automationStoreSource = readFileSync(
   new URL("../../utils/automation/store.ts", import.meta.url),
   "utf8",
 );
+const locatorPolicySource = readFileSync(
+  new URL("../../utils/automation/locator-policy.ts", import.meta.url),
+  "utf8",
+);
 
 const preferredLocatorOrder = [
   "role",
@@ -176,6 +180,27 @@ test("scenario step replacement uses bulk inserts to avoid Prisma transaction ti
   );
 });
 
+test("raw locator candidate inserts set prisma-managed updatedAt timestamp", () => {
+  const locatorInsertBlocks = automationStoreSource.match(
+    /INSERT INTO "AutomationLocatorCandidate" \([\s\S]*?\)\s*(?:VALUES|SELECT)/g,
+  );
+  assert.ok(locatorInsertBlocks?.length, "expected AutomationLocatorCandidate raw inserts");
+  for (const block of locatorInsertBlocks) {
+    assert.match(block, /"updatedAt"/);
+  }
+});
+
+test("automation project resolver accepts ids keys and legacy planning keys", () => {
+  assert.match(automationStoreSource, /export async function resolveAutomationProjectId\(projectKey: string\)/);
+  assert.match(automationStoreSource, /const projectRef = projectKey\.trim\(\)/);
+  assert.match(automationStoreSource, /LOWER\("id"\) = LOWER\(\$\{projectRef\}\)/);
+  assert.match(automationStoreSource, /LOWER\(COALESCE\("key", ''\)\) = LOWER\(\$\{projectRef\}\)/);
+  assert.match(automationStoreSource, /"rows"->'planning'->>'projectKey'/);
+  assert.match(automationStoreSource, /prisma\.project\.findMany\(\{/);
+  assert.match(automationStoreSource, /function projectMatchesRef\(project: ProjectLookupRow, normalizedRef: string\)/);
+  assert.match(automationStoreSource, /function getPlanningProjectKey\(rows: unknown\)/);
+});
+
 test("scenario persistence stores readable steps and ranks resilient locators first", () => {
   const store = createMemoryAutomationStore();
   const scenario = store.createScenario("project-1", "Checkout");
@@ -197,6 +222,16 @@ test("scenario persistence stores readable steps and ranks resilient locators fi
   assert.equal(saved.steps[0].locatorCandidates[0].strategy, "role");
   assert.equal(saved.steps[0].locatorCandidates.at(-1).strategy, "xpath");
   assert.equal(saved.version, 2);
+});
+
+test("locator score normalization stores integer confidence scores", () => {
+  assert.match(locatorPolicySource, /export function normalizeLocatorScore/);
+  assert.match(locatorPolicySource, /score > 0 && score <= 1 \? score \* 100 : score/);
+  assert.match(locatorPolicySource, /Math\.round\(scaledScore\)/);
+  assert.match(locatorPolicySource, /Math\.max\(0, Math\.min\(100/);
+  assert.match(locatorPolicySource, /score: normalizeLocatorScore\(candidate\.score\)/);
+  assert.match(automationStoreSource, /normalizeLocatorCandidates, normalizeLocatorScore/);
+  assert.match(automationStoreSource, /normalizeLocatorScore\(event\.confidenceScore\)/);
 });
 
 test("legacy localStorage scenarios import once into the database store", () => {

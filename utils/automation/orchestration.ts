@@ -24,6 +24,7 @@ export async function requestAutomationSession(input: {
     deviceScaleFactor?: number;
     height: number;
     isMobile?: boolean;
+    maximize?: boolean;
     width: number;
   } | null;
 }) {

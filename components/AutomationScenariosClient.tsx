@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ensureBrowserProjectSynced } from "../utils/automation/browser-project-sync";
 
 type ScenarioStatus = "draft" | "active" | "paused" | "archived";
 
@@ -198,6 +199,18 @@ async function readApiJson<T>(response: Response): Promise<T & { error?: string 
   }
 }
 
+function withResponseStatus(error: Error, status: number) {
+  return Object.assign(error, { status });
+}
+
+function isNotFoundError(error: unknown) {
+  return (
+    error instanceof Error &&
+    typeof (error as Error & { status?: unknown }).status === "number" &&
+    (error as Error & { status?: number }).status === 404
+  );
+}
+
 export default function AutomationScenariosClient({ projectKey }: Props) {
   const router = useRouter();
   const [scenarios, setScenarios] = useState<AutomationScenario[]>([]);
@@ -220,7 +233,10 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
         scenarios?: AutomationScenario[];
       }>(response);
       if (!response.ok) {
-        throw new Error(data.error || "Could not load scenarios.");
+        throw withResponseStatus(
+          new Error(data.error || "Could not load scenarios."),
+          response.status,
+        );
       }
       return data.scenarios ?? [];
     }
@@ -260,7 +276,20 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
     async function loadScenarios() {
       try {
         setLoading(true);
-        let loaded = await fetchScenarios();
+        await ensureBrowserProjectSynced(projectKey);
+        let loaded: AutomationScenario[];
+        try {
+          loaded = await fetchScenarios();
+        } catch (loadError) {
+          if (!isNotFoundError(loadError)) {
+            throw loadError;
+          }
+          const synced = await ensureBrowserProjectSynced(projectKey);
+          if (!synced) {
+            throw loadError;
+          }
+          loaded = await fetchScenarios();
+        }
         const imported = await importLegacyScenariosOnce();
         if (imported) {
           loaded = await fetchScenarios();

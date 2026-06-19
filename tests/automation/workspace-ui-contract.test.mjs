@@ -6,6 +6,14 @@ const workspaceSource = readFileSync(
   new URL("../../components/AutomationScenarioWorkspace.tsx", import.meta.url),
   "utf8",
 );
+const localAgentSource = readFileSync(
+  new URL("../../scripts/caseforge-local-agent.mjs", import.meta.url),
+  "utf8",
+);
+const playwrightWorkerSource = readFileSync(
+  new URL("../../workers/playwright-worker/server.mjs", import.meta.url),
+  "utf8",
+);
 const globalStylesSource = readFileSync(
   new URL("../../app/globals.css", import.meta.url),
   "utf8",
@@ -49,6 +57,17 @@ const scenarioActionRouteSource = readFileSync(
   ),
   "utf8",
 );
+const sessionRouteSource = readFileSync(
+  new URL("../../app/api/automation/sessions/route.ts", import.meta.url),
+  "utf8",
+);
+const liveFrameRouteSource = readFileSync(
+  new URL(
+    "../../app/api/automation/sessions/[sessionId]/live-frame/route.ts",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 test("command prompt Done saves successfully before closing", () => {
   assert.match(workspaceSource, /const \[commandPromptDraft, setCommandPromptDraft\]/);
@@ -80,7 +99,7 @@ test("shared navigation and tables use overflow-safe primitives", () => {
   assert.match(appSidebarSource, /NavItem as SafeNavItem/);
   assert.match(projectSidebarSource, /NavItem as SafeNavItem/);
   assert.match(projectSidebarSource, /label: "Test Management"/);
-  assert.match(projectSidebarSource, /cf-safe-wrap mt-3 text-xl/);
+  assert.match(projectSidebarSource, /cf-safe-wrap text-xl/);
   assert.match(routeHeaderSource, /ResponsiveToolbar/);
   assert.match(routeHeaderSource, /cf-safe-label/);
   assert.match(moduleSubnavSource, /ResponsiveToolbar/);
@@ -113,17 +132,194 @@ test("scenario workspace supports ACCELQ-style test data and parameterized runs"
   assert.match(workspaceSource, /function substituteStepParameters\(step: AutomationStep, data: Record<string, string>\)/);
   assert.match(workspaceSource, /automationParameters/);
   assert.match(workspaceSource, /testCases/);
-  assert.match(workspaceSource, /Test Data/);
-  assert.match(workspaceSource, /Test data parameter/);
+  assert.match(workspaceSource, /Scenario Test Cases/);
+  assert.match(workspaceSource, /Test Case Name \| detected params \| Expected Result \| Tags \| Priority \| Active/);
+  assert.match(workspaceSource, /Data-driven value/);
+  assert.match(workspaceSource, /Bind this value to a reusable test data column/);
+  assert.match(workspaceSource, /const convertStepValueToParameter = async/);
+  assert.match(workspaceSource, /Convert typed value to scenario parameter/);
+  assert.match(workspaceSource, /Converted value to required scenario parameter/);
   assert.match(workspaceSource, /inputValue: parameterName \? parameterToken\(parameterName\) : ""/);
   assert.match(workspaceSource, /parameterName: parameterName \|\| undefined/);
   assert.match(workspaceSource, /const saveOpenCommandPromptDraft = async \(\) => \{/);
   assert.match(workspaceSource, /const activeRunTestData = \(\) => \{/);
   assert.match(workspaceSource, /normalizedTestDataDrafts\(parameterDrafts, testCaseDrafts\)/);
   assert.match(workspaceSource, /const currentStepForRun = \(step: AutomationStep\)/);
-  assert.match(workspaceSource, /for \(const \[index, testCase\] of activeTestCases\.entries\(\)\)/);
+  assert.match(workspaceSource, /for \(const environment of environments\)/);
+  assert.match(workspaceSource, /for \(const testCase of runRows\)/);
+  assert.match(workspaceSource, /testCaseMatchesRunScope\(testCase, config\)/);
+  assert.match(workspaceSource, /Execution Mode/);
+  assert.match(workspaceSource, /Run Scope/);
+  assert.match(workspaceSource, /All active cases/);
+  assert.match(workspaceSource, /Failed cases/);
+  assert.match(workspaceSource, /Priority/);
   assert.match(workspaceSource, /substituteStepsParameters\(executableSteps, parameterData\)/);
-  assert.match(workspaceSource, /name: `\$\{scenarioName\} \/ \$\{testCase\.name\}`/);
+  assert.match(workspaceSource, /const runLabel = \[/);
+  assert.match(workspaceSource, /scenarioName,/);
+  assert.match(workspaceSource, /testCase\?\.name,/);
+});
+
+test("recording desktop sessions open maximized while custom devices keep explicit viewport", () => {
+  assert.match(workspaceSource, /maximize\?: boolean/);
+  assert.match(workspaceSource, /viewport: \{ height: 900, maximize: true, width: 1440 \}/);
+  assert.match(workspaceSource, /const viewport = viewportForRunConfig\(config\)/);
+  assert.match(workspaceSource, /viewport,/);
+  assert.match(sessionRouteSource, /typeof body\.viewport\.maximize === "boolean"/);
+  assert.match(localAgentSource, /args: !headless && options\.maximize \? \["--start-maximized"\] : undefined/);
+  assert.match(localAgentSource, /viewport: maximizeWindow \? null : viewportFromBody\(body\)/);
+  assert.match(playwrightWorkerSource, /args: !effectiveHeadless && maximizeWindow \? \["--start-maximized"\] : undefined/);
+  assert.match(playwrightWorkerSource, /viewport: !effectiveHeadless && maximizeWindow \? null : requestedViewport/);
+});
+
+test("live preview hides raw missing worker frame errors", () => {
+  assert.match(liveFrameRouteSource, /workerResponse\.status === 404/);
+  assert.match(liveFrameRouteSource, /not found/i);
+  assert.match(liveFrameRouteSource, /Preview session is not available yet/);
+});
+
+test("playback reuses active Companion browser instead of opening a second browser", () => {
+  assert.match(workspaceSource, /shouldUseLegacyDesktopBridge\(expectedUrl \|\| normalizeUrl\(targetUrl\)\)/);
+  assert.match(workspaceSource, /let companionSessionId = recordingSessionId/);
+  assert.match(workspaceSource, /action: "run"/);
+  assert.match(workspaceSource, /Playback running in the current CaseForge Companion browser/);
+  assert.match(localAgentSource, /runPlaybackInActiveBrowser/);
+  assert.match(localAgentSource, /body\?\.action === "run"/);
+  assert.match(localAgentSource, /session\.playbackActive/);
+});
+
+test("recording promotes an existing Companion Live Preview instead of opening another browser", () => {
+  assert.match(workspaceSource, /const canPromoteCompanionPreview =/);
+  assert.match(workspaceSource, /isCompanionPreviewSession\(session\)/);
+  assert.match(workspaceSource, /session\?\.sessionId && !canPromoteCompanionPreview/);
+  assert.match(workspaceSource, /action: "mode"/);
+  assert.match(workspaceSource, /mode: "record"/);
+  assert.match(workspaceSource, /Recording started in the current CaseForge Companion Live Preview/);
+  assert.match(localAgentSource, /const setRecorderMode = async/);
+  assert.match(localAgentSource, /body\?\.action === "mode"/);
+  assert.match(localAgentSource, /Live Preview promoted to recording mode/);
+});
+
+test("Companion recording does not duplicate the startup navigation command", () => {
+  assert.match(workspaceSource, /const useLegacyBridge = shouldUseLegacyDesktopBridge\(url\)/);
+  assert.match(workspaceSource, /if \(!useLegacyBridge\) \{\s*const navigateStep = makeNavigateStep\(url\)/);
+  assert.match(workspaceSource, /if \(useLegacyBridge\) \{/);
+  assert.match(workspaceSource, /function withoutAdjacentDuplicateNavigations\(steps: AutomationStep\[\]\)/);
+  assert.match(
+    workspaceSource,
+    /withoutAdjacentDuplicateNavigations\(mergeStepsById\(\[\.\.\.finalizedSteps, \.\.\.recordedSteps\]\)\)/,
+  );
+});
+
+test("Companion sessions render live preview directly from the local agent", () => {
+  assert.match(workspaceSource, /function companionSessionMetadata/);
+  assert.match(workspaceSource, /provider: "caseforge-companion"/);
+  assert.match(workspaceSource, /function isCompanionPreviewSession/);
+  assert.match(workspaceSource, /function liveFrameSrcForSession/);
+  assert.match(workspaceSource, /function companionPreviewStreamUrl/);
+  assert.match(workspaceSource, /new WebSocket\(companionPreviewStreamUrl\(session\)\)/);
+  assert.match(workspaceSource, /const \[livePreviewStreamConnected, setLivePreviewStreamConnected\]/);
+  assert.match(workspaceSource, /const \[livePreviewStreamFrameSrc, setLivePreviewStreamFrameSrc\]/);
+  assert.match(workspaceSource, /src=\{livePreviewStreamFrameSrc \|\| liveFrameSrcForSession\(session, livePreviewTick\)\}/);
+  assert.match(workspaceSource, /socket\.send\(JSON\.stringify\(\{/);
+  assert.match(workspaceSource, /type LivePreviewSizeKey = "normal" \| "large" \| "full"/);
+  assert.match(workspaceSource, /LIVE_PREVIEW_SIZES/);
+  assert.match(workspaceSource, /panelMinHeight/);
+  assert.match(workspaceSource, /const \[livePreviewSize, setLivePreviewSize\]/);
+  assert.match(workspaceSource, /livePreviewWorkspaceColumns/);
+  assert.match(workspaceSource, /Preview Size:/);
+  assert.match(workspaceSource, /cycleLivePreviewSize/);
+  assert.match(workspaceSource, /overflow-auto bg-zinc-100 p-2 dark:bg-zinc-950/);
+  assert.match(workspaceSource, /setLivePreviewSize\(nextPreviewSize\.key\)/);
+  assert.match(workspaceSource, /viewport: previewSize\.viewport/);
+  assert.match(workspaceSource, /companionPreviewUrl\(session, "inspect"\)/);
+  assert.match(workspaceSource, /companionPreviewUrl\(session, "scroll"\)/);
+  assert.match(workspaceSource, /const requestLivePreviewScroll = useCallback/);
+  assert.match(workspaceSource, /const handleLivePreviewWheel = useCallback/);
+  assert.match(workspaceSource, /livePreviewWheelDeltaRef/);
+  assert.match(workspaceSource, /livePreviewWheelTimerRef/);
+  assert.match(workspaceSource, /livePreviewSliderTimerRef/);
+  assert.match(workspaceSource, /handleLivePreviewSliderChange/);
+  assert.match(workspaceSource, /handleLivePreviewKeyDown/);
+  assert.match(workspaceSource, /handleNativeWheel/);
+  assert.match(workspaceSource, /addEventListener\("wheel", handleNativeWheel, \{ passive: false \}\)/);
+  assert.match(workspaceSource, /event\.key === "Home"/);
+  assert.match(workspaceSource, /event\.key === "End"/);
+  assert.match(workspaceSource, /PageDown/);
+  assert.match(workspaceSource, /window\.setTimeout\(\(\) => \{/);
+  assert.match(workspaceSource, /setLivePreviewScroll\(\(current\) =>/);
+  assert.match(workspaceSource, /activeLivePreviewSize\.viewport\.width \/ 2/);
+  assert.match(workspaceSource, /event\.deltaMode === 1/);
+  assert.doesNotMatch(workspaceSource, /< 70\) return/);
+  assert.match(workspaceSource, /onWheel=\{handleLivePreviewWheel\}/);
+  assert.match(workspaceSource, /onKeyDown=\{handleLivePreviewKeyDown\}/);
+  assert.match(workspaceSource, /tabIndex=\{0\}/);
+  assert.match(workspaceSource, /renderLivePreviewScrollControls/);
+  assert.match(workspaceSource, /type="range"/);
+  assert.match(workspaceSource, /w-5 flex-col/);
+  assert.match(workspaceSource, /opacity-60 transition hover:bg-zinc-950\/70 hover:opacity-100/);
+  assert.doesNotMatch(workspaceSource, />\s*Page\s*</);
+  assert.match(workspaceSource, /targetY/);
+  assert.match(workspaceSource, /setLivePreviewScroll/);
+  assert.match(workspaceSource, /Scroll page up/);
+  assert.match(workspaceSource, /Scroll page down/);
+  assert.match(workspaceSource, /Go to top of browser page/);
+  assert.match(workspaceSource, /Go to bottom of browser page/);
+  assert.match(localAgentSource, /url\.pathname === "\/automation\/browser\/live-frame"/);
+  assert.match(localAgentSource, /await state\.page\.screenshot/);
+  assert.match(localAgentSource, /url\.pathname === "\/automation\/browser\/inspect"/);
+  assert.match(localAgentSource, /url\.pathname === "\/automation\/browser\/scroll"/);
+  assert.match(localAgentSource, /async function scrollLivePreview/);
+  assert.match(localAgentSource, /handleLivePreviewSocketUpgrade/);
+  assert.match(localAgentSource, /\/automation\/browser\/live-stream/);
+  assert.match(localAgentSource, /sendWebSocketBinary\(client, screenshot\)/);
+  assert.match(localAgentSource, /type: "scroll"/);
+  assert.match(localAgentSource, /state\.page\.mouse\.wheel\(deltaX, deltaY\)/);
+  assert.match(localAgentSource, /root\.scrollTo/);
+  assert.doesNotMatch(localAgentSource, /scroller\.scrollBy/);
+  assert.match(localAgentSource, /maxY: Math\.max/);
+});
+
+test("live preview right-click opens searchable command authoring menu", () => {
+  assert.match(workspaceSource, /type LiveCommandMenu =/);
+  assert.match(workspaceSource, /const \[liveCommandMenu, setLiveCommandMenu\]/);
+  assert.match(workspaceSource, /const liveCommandResults = useMemo/);
+  assert.match(workspaceSource, /const liveCommandResultsByDomain = useMemo/);
+  assert.match(workspaceSource, /const openLiveCommandMenu = useCallback/);
+  assert.match(workspaceSource, /event\.preventDefault\(\)/);
+  assert.match(workspaceSource, /onContextMenu=\{openLiveCommandMenu\}/);
+  assert.match(workspaceSource, /Live Command Library/);
+  assert.match(workspaceSource, /Search commands by keyword, alias, or domain/);
+  assert.match(workspaceSource, /Object\.entries\(liveCommandResultsByDomain\)/);
+  assert.match(workspaceSource, /const insertLivePreviewCommand = async/);
+  assert.match(workspaceSource, /function liveCommandText/);
+  assert.match(workspaceSource, /Fill \$\{label\}/);
+  assert.match(workspaceSource, /insertedFromLivePreview: true/);
+  assert.match(workspaceSource, /await persistSteps\(/);
+  assert.doesNotMatch(workspaceSource, /insertLivePreviewCommand[\s\S]{0,900}createSession\(/);
+  assert.doesNotMatch(workspaceSource, /insertLivePreviewCommand[\s\S]{0,900}companionBrowserRequest\(/);
+});
+
+test("Try GlowCart Demo starts hidden Live Preview authoring without opening record modal", () => {
+  assert.match(workspaceSource, /const prepareGlowCartDemoAuthoring = async/);
+  assert.match(workspaceSource, /data-live-preview-action="glowcart-demo"/);
+  assert.match(workspaceSource, /handleGlowCartDemoClick/);
+  assert.match(workspaceSource, /document\.addEventListener\("click", handleGlowCartDemoClick\)/);
+  assert.match(workspaceSource, /GlowCart demo selected at/);
+  assert.match(workspaceSource, /setAuthoringPreviewUrl\(demoUrl\)/);
+  assert.match(workspaceSource, /Hidden Live Preview started at/);
+  assert.match(workspaceSource, /browserMode: "headless"/);
+  assert.match(workspaceSource, /headless: true/);
+  assert.match(workspaceSource, /livePreviewOnly: true/);
+  assert.match(workspaceSource, /setRecordingSessionId\(data\.sessionId\)/);
+  assert.match(workspaceSource, /setSession\(companionSessionMetadata\(data, previewUrl\)\)/);
+  assert.match(workspaceSource, /Authoring preview/);
+  assert.match(workspaceSource, /title="GlowCart authoring preview"/);
+  assert.match(workspaceSource, /GlowCart preview unavailable/);
+  assert.match(workspaceSource, /void prepareGlowCartDemoAuthoring\(\)/);
+  assert.doesNotMatch(workspaceSource, /prepareGlowCartDemoAuthoring[\s\S]{0,900}setRunModalOpen\(true\)/);
+  assert.doesNotMatch(workspaceSource, /prepareGlowCartDemoAuthoring[\s\S]{0,900}setRunModalMode\("record"\)/);
+  assert.doesNotMatch(workspaceSource, /prepareGlowCartDemoAuthoring[\s\S]{0,900}startRecordingFromConfig/);
+  assert.doesNotMatch(workspaceSource, /prepareGlowCartDemoAuthoring[\s\S]{0,900}createSession\(/);
 });
 
 test("test case rows fall back to parameter defaults when cells are blank", () => {
@@ -140,11 +336,10 @@ test("action and single-command runs substitute test data before playback", () =
   assert.match(workspaceSource, /runSteps: executableActionSteps/);
   assert.match(workspaceSource, /summarySteps: parameterizedSummarySteps/);
   assert.match(workspaceSource, /Running \$\{runTestData\.testCases\.length\} test case/);
-  assert.match(workspaceSource, /const commandContextSteps = timelineContextStepsForStep\(runnableStep, setupSourceSteps\)/);
-  assert.match(workspaceSource, /const commandRun = await expandActionSteps\(commandContextSteps\)/);
+  assert.match(workspaceSource, /const commandRun = await expandActionSteps\(\[runnableStep\]\)/);
   assert.match(workspaceSource, /const parameterizedSteps = substituteStepsParameters\(commandSteps, parameterData\)/);
   assert.match(workspaceSource, /const parameterizedSummarySteps = substituteStepsParameters\(\[runnableStep\], parameterData\)/);
-  assert.match(workspaceSource, /const executableSteps = withScenarioInitSteps\(parameterizedSteps, parameterizedSetupSteps\)/);
+  assert.match(workspaceSource, /steps: parameterizedSteps/);
   assert.match(workspaceSource, /runSteps: executableSteps/);
 });
 
@@ -158,25 +353,33 @@ test("resume replay substitutes test data before playback", () => {
   assert.match(workspaceSource, /summarySteps: parameterizedSummarySteps/);
 });
 
-test("single command and action runs include scenario init setup", () => {
+test("single command fallback runs can include scenario init setup", () => {
   assert.match(workspaceSource, /function scenarioInitSteps\(steps: AutomationStep\[\]\)/);
   assert.match(workspaceSource, /function withScenarioInitSteps\(runSteps: AutomationStep\[\], setupSourceSteps: AutomationStep\[\]\)/);
   assert.match(workspaceSource, /function timelineContextStepsForStep\(step: AutomationStep, sourceSteps: AutomationStep\[\]\)/);
   assert.match(workspaceSource, /if \(!runSteps\.length \|\| firstNavigationUrl\(runSteps\)\) return runSteps/);
-  assert.match(workspaceSource, /const setupSourceSteps = mergeStepsById\(\[\.\.\.finalizedSteps, \.\.\.liveSteps, \.\.\.latestSteps\]\)/);
   assert.match(workspaceSource, /const parameterizedSetupSteps = substituteStepsParameters\(setupSourceSteps, parameterData\)/);
   assert.match(workspaceSource, /startUrl: firstNavigationUrl\(executableActionSteps\) \|\| normalizeUrl\(targetUrl\)/);
   assert.match(workspaceSource, /startUrl: firstNavigationUrl\(executableSteps\) \|\| normalizeUrl\(targetUrl\)/);
   assert.match(workspaceSource, /summarySteps: parameterizedSummarySteps/);
 });
 
-test("single command and action runs replay prior scenario context", () => {
+test("single command Run reuses active Companion Live Preview without clearing timeline", () => {
   assert.match(workspaceSource, /return \[\.\.\.sourceSteps\.slice\(0, stepIndex\), step\]/);
   assert.match(workspaceSource, /const actionContextSteps = timelineContextStepsForStep\(runnableStep, setupSourceSteps\)/);
   assert.match(workspaceSource, /const actionRun = await expandActionSteps\(actionContextSteps, \{/);
   assert.match(workspaceSource, /Running action with scenario context/);
-  assert.match(workspaceSource, /const commandContextSteps = timelineContextStepsForStep\(runnableStep, setupSourceSteps\)/);
-  assert.match(workspaceSource, /summarySteps: parameterizedSummarySteps/);
+  assert.match(workspaceSource, /const activeCompanionSession =/);
+  assert.match(workspaceSource, /isUsableBrokerSession\(session\) && isCompanionPreviewSession\(session\)/);
+  assert.match(workspaceSource, /action: "run"/);
+  assert.match(workspaceSource, /sessionId: activeCompanionSession\.sessionId/);
+  assert.match(workspaceSource, /steps: parameterizedSteps/);
+  assert.match(workspaceSource, /setLivePreviewTick\(Date\.now\(\)\)/);
+  assert.match(workspaceSource, /Command passed in Live Preview/);
+  assert.doesNotMatch(
+    workspaceSource,
+    /const runSingleCommand = async[\s\S]*?const commandRun = await expandActionSteps\(\[runnableStep\]\)[\s\S]*?setEvents\(\[\]\)/,
+  );
 });
 
 test("checked commands and actions define selective run scope", () => {
@@ -191,7 +394,7 @@ test("checked commands and actions define selective run scope", () => {
   assert.match(workspaceSource, /Running selected scope:/);
   assert.match(workspaceSource, /expandActionSteps\(scopedRunSteps, \{/);
   assert.match(workspaceSource, /selectedActionCommandKeys,/);
-  assert.match(workspaceSource, /parameterizedSummarySteps = substituteStepsParameters\(scopedRunSteps, parameterData\)/);
+  assert.match(workspaceSource, /substituteStepsParameters\(scopedRunSteps, parameterData\)/);
   assert.match(workspaceSource, /options\.selectedActionStepIds\?\.has\(step\.id\)/);
   assert.match(workspaceSource, /options\.selectedActionCommandKeys\?\.has/);
   assert.match(workspaceSource, /scopedActionSteps\.length/);
@@ -208,7 +411,7 @@ test("top-level and nested action commands can run one by one", () => {
 });
 
 test("command timeline supports keyboard navigation and bulk checkbox selection", () => {
-  assert.match(workspaceSource, /import type \{ KeyboardEvent as ReactKeyboardEvent, MouseEvent \} from "react"/);
+  assert.match(workspaceSource, /KeyboardEvent as ReactKeyboardEvent, MouseEvent, WheelEvent as ReactWheelEvent/);
   assert.match(workspaceSource, /const \[timelineSelectionAnchorId, setTimelineSelectionAnchorId\]/);
   assert.match(workspaceSource, /const timelineStepRefs = useRef<Record<string, HTMLDivElement \| null>>/);
   assert.match(workspaceSource, /const timelineStepIds = useMemo/);
@@ -366,7 +569,7 @@ test("live recorded commands are draft-saved and restored after hard refresh", (
   assert.match(workspaceSource, /function shouldUseCachedScenario/);
   assert.match(workspaceSource, /if \(!liveSteps\.length\) return;/);
   assert.match(workspaceSource, /writeDraftCache\(projectKey, scenarioId, draftScenario\)/);
-  assert.match(workspaceSource, /if \(shouldUseCachedScenario\(data\.scenario, cached\)\)/);
+  assert.match(workspaceSource, /if \(shouldUseCachedScenario\(loadedScenario, cached\)\)/);
   assert.match(workspaceSource, /setScenario\(cached\)/);
 });
 
@@ -401,12 +604,103 @@ test("playback failures show failed step guidance and recovery actions", () => {
   assert.match(workspaceSource, /border-rose-300 bg-rose-50/);
 });
 
+test("automation workspace exposes interactive playback separately from formal run", () => {
+  assert.match(workspaceSource, /type PlaybackScope =/);
+  assert.match(workspaceSource, /type PlaybackStateGuard =/);
+  assert.match(workspaceSource, /const \[playbackJobs, setPlaybackJobs\]/);
+  assert.match(workspaceSource, /const \[playbackStateGuard, setPlaybackStateGuard\]/);
+  assert.match(workspaceSource, /const \[playbackConfig, setPlaybackConfig\]/);
+  assert.match(workspaceSource, /const \[playbackConsoleOpen, setPlaybackConsoleOpen\]/);
+  assert.match(workspaceSource, /const playbackStepsForScope =/);
+  assert.match(workspaceSource, /const playbackStateGuardFor =/);
+  assert.match(workspaceSource, /Current browser URL/);
+  assert.match(workspaceSource, /Selected command expected page/);
+  assert.match(workspaceSource, /Continue Anyway/);
+  assert.match(workspaceSource, /Navigate to Starting URL/);
+  assert.match(workspaceSource, /Playback from Beginning/);
+  assert.match(workspaceSource, /const startPlayback = async/);
+  assert.match(workspaceSource, /selectedToEnd/);
+  assert.match(workspaceSource, /startToSelected/);
+  assert.match(workspaceSource, /singleCommand/);
+  assert.match(workspaceSource, /Playback/);
+  assert.match(workspaceSource, /To End/);
+  assert.match(workspaceSource, /To Here/);
+  assert.match(workspaceSource, /Playback Console/);
+  assert.match(workspaceSource, /Stop Queue/);
+  assert.match(workspaceSource, /Playback Config/);
+  assert.match(workspaceSource, /this phase only executes web commands through Companion\/Playwright/);
+  assert.match(workspaceSource, /suppressRecording: true/);
+});
+
+test("playback configuration supports timeout healing environment and parameter controls", () => {
+  assert.match(workspaceSource, /autoElementTimeoutMs: 5000/);
+  assert.match(workspaceSource, /manualElementTimeoutMs: 30000/);
+  assert.match(workspaceSource, /manualPageTimeoutMs: 60000/);
+  assert.match(workspaceSource, /pauseOnElementErrors/);
+  assert.match(workspaceSource, /selfHealingEnabled/);
+  assert.match(workspaceSource, /environmentId/);
+  assert.match(workspaceSource, /executionParameters/);
+  assert.match(workspaceSource, /Auto playback/);
+  assert.match(workspaceSource, /Pause on Element Errors/);
+  assert.match(workspaceSource, /Enable Self-Healing/);
+  assert.match(workspaceSource, /savePlaybackConfig/);
+});
+
+test("canvas tab captures views renders overlays and inserts catalog commands", () => {
+  assert.match(workspaceSource, /type CanvasView =/);
+  assert.match(workspaceSource, /type CanvasElement =/);
+  assert.match(workspaceSource, /const \[workspaceTab, setWorkspaceTab\]/);
+  assert.match(workspaceSource, /const \[canvasView, setCanvasView\]/);
+  assert.match(workspaceSource, /const \[canvasElements, setCanvasElements\]/);
+  assert.match(workspaceSource, /const \[canvasExploreElement, setCanvasExploreElement\]/);
+  assert.match(workspaceSource, /const \[canvasInsertPreview, setCanvasInsertPreview\]/);
+  assert.match(workspaceSource, /const canvasCandidateStack =/);
+  assert.match(workspaceSource, /const openCanvasExploreMode =/);
+  assert.match(workspaceSource, /const previewCanvasCommandInsert =/);
+  assert.match(workspaceSource, /const captureCanvasFromTimeline = async/);
+  assert.match(workspaceSource, /const saveCanvasElement = async/);
+  assert.match(workspaceSource, /const remapCanvasElement = async/);
+  assert.match(workspaceSource, /const insertCanvasCommand = async/);
+  assert.match(workspaceSource, /Canvas/);
+  assert.match(workspaceSource, /Capture Canvas/);
+  assert.match(workspaceSource, /Save Element/);
+  assert.match(workspaceSource, /Re-map Saved Element/);
+  assert.match(workspaceSource, /Test Locator/);
+  assert.match(workspaceSource, /Insert Command/);
+  assert.match(workspaceSource, /Show Usage/);
+  assert.match(workspaceSource, /Explore Mode/);
+  assert.match(workspaceSource, /Command Insertion Preview/);
+  assert.match(workspaceSource, /Insert position/);
+  assert.match(workspaceSource, /Candidate hierarchy: parent \/ current \/ child \/ sibling/);
+  assert.match(workspaceSource, /canvasBoxStyle/);
+  assert.match(workspaceSource, /border-emerald-500/);
+  assert.match(workspaceSource, /border-sky-500/);
+  assert.match(workspaceSource, /border-orange-400/);
+  assert.match(workspaceSource, /border-dotted/);
+});
+
+test("command library groups authorable phase 3 commands by catalog domain", () => {
+  assert.match(workspaceSource, /AUTOMATION_COMMAND_CATALOG/);
+  assert.match(workspaceSource, /commandCatalogByDomain/);
+  assert.match(workspaceSource, /const commandActionOptions = \[/);
+  assert.match(workspaceSource, /AUTOMATION_COMMAND_CATALOG\.filter\(\(command\) => command\.visibleInDropdown !== false\)/);
+  assert.match(workspaceSource, /const visibleCommands = AUTOMATION_COMMAND_CATALOG\.filter\(\(command\) => command\.visibleInLibrary !== false\)/);
+  assert.match(workspaceSource, /disabled=\{!implemented\}/);
+  assert.match(workspaceSource, /Coming soon/);
+  assert.match(workspaceSource, /Command Library/);
+  assert.match(workspaceSource, /Object\.entries\(commandCatalogByDomain\)/);
+  assert.match(workspaceSource, /adapter pending/);
+  assert.match(workspaceSource, /makeManualStep\(visibleSteps\.length \+ 1\)/);
+  assert.match(workspaceSource, /command\.executable && command\.domain === "web"/);
+});
+
 test("automation workspace grid clamps browser timeline and failure panels", () => {
   assert.match(workspaceSource, /grid min-h-\[700px\] min-w-0 gap-3/);
-  assert.match(workspaceSource, /grid min-h-\[660px\] min-w-0 grid-rows-\[minmax\(0,1fr\)_auto\] gap-3 overflow-hidden/);
+  assert.match(workspaceSource, /grid min-w-0 grid-rows-\[minmax\(0,1fr\)_auto\] gap-3 overflow-hidden/);
+  assert.match(workspaceSource, /Math\.max\(660, activeLivePreviewSize\.panelMinHeight \+ 100\)/);
   assert.match(workspaceSource, /relative min-w-0 overflow-hidden rounded-\[16px\]/);
   assert.match(workspaceSource, /flex min-w-0 flex-wrap items-center justify-between/);
   assert.match(workspaceSource, /min-w-0 flex-1 truncate text-xs/);
   assert.match(workspaceSource, /min-w-0 rounded-\[14px\] border border-rose-200/);
-  assert.match(workspaceSource, /grid min-h-\[660px\] min-w-0 grid-rows-\[minmax\(0,1fr\)_auto\] gap-3 overflow-hidden/);
+  assert.match(workspaceSource, /livePreviewSize === "full" \? "min-h-\[420px\]" : "min-h-\[660px\]"/);
 });

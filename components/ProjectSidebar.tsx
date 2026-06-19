@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import CaseForgeBrand from "./CaseForgeBrand";
 import { LabelWithBadge, NavItem as SafeNavItem, ResponsiveToolbar } from "./SafeLayout";
 import { useProjectDataState } from "./ProjectDataStateContext";
 import { useProjectRouteMetrics } from "./ProjectRouteMetricsContext";
@@ -508,11 +507,7 @@ export default function ProjectSidebar({
       >
       <div className="rounded-[20px] border border-slate-700/80 bg-[radial-gradient(circle_at_top_right,_rgba(37,99,235,0.18),_transparent_46%),linear-gradient(180deg,_rgba(17,24,39,0.98)_0%,_rgba(15,23,42,0.98)_100%)] p-4 shadow-[0_24px_60px_-42px_rgba(37,99,235,0.65)]">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-            caseForge
-          </p>
-          <CaseForgeBrand size="md" className="mt-3" />
-          <h2 className="cf-safe-wrap mt-3 text-xl font-semibold tracking-tight text-slate-50">
+          <h2 className="cf-safe-wrap text-xl font-semibold tracking-tight text-slate-50">
             {projectName.trim() || "Unsaved workspace"}
           </h2>
         </div>

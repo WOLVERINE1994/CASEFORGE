@@ -7,7 +7,7 @@ import {
   toDownloadUrl,
   type AutomationArtifactInput,
 } from "./artifact-storage";
-import { normalizeLocatorCandidates } from "./locator-policy";
+import { normalizeLocatorCandidates, normalizeLocatorScore } from "./locator-policy";
 import type {
   AutomationAction,
   AutomationArtifact,
@@ -22,6 +22,12 @@ import type {
   AutomationSessionProviderId,
   AutomationSessionStatus,
   AutomationStep,
+  AutomationView,
+  AutomationElement,
+  AutomationElementUsage,
+  AutomationPlaybackConfig,
+  AutomationPlaybackJob,
+  AutomationPlaybackItem,
 } from "./types";
 
 const jsonb = (value: unknown) =>
@@ -57,6 +63,7 @@ function uniqueStepId(step: AutomationStep, seenIds: Set<string>) {
 }
 
 type ProjectRefRow = { id: string };
+type ProjectLookupRow = { id: string; key: string | null; rows: unknown };
 type ScenarioRow = {
   id: string;
   projectId: string;
@@ -114,19 +121,171 @@ type RecycleBinRow = {
   previousStatus: string | null;
   updatedAt: Date;
 };
+type ViewRow = {
+  id: string;
+  projectId: string;
+  scenarioId: string | null;
+  actionId: string | null;
+  name: string;
+  url: string;
+  title: string;
+  screenshotArtifactId: string | null;
+  screenshotUri: string;
+  viewport: unknown;
+  domSnapshot: unknown;
+  accessibilityTree: unknown;
+  elementSnapshots: unknown;
+  metadata: unknown;
+  capturedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+type ElementRow = {
+  id: string;
+  projectId: string;
+  viewId: string | null;
+  name: string;
+  businessName: string;
+  technicalName: string;
+  aliases: unknown;
+  description: string;
+  elementType: string;
+  status: string;
+  canonicalLocator: unknown;
+  locatorCandidates: unknown;
+  fallbackLocators: unknown;
+  boundingBox: unknown;
+  elementSnapshot: unknown;
+  lastVerifiedAt: Date | null;
+  stabilityScore: number;
+  preferredLocatorStrategy: string | null;
+  metadata: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+};
+type ElementUsageRow = {
+  id: string;
+  projectId: string;
+  elementId: string;
+  scenarioId: string | null;
+  actionId: string | null;
+  stepId: string | null;
+  usageType: string;
+  metadata: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+};
+type PlaybackJobRow = {
+  id: string;
+  projectId: string;
+  scenarioId: string | null;
+  actionId: string | null;
+  sessionId: string | null;
+  status: string;
+  scope: string;
+  configSnapshot: unknown;
+  logs: unknown;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+type PlaybackItemRow = {
+  id: string;
+  jobId: string;
+  stepId: string | null;
+  orderIndex: number;
+  status: string;
+  command: unknown;
+  result: unknown;
+  logs: unknown;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+type PlaybackConfigRow = {
+  id: string;
+  projectId: string;
+  scenarioId: string | null;
+  autoPlaybackEnabled: boolean;
+  pauseOnElementErrors: boolean;
+  selfHealingEnabled: boolean;
+  environmentId: string | null;
+  autoElementTimeoutMs: number;
+  manualElementTimeoutMs: number;
+  manualPageTimeoutMs: number;
+  executionParameters: unknown;
+  metadata: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export async function resolveAutomationProjectId(projectKey: string) {
+  const projectRef = projectKey.trim();
+  if (!projectRef) return null;
+  const normalizedRef = projectRef.toLowerCase();
+
   const rows = await prisma.$queryRaw<ProjectRefRow[]>(Prisma.sql`
     SELECT "id" FROM "Project"
-    WHERE "id" = ${projectKey} OR "key" = ${projectKey}
+    WHERE LOWER("id") = LOWER(${projectRef})
+       OR LOWER(COALESCE("key", '')) = LOWER(${projectRef})
+       OR LOWER(COALESCE("rows"->'planning'->>'projectKey', '')) = LOWER(${projectRef})
     LIMIT 1
   `);
-  return rows[0]?.id ?? null;
+  if (rows[0]?.id) {
+    return rows[0].id;
+  }
+
+  const projects = await prisma.project.findMany({
+    select: {
+      id: true,
+      key: true,
+      rows: true,
+    },
+  });
+  return projects.find((project) => projectMatchesRef(project, normalizedRef))?.id ?? null;
+}
+
+function normalizeProjectRef(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function getPlanningProjectKey(rows: unknown) {
+  if (!rows || typeof rows !== "object" || Array.isArray(rows)) return "";
+  const planning = (rows as Record<string, unknown>).planning;
+  if (!planning || typeof planning !== "object" || Array.isArray(planning)) return "";
+  const projectKey = (planning as Record<string, unknown>).projectKey;
+  return typeof projectKey === "string" ? projectKey : "";
+}
+
+function projectMatchesRef(project: ProjectLookupRow, normalizedRef: string) {
+  if (!normalizedRef) return false;
+  return (
+    normalizeProjectRef(project.id) === normalizedRef ||
+    normalizeProjectRef(project.key) === normalizedRef ||
+    normalizeProjectRef(getPlanningProjectKey(project.rows)) === normalizedRef
+  );
 }
 
 function toStringArray(value: unknown) {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function toRecordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item && typeof item === "object" && !Array.isArray(item)),
+      )
     : [];
 }
 
@@ -213,6 +372,227 @@ function mapRecycleBinItem(row: RecycleBinRow): AutomationRecycleBinItem {
     projectId: row.projectId,
     type: row.type,
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function mapView(row: ViewRow): AutomationView {
+  return {
+    accessibilityTree: toRecord(row.accessibilityTree),
+    actionId: row.actionId,
+    capturedAt: row.capturedAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    domSnapshot: toRecord(row.domSnapshot),
+    elementSnapshots: toRecordArray(row.elementSnapshots),
+    id: row.id,
+    metadata: toRecord(row.metadata),
+    name: row.name,
+    projectId: row.projectId,
+    scenarioId: row.scenarioId,
+    screenshotArtifactId: row.screenshotArtifactId,
+    screenshotUri: row.screenshotUri,
+    title: row.title,
+    updatedAt: row.updatedAt.toISOString(),
+    url: row.url,
+    viewport: toRecord(row.viewport),
+  };
+}
+
+function mapElement(row: ElementRow): AutomationElement {
+  return {
+    aliases: toStringArray(row.aliases),
+    boundingBox: toRecord(row.boundingBox),
+    businessName: row.businessName || row.name,
+    canonicalLocator: toRecord(row.canonicalLocator),
+    createdAt: row.createdAt.toISOString(),
+    description: row.description || "",
+    elementSnapshot: toRecord(row.elementSnapshot),
+    elementType: row.elementType,
+    fallbackLocators: normalizeLocatorCandidates(
+      Array.isArray(row.fallbackLocators) ? row.fallbackLocators : [],
+    ),
+    id: row.id,
+    lastVerifiedAt: row.lastVerifiedAt?.toISOString() ?? null,
+    locatorCandidates: normalizeLocatorCandidates(
+      Array.isArray(row.locatorCandidates) ? row.locatorCandidates : [],
+    ),
+    metadata: toRecord(row.metadata),
+    name: row.name,
+    preferredLocatorStrategy: row.preferredLocatorStrategy,
+    projectId: row.projectId,
+    stabilityScore: Number(row.stabilityScore ?? 0),
+    status: row.status,
+    technicalName:
+      row.technicalName ||
+      row.name
+        .replace(/\W+/g, " ")
+        .trim()
+        .replace(/\s+(.)/g, (_match: string, letter: string) => letter.toUpperCase()),
+    updatedAt: row.updatedAt.toISOString(),
+    viewId: row.viewId,
+  };
+}
+
+function mapElementUsage(row: ElementUsageRow): AutomationElementUsage {
+  return {
+    actionId: row.actionId,
+    createdAt: row.createdAt.toISOString(),
+    elementId: row.elementId,
+    id: row.id,
+    metadata: toRecord(row.metadata),
+    projectId: row.projectId,
+    scenarioId: row.scenarioId,
+    stepId: row.stepId,
+    updatedAt: row.updatedAt.toISOString(),
+    usageType: row.usageType,
+  };
+}
+
+function mapPlaybackItem(row: PlaybackItemRow): AutomationPlaybackItem {
+  return {
+    command: toRecord(row.command),
+    createdAt: row.createdAt.toISOString(),
+    finishedAt: row.finishedAt?.toISOString() ?? null,
+    id: row.id,
+    jobId: row.jobId,
+    logs: toStringArray(row.logs),
+    orderIndex: row.orderIndex,
+    result: toRecord(row.result),
+    startedAt: row.startedAt?.toISOString() ?? null,
+    status: row.status,
+    stepId: row.stepId,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function mapPlaybackJob(row: PlaybackJobRow, items: AutomationPlaybackItem[] = []): AutomationPlaybackJob {
+  return {
+    actionId: row.actionId,
+    configSnapshot: toRecord(row.configSnapshot),
+    createdAt: row.createdAt.toISOString(),
+    finishedAt: row.finishedAt?.toISOString() ?? null,
+    id: row.id,
+    items,
+    logs: toStringArray(row.logs),
+    projectId: row.projectId,
+    scenarioId: row.scenarioId,
+    scope: row.scope,
+    sessionId: row.sessionId,
+    startedAt: row.startedAt?.toISOString() ?? null,
+    status: row.status,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function mapPlaybackConfig(row: PlaybackConfigRow): AutomationPlaybackConfig {
+  return {
+    autoElementTimeoutMs: row.autoElementTimeoutMs,
+    autoPlaybackEnabled: row.autoPlaybackEnabled,
+    createdAt: row.createdAt.toISOString(),
+    environmentId: row.environmentId,
+    executionParameters: toRecord(row.executionParameters),
+    id: row.id,
+    manualElementTimeoutMs: row.manualElementTimeoutMs,
+    manualPageTimeoutMs: row.manualPageTimeoutMs,
+    metadata: toRecord(row.metadata),
+    pauseOnElementErrors: row.pauseOnElementErrors,
+    projectId: row.projectId,
+    scenarioId: row.scenarioId,
+    selfHealingEnabled: row.selfHealingEnabled,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function isMissingAutomationTable(error: unknown) {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+  const code =
+    error && typeof error === "object"
+      ? String(
+          (error as { code?: unknown }).code ??
+            (error as { meta?: { code?: unknown } }).meta?.code ??
+            "",
+        )
+      : "";
+  return (
+    code === "42P01" ||
+    code === "42703" ||
+    code === "P2010" ||
+    /relation "Automation(?:PlaybackJob|PlaybackItem|PlaybackConfig|View|Element|ElementUsage)" does not exist/i.test(message) ||
+    /column "(?:businessName|technicalName|aliases|description|fallbackLocators|lastVerifiedAt|stabilityScore|preferredLocatorStrategy)" does not exist/i.test(message) ||
+    /TableDoesNotExist/i.test(message)
+  );
+}
+
+function fallbackPlaybackConfig(
+  projectId: string,
+  scenarioId?: string | null,
+): AutomationPlaybackConfig {
+  const timestamp = new Date().toISOString();
+  return {
+    autoElementTimeoutMs: 5000,
+    autoPlaybackEnabled: true,
+    createdAt: timestamp,
+    environmentId: null,
+    executionParameters: {},
+    id: `playback_config_fallback_${projectId}_${scenarioId ?? "project"}`,
+    manualElementTimeoutMs: 30000,
+    manualPageTimeoutMs: 60000,
+    metadata: {
+      migrationPending: true,
+      message:
+        "Playback tables are not available yet. Apply the automation migration to persist playback state.",
+    },
+    pauseOnElementErrors: true,
+    projectId,
+    scenarioId: scenarioId ?? null,
+    selfHealingEnabled: true,
+    updatedAt: timestamp,
+  };
+}
+
+function fallbackView(input: {
+  projectId: string;
+  scenarioId?: string | null;
+  actionId?: string | null;
+  name?: string;
+  url?: string;
+  title?: string;
+  screenshotArtifactId?: string | null;
+  screenshotUri?: string;
+  viewport?: Record<string, unknown>;
+  domSnapshot?: Record<string, unknown>;
+  accessibilityTree?: Record<string, unknown>;
+  elementSnapshots?: Array<Record<string, unknown>>;
+  metadata?: Record<string, unknown>;
+}): AutomationView {
+  const timestamp = new Date().toISOString();
+  return {
+    accessibilityTree: input.accessibilityTree ?? {},
+    actionId: input.actionId ?? null,
+    capturedAt: timestamp,
+    createdAt: timestamp,
+    domSnapshot: input.domSnapshot ?? {},
+    elementSnapshots: input.elementSnapshots ?? [],
+    id: `view_fallback_${Date.now().toString(36)}`,
+    metadata: {
+      ...(input.metadata ?? {}),
+      migrationPending: true,
+      message:
+        "Canvas view table is not available yet. Apply the automation migration to persist Canvas captures.",
+    },
+    name: input.name ?? "",
+    projectId: input.projectId,
+    scenarioId: input.scenarioId ?? null,
+    screenshotArtifactId: input.screenshotArtifactId ?? null,
+    screenshotUri: input.screenshotUri ?? "",
+    title: input.title ?? "",
+    updatedAt: timestamp,
+    url: input.url ?? "",
+    viewport: input.viewport ?? {},
   };
 }
 
@@ -461,6 +841,517 @@ export async function restoreScenario(projectId: string, scenarioId: string) {
   return getScenario(projectId, scenarioId);
 }
 
+export async function listViews(projectId: string, scenarioId?: string | null): Promise<AutomationView[]> {
+  try {
+    const rows = scenarioId
+      ? await prisma.$queryRaw<ViewRow[]>(Prisma.sql`
+          SELECT "id", "projectId", "scenarioId", "actionId", "name", "url", "title",
+            "screenshotArtifactId", "screenshotUri", "viewport", "domSnapshot",
+            "accessibilityTree", "elementSnapshots", "metadata", "capturedAt", "createdAt", "updatedAt"
+          FROM "AutomationView"
+          WHERE "projectId" = ${projectId} AND "scenarioId" = ${scenarioId}
+          ORDER BY "capturedAt" DESC
+        `)
+      : await prisma.$queryRaw<ViewRow[]>(Prisma.sql`
+          SELECT "id", "projectId", "scenarioId", "actionId", "name", "url", "title",
+            "screenshotArtifactId", "screenshotUri", "viewport", "domSnapshot",
+            "accessibilityTree", "elementSnapshots", "metadata", "capturedAt", "createdAt", "updatedAt"
+          FROM "AutomationView"
+          WHERE "projectId" = ${projectId}
+          ORDER BY "capturedAt" DESC
+        `);
+    return rows.map(mapView);
+  } catch (error) {
+    if (isMissingAutomationTable(error)) return [];
+    throw error;
+  }
+}
+
+export async function createView(input: {
+  projectId: string;
+  scenarioId?: string | null;
+  actionId?: string | null;
+  name?: string;
+  url?: string;
+  title?: string;
+  screenshotArtifactId?: string | null;
+  screenshotUri?: string;
+  viewport?: Record<string, unknown>;
+  domSnapshot?: Record<string, unknown>;
+  accessibilityTree?: Record<string, unknown>;
+  elementSnapshots?: Array<Record<string, unknown>>;
+  metadata?: Record<string, unknown>;
+}): Promise<AutomationView> {
+  const id = newId("view");
+  try {
+    const rows = await prisma.$queryRaw<ViewRow[]>(Prisma.sql`
+      INSERT INTO "AutomationView" (
+        "id", "projectId", "scenarioId", "actionId", "name", "url", "title",
+        "screenshotArtifactId", "screenshotUri", "viewport", "domSnapshot",
+        "accessibilityTree", "elementSnapshots", "metadata", "capturedAt", "updatedAt"
+      )
+      VALUES (
+        ${id}, ${input.projectId}, ${input.scenarioId ?? null}, ${input.actionId ?? null},
+        ${input.name ?? ""}, ${input.url ?? ""}, ${input.title ?? ""},
+        ${input.screenshotArtifactId ?? null}, ${input.screenshotUri ?? ""},
+        ${jsonb(input.viewport ?? {})}, ${jsonb(input.domSnapshot ?? {})},
+        ${jsonb(input.accessibilityTree ?? {})}, ${jsonb(input.elementSnapshots ?? [])},
+        ${jsonb(input.metadata ?? {})}, NOW(), NOW()
+      )
+      RETURNING "id", "projectId", "scenarioId", "actionId", "name", "url", "title",
+        "screenshotArtifactId", "screenshotUri", "viewport", "domSnapshot",
+        "accessibilityTree", "elementSnapshots", "metadata", "capturedAt", "createdAt", "updatedAt"
+    `);
+    if (!rows[0]) throw new Error("View was not created.");
+    return mapView(rows[0]);
+  } catch (error) {
+    if (isMissingAutomationTable(error)) return fallbackView(input);
+    throw error;
+  }
+}
+
+export async function listElements(projectId: string, viewId?: string | null): Promise<AutomationElement[]> {
+  try {
+    const rows = viewId
+      ? await prisma.$queryRaw<ElementRow[]>(Prisma.sql`
+        SELECT "id", "projectId", "viewId", "name", "businessName", "technicalName",
+               "aliases", "description", "elementType", "status", "canonicalLocator",
+               "locatorCandidates", "fallbackLocators", "boundingBox", "elementSnapshot",
+               "lastVerifiedAt", "stabilityScore", "preferredLocatorStrategy",
+               "metadata", "createdAt", "updatedAt"
+          FROM "AutomationElement"
+          WHERE "projectId" = ${projectId} AND "viewId" = ${viewId}
+          ORDER BY "updatedAt" DESC
+        `)
+      : await prisma.$queryRaw<ElementRow[]>(Prisma.sql`
+        SELECT "id", "projectId", "viewId", "name", "businessName", "technicalName",
+               "aliases", "description", "elementType", "status", "canonicalLocator",
+               "locatorCandidates", "fallbackLocators", "boundingBox", "elementSnapshot",
+               "lastVerifiedAt", "stabilityScore", "preferredLocatorStrategy",
+               "metadata", "createdAt", "updatedAt"
+          FROM "AutomationElement"
+          WHERE "projectId" = ${projectId}
+          ORDER BY "updatedAt" DESC
+        `);
+    return rows.map(mapElement);
+  } catch (error) {
+    if (isMissingAutomationTable(error)) return [];
+    throw error;
+  }
+}
+
+export async function upsertElement(input: {
+  aliases?: string[];
+  businessName?: string;
+  description?: string;
+  fallbackLocators?: AutomationElement["locatorCandidates"];
+  lastVerifiedAt?: string | null;
+  preferredLocatorStrategy?: string | null;
+  stabilityScore?: number;
+  technicalName?: string;
+  id?: string;
+  projectId: string;
+  viewId?: string | null;
+  name: string;
+  elementType?: string;
+  status?: string;
+  canonicalLocator?: Record<string, unknown>;
+  locatorCandidates?: unknown[];
+  boundingBox?: Record<string, unknown>;
+  elementSnapshot?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}): Promise<AutomationElement> {
+  const id = input.id?.trim() || newId("element");
+  const name = input.name.trim() || "Unnamed Element";
+  const rows = await prisma.$queryRaw<ElementRow[]>(Prisma.sql`
+    INSERT INTO "AutomationElement" (
+      "id", "projectId", "viewId", "name", "businessName", "technicalName",
+      "aliases", "description", "elementType", "status", "canonicalLocator",
+      "locatorCandidates", "fallbackLocators", "boundingBox", "elementSnapshot",
+      "lastVerifiedAt", "stabilityScore", "preferredLocatorStrategy", "metadata",
+      "updatedAt"
+    )
+    VALUES (
+      ${id}, ${input.projectId}, ${input.viewId ?? null}, ${name},
+      ${input.businessName ?? name}, ${input.technicalName ?? ""},
+      ${jsonb(input.aliases ?? [])}, ${input.description ?? ""},
+      ${input.elementType ?? "element"}, ${input.status ?? "active"},
+      ${jsonb(input.canonicalLocator ?? {})}, ${jsonb(input.locatorCandidates ?? [])},
+      ${jsonb(input.fallbackLocators ?? [])}, ${jsonb(input.boundingBox ?? {})},
+      ${jsonb(input.elementSnapshot ?? {})},
+      ${input.lastVerifiedAt ? new Date(input.lastVerifiedAt) : null},
+      ${input.stabilityScore ?? 0}, ${input.preferredLocatorStrategy ?? null},
+      ${jsonb(input.metadata ?? {})}, NOW()
+    )
+    ON CONFLICT ("id") DO UPDATE SET
+      "viewId" = EXCLUDED."viewId",
+      "name" = EXCLUDED."name",
+      "businessName" = EXCLUDED."businessName",
+      "technicalName" = EXCLUDED."technicalName",
+      "aliases" = EXCLUDED."aliases",
+      "description" = EXCLUDED."description",
+      "elementType" = EXCLUDED."elementType",
+      "status" = EXCLUDED."status",
+      "canonicalLocator" = EXCLUDED."canonicalLocator",
+      "locatorCandidates" = EXCLUDED."locatorCandidates",
+      "fallbackLocators" = EXCLUDED."fallbackLocators",
+      "boundingBox" = EXCLUDED."boundingBox",
+      "elementSnapshot" = EXCLUDED."elementSnapshot",
+      "lastVerifiedAt" = EXCLUDED."lastVerifiedAt",
+      "stabilityScore" = EXCLUDED."stabilityScore",
+      "preferredLocatorStrategy" = EXCLUDED."preferredLocatorStrategy",
+      "metadata" = EXCLUDED."metadata",
+      "updatedAt" = NOW()
+    RETURNING "id", "projectId", "viewId", "name", "businessName", "technicalName",
+      "aliases", "description", "elementType", "status", "canonicalLocator",
+      "locatorCandidates", "fallbackLocators", "boundingBox", "elementSnapshot",
+      "lastVerifiedAt", "stabilityScore", "preferredLocatorStrategy", "metadata",
+      "createdAt", "updatedAt"
+  `);
+  if (!rows[0]) throw new Error("Element was not saved.");
+  return mapElement(rows[0]);
+}
+
+export async function remapElement(
+  projectId: string,
+  elementId: string,
+  input: {
+    viewId?: string | null;
+    canonicalLocator?: Record<string, unknown>;
+    locatorCandidates?: unknown[];
+    fallbackLocators?: unknown[];
+    boundingBox?: Record<string, unknown>;
+    elementSnapshot?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<AutomationElement | null> {
+  const rows = await prisma.$queryRaw<ElementRow[]>(Prisma.sql`
+    UPDATE "AutomationElement"
+    SET "viewId" = ${input.viewId ?? null},
+      "canonicalLocator" = ${jsonb(input.canonicalLocator ?? {})},
+      "locatorCandidates" = ${jsonb(input.locatorCandidates ?? [])},
+      "fallbackLocators" = ${jsonb(input.fallbackLocators ?? input.locatorCandidates ?? [])},
+      "boundingBox" = ${jsonb(input.boundingBox ?? {})},
+      "elementSnapshot" = ${jsonb(input.elementSnapshot ?? {})},
+      "lastVerifiedAt" = NOW(),
+      "stabilityScore" = GREATEST("stabilityScore", 0.5),
+      "metadata" = COALESCE("metadata", '{}'::jsonb) || ${jsonb({
+        ...(input.metadata ?? {}),
+        remappedAt: new Date().toISOString(),
+      })},
+      "status" = ${"active"},
+      "updatedAt" = NOW()
+    WHERE "projectId" = ${projectId} AND "id" = ${elementId}
+    RETURNING "id", "projectId", "viewId", "name", "businessName", "technicalName",
+      "aliases", "description", "elementType", "status", "canonicalLocator",
+      "locatorCandidates", "fallbackLocators", "boundingBox", "elementSnapshot",
+      "lastVerifiedAt", "stabilityScore", "preferredLocatorStrategy", "metadata",
+      "createdAt", "updatedAt"
+  `);
+  return rows[0] ? mapElement(rows[0]) : null;
+}
+
+export async function listElementUsages(projectId: string, elementId: string): Promise<AutomationElementUsage[]> {
+  const rows = await prisma.$queryRaw<ElementUsageRow[]>(Prisma.sql`
+    SELECT "id", "projectId", "elementId", "scenarioId", "actionId", "stepId",
+      "usageType", "metadata", "createdAt", "updatedAt"
+    FROM "AutomationElementUsage"
+    WHERE "projectId" = ${projectId} AND "elementId" = ${elementId}
+    ORDER BY "updatedAt" DESC
+  `);
+  return rows.map(mapElementUsage);
+}
+
+export async function upsertElementUsage(input: {
+  projectId: string;
+  elementId: string;
+  scenarioId?: string | null;
+  actionId?: string | null;
+  stepId?: string | null;
+  usageType?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const id = newId("usage");
+  const rows = await prisma.$queryRaw<ElementUsageRow[]>(Prisma.sql`
+    INSERT INTO "AutomationElementUsage" (
+      "id", "projectId", "elementId", "scenarioId", "actionId", "stepId",
+      "usageType", "metadata", "updatedAt"
+    )
+    VALUES (
+      ${id}, ${input.projectId}, ${input.elementId}, ${input.scenarioId ?? null},
+      ${input.actionId ?? null}, ${input.stepId ?? null}, ${input.usageType ?? "command"},
+      ${jsonb(input.metadata ?? {})}, NOW()
+    )
+    RETURNING "id", "projectId", "elementId", "scenarioId", "actionId", "stepId",
+      "usageType", "metadata", "createdAt", "updatedAt"
+  `);
+  if (!rows[0]) throw new Error("Element usage was not saved.");
+  return mapElementUsage(rows[0]);
+}
+
+export async function getPlaybackConfig(
+  projectId: string,
+  scenarioId?: string | null,
+): Promise<AutomationPlaybackConfig> {
+  try {
+    const rows = await prisma.$queryRaw<PlaybackConfigRow[]>(Prisma.sql`
+      INSERT INTO "AutomationPlaybackConfig" (
+        "id", "projectId", "scenarioId", "updatedAt"
+      )
+      VALUES (${newId("playback_config")}, ${projectId}, ${scenarioId ?? null}, NOW())
+      ON CONFLICT ("projectId", "scenarioId") DO UPDATE SET "updatedAt" = "AutomationPlaybackConfig"."updatedAt"
+      RETURNING "id", "projectId", "scenarioId", "autoPlaybackEnabled", "pauseOnElementErrors",
+        "selfHealingEnabled", "environmentId", "autoElementTimeoutMs", "manualElementTimeoutMs",
+        "manualPageTimeoutMs", "executionParameters", "metadata", "createdAt", "updatedAt"
+    `);
+    if (!rows[0]) throw new Error("Playback config was not loaded.");
+    return mapPlaybackConfig(rows[0]);
+  } catch (error) {
+    if (isMissingAutomationTable(error)) {
+      return fallbackPlaybackConfig(projectId, scenarioId);
+    }
+    throw error;
+  }
+}
+
+export async function updatePlaybackConfig(
+  projectId: string,
+  scenarioId: string | null,
+  input: Partial<Pick<
+    AutomationPlaybackConfig,
+    | "autoPlaybackEnabled"
+    | "pauseOnElementErrors"
+    | "selfHealingEnabled"
+    | "environmentId"
+    | "autoElementTimeoutMs"
+    | "manualElementTimeoutMs"
+    | "manualPageTimeoutMs"
+    | "executionParameters"
+    | "metadata"
+  >>,
+) {
+  const current = await getPlaybackConfig(projectId, scenarioId);
+  if (current.metadata.migrationPending) {
+    return {
+      ...current,
+      autoElementTimeoutMs: input.autoElementTimeoutMs ?? current.autoElementTimeoutMs,
+      autoPlaybackEnabled: input.autoPlaybackEnabled ?? current.autoPlaybackEnabled,
+      environmentId: input.environmentId === undefined ? current.environmentId : input.environmentId,
+      executionParameters: input.executionParameters ?? current.executionParameters,
+      manualElementTimeoutMs: input.manualElementTimeoutMs ?? current.manualElementTimeoutMs,
+      manualPageTimeoutMs: input.manualPageTimeoutMs ?? current.manualPageTimeoutMs,
+      metadata: { ...current.metadata, ...(input.metadata ?? {}) },
+      pauseOnElementErrors: input.pauseOnElementErrors ?? current.pauseOnElementErrors,
+      selfHealingEnabled: input.selfHealingEnabled ?? current.selfHealingEnabled,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  try {
+    const rows = await prisma.$queryRaw<PlaybackConfigRow[]>(Prisma.sql`
+      UPDATE "AutomationPlaybackConfig"
+      SET "autoPlaybackEnabled" = ${input.autoPlaybackEnabled ?? current.autoPlaybackEnabled},
+        "pauseOnElementErrors" = ${input.pauseOnElementErrors ?? current.pauseOnElementErrors},
+        "selfHealingEnabled" = ${input.selfHealingEnabled ?? current.selfHealingEnabled},
+        "environmentId" = ${input.environmentId === undefined ? current.environmentId : input.environmentId},
+        "autoElementTimeoutMs" = ${input.autoElementTimeoutMs ?? current.autoElementTimeoutMs},
+        "manualElementTimeoutMs" = ${input.manualElementTimeoutMs ?? current.manualElementTimeoutMs},
+        "manualPageTimeoutMs" = ${input.manualPageTimeoutMs ?? current.manualPageTimeoutMs},
+        "executionParameters" = ${jsonb(input.executionParameters ?? current.executionParameters)},
+        "metadata" = ${jsonb({ ...current.metadata, ...(input.metadata ?? {}) })},
+        "updatedAt" = NOW()
+      WHERE "projectId" = ${projectId}
+        AND COALESCE("scenarioId", '') = COALESCE(${scenarioId}, '')
+      RETURNING "id", "projectId", "scenarioId", "autoPlaybackEnabled", "pauseOnElementErrors",
+        "selfHealingEnabled", "environmentId", "autoElementTimeoutMs", "manualElementTimeoutMs",
+        "manualPageTimeoutMs", "executionParameters", "metadata", "createdAt", "updatedAt"
+    `);
+    if (!rows[0]) throw new Error("Playback config was not saved.");
+    return mapPlaybackConfig(rows[0]);
+  } catch (error) {
+    if (isMissingAutomationTable(error)) {
+      return fallbackPlaybackConfig(projectId, scenarioId);
+    }
+    throw error;
+  }
+}
+
+export async function createPlaybackJob(input: {
+  projectId: string;
+  scenarioId?: string | null;
+  actionId?: string | null;
+  sessionId?: string | null;
+  scope: string;
+  configSnapshot?: Record<string, unknown>;
+  steps: AutomationStep[];
+  logs?: string[];
+}): Promise<AutomationPlaybackJob> {
+  const jobId = newId("playback");
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO "AutomationPlaybackJob" (
+          "id", "projectId", "scenarioId", "actionId", "sessionId", "status",
+          "scope", "configSnapshot", "logs", "updatedAt"
+        )
+        VALUES (
+          ${jobId}, ${input.projectId}, ${input.scenarioId ?? null}, ${input.actionId ?? null},
+          ${input.sessionId ?? null}, ${"queued"}, ${input.scope}, ${jsonb(input.configSnapshot ?? {})},
+          ${jsonb(input.logs ?? [])}, NOW()
+        )
+      `);
+
+      for (const chunk of chunks(input.steps, INSERT_CHUNK_SIZE)) {
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO "AutomationPlaybackItem" (
+            "id", "jobId", "stepId", "orderIndex", "status", "command", "logs", "updatedAt"
+          )
+          VALUES ${Prisma.join(
+            chunk.map((step, chunkIndex) => {
+              const orderIndex = input.steps.indexOf(step);
+              return Prisma.sql`(
+                ${newId("playback_item")}, ${jobId}, ${step.id ?? null},
+                ${orderIndex >= 0 ? orderIndex : chunkIndex}, ${"pending"},
+                ${jsonb(step)}, ${jsonb([])}, NOW()
+              )`;
+            }),
+          )}
+        `);
+      }
+    });
+  } catch (error) {
+    if (isMissingAutomationTable(error)) {
+      throw new Error(
+        "Playback tables are not available yet. Apply the automation migration, then retry Playback.",
+      );
+    }
+    throw error;
+  }
+  const job = await getPlaybackJob(input.projectId, jobId);
+  if (!job) throw new Error("Playback job was not created.");
+  return job;
+}
+
+export async function listPlaybackJobs(projectId: string, scenarioId?: string | null): Promise<AutomationPlaybackJob[]> {
+  try {
+    const rows = scenarioId
+      ? await prisma.$queryRaw<PlaybackJobRow[]>(Prisma.sql`
+          SELECT "id", "projectId", "scenarioId", "actionId", "sessionId", "status",
+            "scope", "configSnapshot", "logs", "startedAt", "finishedAt", "createdAt", "updatedAt"
+          FROM "AutomationPlaybackJob"
+          WHERE "projectId" = ${projectId} AND "scenarioId" = ${scenarioId}
+          ORDER BY "createdAt" DESC
+          LIMIT 20
+        `)
+      : await prisma.$queryRaw<PlaybackJobRow[]>(Prisma.sql`
+          SELECT "id", "projectId", "scenarioId", "actionId", "sessionId", "status",
+            "scope", "configSnapshot", "logs", "startedAt", "finishedAt", "createdAt", "updatedAt"
+          FROM "AutomationPlaybackJob"
+          WHERE "projectId" = ${projectId}
+          ORDER BY "createdAt" DESC
+          LIMIT 20
+        `);
+    const jobIds = rows.map((row) => row.id);
+    const itemRows = jobIds.length
+      ? await prisma.$queryRaw<PlaybackItemRow[]>(Prisma.sql`
+          SELECT "id", "jobId", "stepId", "orderIndex", "status", "command", "result",
+            "logs", "startedAt", "finishedAt", "createdAt", "updatedAt"
+          FROM "AutomationPlaybackItem"
+          WHERE "jobId" IN (${Prisma.join(jobIds)})
+          ORDER BY "orderIndex" ASC
+        `)
+      : [];
+    const itemsByJob = new Map<string, AutomationPlaybackItem[]>();
+    for (const item of itemRows.map(mapPlaybackItem)) {
+      itemsByJob.set(item.jobId, [...(itemsByJob.get(item.jobId) ?? []), item]);
+    }
+    return rows.map((row) => mapPlaybackJob(row, itemsByJob.get(row.id) ?? []));
+  } catch (error) {
+    if (isMissingAutomationTable(error)) return [];
+    throw error;
+  }
+}
+
+export async function getPlaybackJob(projectId: string, jobId: string) {
+  try {
+    const rows = await prisma.$queryRaw<PlaybackJobRow[]>(Prisma.sql`
+      SELECT "id", "projectId", "scenarioId", "actionId", "sessionId", "status",
+        "scope", "configSnapshot", "logs", "startedAt", "finishedAt", "createdAt", "updatedAt"
+      FROM "AutomationPlaybackJob"
+      WHERE "projectId" = ${projectId} AND "id" = ${jobId}
+      LIMIT 1
+    `);
+    if (!rows[0]) return null;
+    const itemRows = await prisma.$queryRaw<PlaybackItemRow[]>(Prisma.sql`
+      SELECT "id", "jobId", "stepId", "orderIndex", "status", "command", "result",
+        "logs", "startedAt", "finishedAt", "createdAt", "updatedAt"
+      FROM "AutomationPlaybackItem"
+      WHERE "jobId" = ${jobId}
+      ORDER BY "orderIndex" ASC
+    `);
+    return mapPlaybackJob(rows[0], itemRows.map(mapPlaybackItem));
+  } catch (error) {
+    if (isMissingAutomationTable(error)) return null;
+    throw error;
+  }
+}
+
+export async function updatePlaybackJobStatus(
+  projectId: string,
+  jobId: string,
+  status: string,
+  logs?: string[],
+) {
+  try {
+    const rows = await prisma.$queryRaw<PlaybackJobRow[]>(Prisma.sql`
+      UPDATE "AutomationPlaybackJob"
+      SET "status" = ${status},
+        "logs" = ${jsonb(logs ?? [])},
+        "startedAt" = CASE WHEN ${status} = 'running' AND "startedAt" IS NULL THEN NOW() ELSE "startedAt" END,
+        "finishedAt" = CASE WHEN ${status} IN ('passed','failed','blocked','canceled') THEN NOW() ELSE "finishedAt" END,
+        "updatedAt" = NOW()
+      WHERE "projectId" = ${projectId} AND "id" = ${jobId}
+      RETURNING "id", "projectId", "scenarioId", "actionId", "sessionId", "status",
+        "scope", "configSnapshot", "logs", "startedAt", "finishedAt", "createdAt", "updatedAt"
+    `);
+    return rows[0] ? getPlaybackJob(projectId, rows[0].id) : null;
+  } catch (error) {
+    if (isMissingAutomationTable(error)) return null;
+    throw error;
+  }
+}
+
+export async function stopPendingPlayback(projectId: string, scenarioId?: string | null) {
+  try {
+    const jobRows = scenarioId
+      ? await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT "id" FROM "AutomationPlaybackJob"
+          WHERE "projectId" = ${projectId} AND "scenarioId" = ${scenarioId}
+            AND "status" IN ('queued','running')
+        `)
+      : await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT "id" FROM "AutomationPlaybackJob"
+          WHERE "projectId" = ${projectId}
+            AND "status" IN ('queued','running')
+        `);
+    if (!jobRows.length) return 0;
+    const jobIds = jobRows.map((row) => row.id);
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE "AutomationPlaybackItem"
+      SET "status" = ${"canceled"}, "finishedAt" = NOW(), "updatedAt" = NOW()
+      WHERE "jobId" IN (${Prisma.join(jobIds)}) AND "status" = 'pending'
+    `);
+    const result = await prisma.$executeRaw(Prisma.sql`
+      UPDATE "AutomationPlaybackJob"
+      SET "status" = ${"canceled"}, "finishedAt" = NOW(), "updatedAt" = NOW()
+      WHERE "id" IN (${Prisma.join(jobIds)}) AND "status" IN ('queued','running')
+    `);
+    return Number(result);
+  } catch (error) {
+    if (isMissingAutomationTable(error)) return 0;
+    throw error;
+  }
+}
+
 export async function replaceScenarioSteps(
   projectId: string,
   scenarioId: string,
@@ -525,14 +1416,14 @@ export async function replaceScenarioSteps(
     for (const locatorChunk of chunks(locatorCandidates, INSERT_CHUNK_SIZE)) {
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO "AutomationLocatorCandidate" (
-          "id", "stepId", "strategy", "value", "score", "isUnique", "rank", "source", "metadata"
+          "id", "stepId", "strategy", "value", "score", "isUnique", "rank", "source", "metadata", "updatedAt"
         )
         VALUES ${Prisma.join(
           locatorChunk.map(({ candidate, stepId }) => Prisma.sql`
             (
               ${newId("locator")}, ${stepId}, ${candidate.strategy}, ${candidate.value},
-              ${candidate.score}, ${Boolean(candidate.isUnique)}, ${candidate.rank ?? 0},
-              ${candidate.source ?? "recorded"}, ${jsonb(candidate.metadata ?? {})}
+              ${normalizeLocatorScore(candidate.score)}, ${Boolean(candidate.isUnique)}, ${candidate.rank ?? 0},
+              ${candidate.source ?? "recorded"}, ${jsonb(candidate.metadata ?? {})}, NOW()
             )
           `),
         )}
@@ -616,14 +1507,14 @@ export async function createActionFromSteps(input: {
     for (const locatorChunk of chunks(copiedLocatorCandidates, INSERT_CHUNK_SIZE)) {
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO "AutomationLocatorCandidate" (
-          "id", "stepId", "strategy", "value", "score", "isUnique", "rank", "source", "metadata"
+          "id", "stepId", "strategy", "value", "score", "isUnique", "rank", "source", "metadata", "updatedAt"
         )
         VALUES ${Prisma.join(
           locatorChunk.map(({ candidate, copiedStepId }) => Prisma.sql`
             (
               ${newId("locator")}, ${copiedStepId}, ${candidate.strategy}, ${candidate.value},
-              ${candidate.score}, ${Boolean(candidate.isUnique)}, ${candidate.rank ?? 0},
-              ${candidate.source ?? "recorded"}, ${jsonb(candidate.metadata ?? {})}
+              ${normalizeLocatorScore(candidate.score)}, ${Boolean(candidate.isUnique)}, ${candidate.rank ?? 0},
+              ${candidate.source ?? "recorded"}, ${jsonb(candidate.metadata ?? {})}, NOW()
             )
           `),
         )}
@@ -789,12 +1680,12 @@ export async function insertActionStep(
     for (const candidate of normalizeLocatorCandidates(step.locatorCandidates)) {
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO "AutomationLocatorCandidate" (
-          "id", "stepId", "strategy", "value", "score", "isUnique", "rank", "source", "metadata"
+          "id", "stepId", "strategy", "value", "score", "isUnique", "rank", "source", "metadata", "updatedAt"
         )
         VALUES (
           ${newId("locator")}, ${stepId}, ${candidate.strategy}, ${candidate.value},
-          ${candidate.score}, ${Boolean(candidate.isUnique)}, ${candidate.rank ?? 0},
-          ${candidate.source ?? "recorded"}, ${jsonb(candidate.metadata ?? {})}
+          ${normalizeLocatorScore(candidate.score)}, ${Boolean(candidate.isUnique)}, ${candidate.rank ?? 0},
+          ${candidate.source ?? "recorded"}, ${jsonb(candidate.metadata ?? {})}, NOW()
         )
       `);
     }
@@ -888,12 +1779,12 @@ export async function updateActionStep(
       for (const candidate of normalizeLocatorCandidates(input.locatorCandidates)) {
         await tx.$executeRaw(Prisma.sql`
           INSERT INTO "AutomationLocatorCandidate" (
-            "id", "stepId", "strategy", "value", "score", "isUnique", "rank", "source", "metadata"
+            "id", "stepId", "strategy", "value", "score", "isUnique", "rank", "source", "metadata", "updatedAt"
           )
           VALUES (
             ${newId("locator")}, ${stepId}, ${candidate.strategy}, ${candidate.value},
-            ${candidate.score}, ${Boolean(candidate.isUnique)}, ${candidate.rank ?? 0},
-            ${candidate.source ?? "recorded"}, ${jsonb(candidate.metadata ?? {})}
+            ${normalizeLocatorScore(candidate.score)}, ${Boolean(candidate.isUnique)}, ${candidate.rank ?? 0},
+            ${candidate.source ?? "recorded"}, ${jsonb(candidate.metadata ?? {})}, NOW()
           )
         `);
       }
@@ -1229,6 +2120,28 @@ export async function createRunWithArtifacts(input: {
 }): Promise<AutomationRun> {
   const runId = newId("run");
   const status = normalizeRunStatus(input.status) ?? "queued";
+  const requestedSessionId =
+    typeof input.sessionId === "string" && input.sessionId.trim()
+      ? input.sessionId.trim()
+      : null;
+  let persistedSessionId: string | null = requestedSessionId;
+  let summaryInput = input.summary ?? {};
+
+  if (requestedSessionId) {
+    const existingSession = await getSessionRecord(requestedSessionId);
+    if (!existingSession || existingSession.projectId !== input.projectId) {
+      persistedSessionId = null;
+      summaryInput = {
+        ...summaryInput,
+        externalSessionId: requestedSessionId,
+        externalSessionProvider:
+          typeof summaryInput.externalSessionProvider === "string"
+            ? summaryInput.externalSessionProvider
+            : "caseforge-companion",
+      };
+    }
+  }
+
   const artifactInputs = (input.artifacts?.length
     ? input.artifacts
     : createRunArtifactManifest(runId)
@@ -1244,11 +2157,11 @@ export async function createRunWithArtifacts(input: {
       )
       VALUES (
         ${runId}, ${input.projectId}, ${input.scenarioId ?? null},
-        ${input.sessionId ?? null}, ${input.environmentId ?? null},
+        ${persistedSessionId}, ${input.environmentId ?? null},
         ${status}::"AutomationRunStatus",
         ${status === "running" ? new Date() : null},
         ${["passed", "failed", "blocked", "canceled"].includes(status) ? new Date() : null},
-        ${jsonb(buildRunSummary(input.summary))}, NOW()
+        ${jsonb(buildRunSummary(summaryInput))}, NOW()
       )
     `);
 
@@ -1256,13 +2169,13 @@ export async function createRunWithArtifacts(input: {
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO "AutomationArtifact" (
           "id", "projectId", "runId", "type", "label", "uri", "mimeType",
-          "sizeBytes", "encrypted", "metadata"
+          "sizeBytes", "encrypted", "metadata", "updatedAt"
         )
         VALUES (
           ${newId("artifact")}, ${input.projectId}, ${runId},
           ${artifact.type}::"AutomationArtifactType", ${artifact.label}, ${artifact.uri},
           ${artifact.mimeType ?? null}, ${artifact.sizeBytes ?? null},
-          ${artifact.encrypted}, ${jsonb(artifact.metadata ?? {})}
+          ${artifact.encrypted}, ${jsonb(artifact.metadata ?? {})}, NOW()
         )
       `);
     }
@@ -1277,10 +2190,10 @@ export async function createRunWithArtifacts(input: {
     id: runId,
     projectId: input.projectId,
     scenarioId: input.scenarioId ?? null,
-    sessionId: input.sessionId ?? null,
+    sessionId: persistedSessionId,
     startedAt: status === "running" ? new Date().toISOString() : null,
     status,
-    summary: buildRunSummary(input.summary),
+    summary: buildRunSummary(summaryInput),
     updatedAt: new Date().toISOString(),
     version: 1,
   };
@@ -1541,11 +2454,11 @@ export async function acceptRunHealingLocator(
     `);
     await prisma.$executeRaw(Prisma.sql`
       INSERT INTO "AutomationLocatorCandidate" (
-        "id", "stepId", "strategy", "value", "score", "isUnique", "rank", "source", "metadata"
+        "id", "stepId", "strategy", "value", "score", "isUnique", "rank", "source", "metadata", "updatedAt"
       )
       VALUES (
-        ${newId("locator")}, ${event.stepId}, ${oldType}, ${oldValue}, ${Math.round(Number(event.confidenceScore ?? 0))},
-        false, ${(rankRows[0]?.rank ?? 0) + 1}, ${"previous_primary"}, ${jsonb({ acceptedFromHealingEventId: event.id })}
+        ${newId("locator")}, ${event.stepId}, ${oldType}, ${oldValue}, ${normalizeLocatorScore(event.confidenceScore)},
+        false, ${(rankRows[0]?.rank ?? 0) + 1}, ${"previous_primary"}, ${jsonb({ acceptedFromHealingEventId: event.id })}, NOW()
       )
     `);
   }
@@ -1566,13 +2479,13 @@ export async function appendRunArtifacts(
     await prisma.$executeRaw(Prisma.sql`
       INSERT INTO "AutomationArtifact" (
         "id", "projectId", "runId", "type", "label", "uri", "mimeType",
-        "sizeBytes", "encrypted", "metadata"
+        "sizeBytes", "encrypted", "metadata", "updatedAt"
       )
       VALUES (
         ${newId("artifact")}, ${projectId}, ${runId},
         ${artifact.type}::"AutomationArtifactType", ${artifact.label}, ${artifact.uri},
         ${artifact.mimeType ?? null}, ${artifact.sizeBytes ?? null},
-        ${artifact.encrypted}, ${jsonb(artifact.metadata ?? {})}
+        ${artifact.encrypted}, ${jsonb(artifact.metadata ?? {})}, NOW()
       )
     `);
   }

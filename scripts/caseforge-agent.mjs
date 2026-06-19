@@ -170,19 +170,51 @@ function frameScopeFor(page, step) {
   return page;
 }
 
+function cssAttributeValue(value) {
+  return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function looksLikeBareLocatorToken(value) {
+  return /^[A-Za-z][A-Za-z0-9_-]*$/.test(String(value || "").trim());
+}
+
+function normalizedLocatorTypeForStep(step, target, value) {
+  const explicitType = target.locatorType || target.strategy || step.locatorType || step.strategy || "";
+  if (explicitType) return String(explicitType).toLowerCase();
+  const matchingCandidate = (Array.isArray(step.locatorCandidates) ? step.locatorCandidates : []).find((candidate) => {
+    const candidateValue = candidate?.value || "";
+    return String(candidateValue).trim() === String(value || "").trim();
+  });
+  if (matchingCandidate?.type || matchingCandidate?.strategy || matchingCandidate?.locatorType) {
+    return String(matchingCandidate.type || matchingCandidate.strategy || matchingCandidate.locatorType).toLowerCase();
+  }
+  return looksLikeBareLocatorToken(value) ? "testid" : "css";
+}
+
 function locatorFor(page, step) {
   const scope = frameScopeFor(page, step);
   const target = step.target || {};
   const value = target.value || step.locatorValue || "";
-  const locatorType = target.locatorType || step.locatorType || "css";
+  const locatorType = normalizedLocatorTypeForStep(step, target, value);
 
-  if (!value && !["goto", "reload", "goBack", "goForward", "waitForTimeout", "executeScript"].includes(step.action)) {
+  if (
+    !value &&
+    !["goto", "reload", "goBack", "goForward", "waitForTimeout", "executeScript", "getCurrentUrl", "getTitle"].includes(step.action)
+  ) {
     throw new Error(`Step ${step.id || step.action} is missing a locator.`);
   }
 
   if (locatorType === "text") return scope.getByText(value).first();
   if (locatorType === "aria-label" || locatorType === "label") return scope.getByLabel(value).first();
   if (locatorType === "placeholder") return scope.getByPlaceholder(value).first();
+  if (locatorType === "alt") return scope.getByAltText(value).first();
+  if (locatorType === "title") return scope.getByTitle(value).first();
+  if (locatorType === "testid" || locatorType === "data-testid" || locatorType === "data-test" || locatorType === "data-qa" || locatorType === "data-cy") {
+    const escaped = cssAttributeValue(value);
+    return scope
+      .locator(`[data-testid="${escaped}"],[data-test="${escaped}"],[data-qa="${escaped}"],[data-cy="${escaped}"]`)
+      .first();
+  }
   if (locatorType === "role") {
     const separator = value.indexOf(":");
     const role = separator >= 0 ? value.slice(0, separator) : value;
@@ -229,8 +261,13 @@ async function executeStep(page, step) {
     return;
   }
   if (action === "executeScript") {
-    await page.evaluate(String(inputValue || ""));
-    return;
+    return await page.evaluate(String(inputValue || ""));
+  }
+  if (action === "getCurrentUrl") {
+    return page.url();
+  }
+  if (action === "getTitle") {
+    return await page.title();
   }
   if (action === "scroll") {
     await page.mouse.wheel(0, Number(inputValue || options.deltaY || 600));
@@ -258,6 +295,30 @@ async function executeStep(page, step) {
   else if (action === "select") await locator.selectOption(String(inputValue), { timeout });
   else if (action === "check") await locator.check({ force: Boolean(options.force), timeout });
   else if (action === "uncheck") await locator.uncheck({ force: Boolean(options.force), timeout });
+  else if (action === "getInputValue") return await locator.inputValue({ timeout });
+  else if (action === "getText") return await locator.innerText({ timeout });
+  else if (action === "getProperty") {
+    const propertyName = String(options.propertyName || step.propertyName || step.params?.propertyName || inputValue || "");
+    if (!propertyName) throw new Error("Get property requires a property name.");
+    return await locator.evaluate(
+      (element, name) => {
+        const record = element;
+        const value = record[name];
+        if (value === undefined || value === null) return element.getAttribute(name) ?? "";
+        return typeof value === "string" ? value : JSON.stringify(value);
+      },
+      propertyName
+    );
+  }
+  else if (action === "getCssValue") {
+    const propertyName = String(options.cssProperty || step.cssProperty || step.params?.cssProperty || inputValue || "");
+    if (!propertyName) throw new Error("Get CSS value requires a CSS property.");
+    return await locator.evaluate(
+      (element, name) => getComputedStyle(element).getPropertyValue(name),
+      propertyName
+    );
+  }
+  else if (action === "getElementCount") return await locator.count();
   else if (action === "waitForElement") await locator.waitFor({ state: "visible", timeout });
   else if (action === "assert" || action.startsWith("assert")) {
     const assertion = step.assertionType || action;

@@ -1,13 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent } from "react";
+import type {
+  FormEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent,
+  WheelEvent as ReactWheelEvent,
+} from "react";
 
 import type {
   AutomationLocatorCandidate,
   AutomationScenario,
   AutomationStep,
 } from "./AutomationScenariosClient";
+import {
+  AUTOMATION_COMMAND_CATALOG,
+  commandDefinitionForAction,
+  normalizeAutomationAction,
+} from "../utils/automation/language-core";
+import { ensureBrowserProjectSynced } from "../utils/automation/browser-project-sync";
+import type {
+  AutomationCommandDefinition,
+  AutomationCommandParameterDefinition,
+  StepParameterValueType,
+} from "../utils/automation/language-core";
 
 type Props = {
   projectKey: string;
@@ -17,6 +33,12 @@ type Props = {
 type RecorderEvent = {
   id: string;
   type: string;
+  scenarioId?: string;
+  order?: number;
+  command?: string;
+  params?: Record<string, unknown>;
+  createdAt?: string | number;
+  updatedAt?: string | number;
   ambiguity?: {
     candidate?: { strategy?: string; value?: string };
     matchCount?: number;
@@ -27,6 +49,8 @@ type RecorderEvent = {
   pageId?: string;
   url?: string;
   value?: string;
+  rawValue?: string;
+  domValue?: string;
   key?: string;
   commandAction?: string;
   commandLabel?: string;
@@ -53,7 +77,21 @@ type ProviderSessionEvent = {
   data?: Record<string, unknown>;
 };
 
+type CompanionPreviewTab = {
+  active?: boolean;
+  id: string;
+  openerId?: string | null;
+  title?: string;
+  url?: string;
+};
+
+type LivePreviewTabNotice = {
+  label: string;
+  tabId: string;
+} | null;
+
 type BrokerSessionMetadata = {
+  activeTabId?: string | null;
   currentUrl?: string | null;
   eventStreamUrl?: string | null;
   id?: string;
@@ -67,7 +105,28 @@ type BrokerSessionMetadata = {
   sessionId?: string;
   status?: string;
   streamUrl?: string | null;
+  tabs?: CompanionPreviewTab[];
 };
+
+type RecorderState =
+  | "idle"
+  | "recording"
+  | "paused"
+  | "selectingTarget"
+  | "verifyingTarget";
+
+type PlaybackState =
+  | "idle"
+  | "running"
+  | "stepRunning"
+  | "failed"
+  | "completed";
+
+type BrowserSessionState =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "expired";
 
 function normalizeBrokerSessionMetadata(
   sessionMetadata?: BrokerSessionMetadata | null,
@@ -83,11 +142,128 @@ function normalizeBrokerSessionMetadata(
     ...sessionMetadata,
     metadata: sessionMetadata.metadata ?? {},
     sessionId,
+    tabs: Array.isArray(sessionMetadata.tabs)
+      ? sessionMetadata.tabs
+          .filter(
+            (tab): tab is CompanionPreviewTab =>
+              Boolean(tab) && typeof tab.id === "string" && tab.id.trim().length > 0,
+          )
+          .map((tab) => ({
+            ...tab,
+            active: Boolean(tab.active),
+            id: tab.id,
+            title: tab.title || tab.url || "New tab",
+            url: tab.url || "",
+          }))
+      : [],
   };
+}
+
+function companionLiveViewUrl(sessionId: string) {
+  const url = new URL("/automation/browser/live", localAgentUrl);
+  url.searchParams.set("sessionId", sessionId);
+  return url.toString();
+}
+
+function companionSessionMetadata(
+  data: CompanionBrowserResponse,
+  fallbackUrl: string,
+): BrokerSessionMetadata | null {
+  if (!data.sessionId) return null;
+  return normalizeBrokerSessionMetadata(
+    {
+      activeTabId: data.activeTabId ?? null,
+      currentUrl: data.url || fallbackUrl,
+      id: data.sessionId,
+      liveViewUrl: companionLiveViewUrl(data.sessionId),
+      metadata: {
+        source: "caseforge-companion",
+      },
+      provider: "caseforge-companion",
+      providerSessionId: data.sessionId,
+      sessionId: data.sessionId,
+      status: data.status || "recording",
+      tabs: data.tabs ?? [],
+    },
+    data.sessionId,
+  );
+}
+
+function patchCompanionSession(
+  session: BrokerSessionMetadata | null,
+  patch: {
+    activeTabId?: string | null;
+    currentUrl?: string | null;
+    status?: string;
+    tabs?: CompanionPreviewTab[];
+    url?: string | null;
+  },
+) {
+  if (!session) return session;
+  return normalizeBrokerSessionMetadata(
+    {
+      ...session,
+      activeTabId:
+        patch.activeTabId !== undefined ? patch.activeTabId : session.activeTabId,
+      currentUrl:
+        patch.currentUrl ??
+        patch.url ??
+        session.currentUrl ??
+        null,
+      status: patch.status ?? session.status,
+      tabs: patch.tabs ?? session.tabs ?? [],
+    },
+    session.sessionId,
+  );
+}
+
+function livePreviewTabLabel(tab?: CompanionPreviewTab | null) {
+  if (!tab) return "New tab";
+  if (tab.title?.trim()) return tab.title.trim();
+  if (tab.url?.trim()) return tab.url.trim();
+  return "New tab";
+}
+
+function isCompanionPreviewSession(session?: BrokerSessionMetadata | null) {
+  return (
+    session?.provider === "caseforge-companion" ||
+    session?.metadata?.source === "caseforge-companion" ||
+    Boolean(session?.liveViewUrl?.startsWith(localAgentUrl))
+  );
+}
+
+function companionPreviewUrl(
+  session: BrokerSessionMetadata,
+  path: "live-frame" | "inspect" | "interact" | "scroll",
+) {
+  const url = new URL(session.liveViewUrl || companionLiveViewUrl(session.sessionId || ""));
+  url.pathname = url.pathname.replace(/\/live\/?$/, `/${path}`);
+  url.searchParams.set("sessionId", session.sessionId || session.providerSessionId || "");
+  return url.toString();
+}
+
+function companionPreviewStreamUrl(session: BrokerSessionMetadata) {
+  const url = new URL(session.liveViewUrl || companionLiveViewUrl(session.sessionId || ""));
+  url.pathname = url.pathname.replace(/\/live\/?$/, "/live-stream");
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.searchParams.set("sessionId", session.sessionId || session.providerSessionId || "");
+  return url.toString();
+}
+
+function liveFrameSrcForSession(session: BrokerSessionMetadata, tick: number) {
+  if (isCompanionPreviewSession(session)) {
+    const url = new URL(companionPreviewUrl(session, "live-frame"));
+    url.searchParams.set("t", String(tick));
+    return url.toString();
+  }
+  return `/api/automation/sessions/${encodeURIComponent(session.sessionId || "")}/live-frame?t=${tick}`;
 }
 
 type CompanionCommand = {
   id?: string;
+  scenarioId?: string;
+  order?: number;
+  command?: string;
   type?: string;
   name?: string;
   description?: string;
@@ -101,21 +277,38 @@ type CompanionCommand = {
   };
   inputValue?: string;
   expectedValue?: string;
+  rawValue?: string;
+  value?: string;
+  domValue?: string;
   url?: string;
   key?: string;
+  params?: Record<string, unknown>;
   meta?: Record<string, unknown>;
 };
 
-type CompanionBrowserResponse = {
+type CompanionStepResult = {
   error?: string;
+  index?: number;
+  output?: unknown;
+  status?: string;
+  stepId?: string | null;
+};
+
+type CompanionBrowserResponse = {
+  activeTabId?: string | null;
+  error?: string;
+  results?: CompanionStepResult[];
+  runId?: string | null;
   started?: boolean;
   stopped?: boolean;
   sessionId?: string;
-  status?: "starting" | "recording" | "stopping" | "stopped" | "failed";
+  currentUrl?: string;
+  status?: "starting" | "previewing" | "recording" | "stopping" | "stopped" | "failed";
   cursor?: number;
   url?: string;
   commands?: CompanionCommand[];
   logs?: string[];
+  tabs?: CompanionPreviewTab[];
   agent?: {
     name?: string;
     version?: string;
@@ -192,12 +385,20 @@ type ScenarioTestCase = {
   name: string;
   description?: string;
   enabled: boolean;
+  expectedResult?: string;
+  lastStatus?: "passed" | "failed" | "notRun";
+  priority?: "low" | "medium" | "high" | "critical";
+  tags?: string[];
   data: Record<string, string>;
 };
 
 type RunBrowserMode = "headed" | "headless";
 
 type RunDeviceKey = "desktop" | "mobile" | "tablet" | "custom";
+
+type RunExecutionMode = "sequential" | "parallel";
+
+type RunScope = "allActive" | "failedOnly" | "tag" | "priority";
 
 type RunEnvironmentDraft = {
   id: string;
@@ -214,7 +415,21 @@ type RunViewport = {
   height: number;
   isMobile?: boolean;
   deviceScaleFactor?: number;
+  maximize?: boolean;
 };
+
+type LivePreviewSizeKey = "normal" | "large" | "full";
+
+const LIVE_PREVIEW_SIZES: Array<{
+  key: LivePreviewSizeKey;
+  label: string;
+  panelMinHeight: number;
+  viewport: RunViewport;
+}> = [
+  { key: "normal", label: "Normal", panelMinHeight: 560, viewport: { height: 900, width: 1440 } },
+  { key: "large", label: "Large", panelMinHeight: 700, viewport: { height: 1080, width: 1920 } },
+  { key: "full", label: "Full", panelMinHeight: 820, viewport: { height: 1440, width: 1920 } },
+];
 
 type RunConfig = {
   browserMode: RunBrowserMode;
@@ -222,7 +437,122 @@ type RunConfig = {
   customWidth: number;
   device: RunDeviceKey;
   environments: RunEnvironmentDraft[];
+  executionMode: RunExecutionMode;
+  runScope: RunScope;
+  scopePriority: ScenarioTestCase["priority"] | "all";
+  scopeTag: string;
 };
+
+type PlaybackScope =
+  | "selected"
+  | "selectedToEnd"
+  | "startToSelected"
+  | "fullScenario"
+  | "singleCommand"
+  | "actionCommand";
+
+type PlaybackConfig = {
+  autoPlaybackEnabled: boolean;
+  pauseOnElementErrors: boolean;
+  selfHealingEnabled: boolean;
+  environmentId?: string | null;
+  autoElementTimeoutMs: number;
+  manualElementTimeoutMs: number;
+  manualPageTimeoutMs: number;
+  executionParameters: Record<string, unknown>;
+};
+
+type PlaybackJob = {
+  id: string;
+  scope: string;
+  status: string;
+  logs: string[];
+  items: Array<{
+    id: string;
+    orderIndex: number;
+    status: string;
+    stepId?: string | null;
+    command: Record<string, unknown>;
+  }>;
+};
+
+type PlaybackStateGuard = {
+  anchorStepId?: string | null;
+  currentUrl: string;
+  expectedUrl: string;
+  message: string;
+  scope: PlaybackScope;
+};
+
+type CanvasView = {
+  id: string;
+  name: string;
+  url: string;
+  title: string;
+  screenshotUri?: string;
+  viewport: Record<string, unknown>;
+  elementSnapshots: Array<Record<string, unknown>>;
+  capturedAt: string;
+};
+
+type CanvasElement = {
+  id: string;
+  name: string;
+  businessName?: string;
+  technicalName?: string;
+  aliases?: string[];
+  description?: string;
+  elementType: string;
+  status: string;
+  canonicalLocator: Record<string, unknown>;
+  locatorCandidates: AutomationLocatorCandidate[];
+  fallbackLocators?: AutomationLocatorCandidate[];
+  boundingBox: Record<string, unknown>;
+  elementSnapshot: Record<string, unknown>;
+  lastVerifiedAt?: string | null;
+  stabilityScore?: number;
+  preferredLocatorStrategy?: string | null;
+  metadata: Record<string, unknown>;
+  viewId?: string | null;
+};
+
+type CanvasContextMenu = {
+  element: Record<string, unknown>;
+  x: number;
+  y: number;
+} | null;
+
+type LiveInspectorResult = {
+  bounds?: Record<string, unknown>;
+  element?: Record<string, unknown> | null;
+  inspectorPoint?: { x: number; y: number };
+  locatorCandidates?: AutomationLocatorCandidate[];
+  page?: {
+    title?: string;
+    url?: string;
+    viewport?: Record<string, unknown>;
+  };
+  recommendedLocator?: AutomationLocatorCandidate | null;
+  status?: string;
+  suggestedActions?: string[];
+};
+
+type LiveCommandMenu = {
+  query: string;
+  result: LiveInspectorResult;
+  x: number;
+  y: number;
+} | null;
+
+type CommandInsertMenu = {
+  actionId?: string | null;
+  actionStepId?: string | null;
+  anchorStepId: string;
+  position: "before" | "after";
+  query: string;
+  x: number;
+  y: number;
+} | null;
 
 const localAgentUrl =
   process.env.NEXT_PUBLIC_AUTOMATION_LOCAL_AGENT_URL || "http://127.0.0.1:4873";
@@ -233,8 +563,70 @@ const privateConnectorEnabled =
   process.env.NEXT_PUBLIC_AUTOMATION_PRIVATE_CONNECTOR_ENABLED === "true";
 const legacyDesktopBridgeEnabled =
   process.env.NEXT_PUBLIC_AUTOMATION_LOCAL_CONNECTOR_ENABLED !== "false";
+const advancedRecordingUiEnabled = false;
+const advancedPlaybackUiEnabled = false;
+const advancedCanvasUiEnabled = false;
 
-const commandActions = ["navigate", "switchPage", "click", "fill", "select", "hover", "assert", "wait", "action"];
+const actionCommandDefinition: AutomationCommandDefinition = {
+  action: "action",
+  aliases: ["reusable action", "run action"],
+  canSaveOutput: false,
+  category: "utility.action",
+  defaultRetryCount: 0,
+  defaultTimeoutMs: 30000,
+  description: "Run a saved reusable CaseForge Action.",
+  domain: "utility",
+  executable: true,
+  id: "utility.action",
+  inputs: [{ label: "Action", name: "actionId", required: true, type: "string" }],
+  label: "Run reusable action",
+  logging: {
+    onFailure: "Reusable action failed.",
+    onStart: "Reusable action started.",
+    onSuccess: "Reusable action completed.",
+  },
+  normalizedAction: "action",
+  outputDefinition: { canSaveAsVariable: false, outputType: "void" },
+  outputs: [],
+  parameters: [{ label: "Action", name: "actionId", required: true, type: "string" }],
+  runtimeAction: "action",
+  runtimeHandler: "caseforge.action",
+  stepKind: "reusableActionCall",
+  supportStatus: "implemented",
+  visibleInDropdown: true,
+  visibleInLibrary: false,
+};
+const commandActionOptions = [
+  ...AUTOMATION_COMMAND_CATALOG.filter((command) => command.visibleInDropdown !== false),
+  actionCommandDefinition,
+];
+const commandCatalogByDomain = AUTOMATION_COMMAND_CATALOG.reduce<Record<string, typeof AUTOMATION_COMMAND_CATALOG>>(
+  (groups, command) => ({
+    ...groups,
+    [command.domain]: [...(groups[command.domain] ?? []), command],
+  }),
+  {},
+);
+const defaultPlaybackConfig: PlaybackConfig = {
+  autoElementTimeoutMs: 5000,
+  autoPlaybackEnabled: true,
+  environmentId: null,
+  executionParameters: {},
+  manualElementTimeoutMs: 30000,
+  manualPageTimeoutMs: 60000,
+  pauseOnElementErrors: true,
+  selfHealingEnabled: true,
+};
+const valueSourceOptions: Array<{ label: string; value: StepParameterValueType }> = [
+  { label: "Static value", value: "static" },
+  { label: "Variable", value: "variable" },
+  { label: "Secret", value: "secret" },
+  { label: "Test data", value: "testData" },
+  { label: "Environment", value: "environment" },
+  { label: "Generated", value: "generated" },
+  { label: "Expression", value: "expression" },
+  { label: "Previous output", value: "previousStepOutput" },
+];
 const locatorOrder = ["testid", "role", "label", "placeholder", "alt", "title", "text", "css", "xpath"];
 const assertionOptions = [
   { label: "Element is visible", value: "visible" },
@@ -252,10 +644,10 @@ const runDeviceOptions: Array<{
   viewport: RunViewport;
 }> = [
   {
-    description: "1440 x 900",
+    description: "Maximized browser",
     key: "desktop",
     label: "Desktop",
-    viewport: { height: 900, width: 1440 },
+    viewport: { height: 900, maximize: true, width: 1440 },
   },
   {
     description: "390 x 844",
@@ -348,6 +740,10 @@ function defaultRunConfig(targetUrl: string): RunConfig {
     customWidth: 1366,
     device: "desktop",
     environments: [environmentDraftFromUrl(targetUrl)],
+    executionMode: "sequential",
+    runScope: "allActive",
+    scopePriority: "all",
+    scopeTag: "",
   };
 }
 
@@ -400,20 +796,31 @@ function isBrowserOnLocalCaseForge() {
 }
 
 function shouldUseLegacyDesktopBridge(url: string) {
-  return Boolean(
-    localAgentUrl &&
-      legacyDesktopBridgeEnabled &&
-      (!isBrowserOnLocalCaseForge() || shouldUsePrivateConnector(url)),
-  );
+  // Companion is the primary interactive runtime. The old worker-backed browser
+  // path stays available in server APIs, but workspace record/playback/run flows
+  // should go through the local Companion unless explicitly disabled by env.
+  void url;
+  return Boolean(localAgentUrl && legacyDesktopBridgeEnabled);
 }
 
 function isUsableBrokerSession(
   session?: BrokerSessionMetadata | null,
 ): session is BrokerSessionMetadata & { sessionId: string } {
   if (!session?.sessionId) return false;
-  return !["broken", "closed", "failed", "terminated", "terminating"].includes(
+  return !["broken", "closed", "expired", "failed", "stopped", "terminated", "terminating"].includes(
     session.status || "",
   );
+}
+
+function browserSessionStateFor(
+  session?: BrokerSessionMetadata | null,
+): BrowserSessionState {
+  if (!session?.sessionId) return "disconnected";
+  if (session.status === "expired") return "expired";
+  if (["creating", "requested", "starting"].includes(session.status || "")) {
+    return "connecting";
+  }
+  return isUsableBrokerSession(session) ? "connected" : "disconnected";
 }
 
 function sessionStartUrlForRun(_steps: AutomationStep[], fallback?: string) {
@@ -909,6 +1316,71 @@ function previewBounds(preview: Record<string, unknown>) {
   return `${Math.round(x)},${Math.round(y)} ${Math.round(width)}x${Math.round(height)}`;
 }
 
+function rectRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function numericRect(value: unknown) {
+  const rect = rectRecord(value);
+  return {
+    height: Number(rect.height ?? 0) || 0,
+    width: Number(rect.width ?? 0) || 0,
+    x: Number(rect.x ?? 0) || 0,
+    y: Number(rect.y ?? 0) || 0,
+  };
+}
+
+function canvasBoxStyle(bounds: unknown, viewport: Record<string, unknown>) {
+  const rect = numericRect(bounds);
+  const viewportWidth = Number(viewport.width ?? 1365) || 1365;
+  const viewportHeight = Number(viewport.height ?? 768) || 768;
+  return {
+    height: `${Math.max(4, (rect.height / viewportHeight) * 100)}%`,
+    left: `${Math.max(0, (rect.x / viewportWidth) * 100)}%`,
+    top: `${Math.max(0, (rect.y / viewportHeight) * 100)}%`,
+    width: `${Math.max(4, (rect.width / viewportWidth) * 100)}%`,
+  };
+}
+
+function containedMediaMetrics(
+  container: HTMLElement,
+  naturalWidth: number,
+  naturalHeight: number,
+) {
+  const rect = container.getBoundingClientRect();
+  const safeWidth = naturalWidth || rect.width || 1;
+  const safeHeight = naturalHeight || rect.height || 1;
+  const scale = Math.min(rect.width / safeWidth, rect.height / safeHeight);
+  const renderedWidth = safeWidth * scale;
+  const renderedHeight = safeHeight * scale;
+  return {
+    naturalHeight: safeHeight,
+    naturalWidth: safeWidth,
+    rect,
+    renderedHeight,
+    renderedWidth,
+    xOffset: (rect.width - renderedWidth) / 2,
+    yOffset: (rect.height - renderedHeight) / 2,
+  };
+}
+
+function liveInspectorBoxStyle(
+  bounds: unknown,
+  viewport: Record<string, unknown> | undefined,
+) {
+  const rect = numericRect(bounds);
+  const viewportWidth = Number(viewport?.width ?? 0) || 1;
+  const viewportHeight = Number(viewport?.height ?? 0) || 1;
+  return {
+    height: `${Math.max(1, (rect.height / viewportHeight) * 100)}%`,
+    left: `${Math.max(0, (rect.x / viewportWidth) * 100)}%`,
+    top: `${Math.max(0, (rect.y / viewportHeight) * 100)}%`,
+    width: `${Math.max(1, (rect.width / viewportWidth) * 100)}%`,
+  };
+}
+
 function locatorFromAmbiguityCandidate(candidate: unknown) {
   if (!candidate || typeof candidate !== "object") return { locatorType: "css", value: "" };
   const record = candidate as Record<string, unknown>;
@@ -929,9 +1401,7 @@ function elementName(element?: AutomationStep["element"], fallback = "Element", 
 }
 
 function displayAction(action: string) {
-  if (action === "goto") return "navigate";
-  if (action === "waitForElement" || action === "waitForTimeout") return "wait";
-  return action;
+  return normalizeAutomationAction(action);
 }
 
 function isSecretInputStep(step: AutomationStep) {
@@ -948,10 +1418,200 @@ function compactStepValue(value?: string, maxLength = 42) {
 
 function visibleStepInputValue(step: AutomationStep) {
   const action = displayAction(step.action);
-  if (!["fill", "select", "type"].includes(action)) return "";
+  if (!["fill", "press", "scroll", "select", "type"].includes(action)) return "";
   if (!textValue(step.inputValue)) return "";
   if (isSecretInputStep(step)) return "******";
   return compactStepValue(step.inputValue);
+}
+
+function primaryValueParameterForCommand(action: string) {
+  const definition = commandDefinitionForAction(action);
+  const primaryParameterNames = new Set([
+    "actionName",
+    "amount",
+    "baseDate",
+    "body",
+    "content",
+    "expected",
+    "expectedText",
+    "filePath",
+    "key",
+    "message",
+    "option",
+    "query",
+    "script",
+    "subject",
+    "text",
+    "to",
+    "transaction",
+    "url",
+    "value",
+  ]);
+  return definition?.parameters.find((parameter) => primaryParameterNames.has(parameter.name));
+}
+
+function parameterLabel(name: string) {
+  return name
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^\w/, (match) => match.toUpperCase());
+}
+
+function commandInputLabel(action: string) {
+  const parameter = primaryValueParameterForCommand(action);
+  if (!parameter) return "Value";
+  if (parameter.name === "url") return "URL";
+  if (parameter.name === "text") return "Text";
+  if (parameter.name === "option") return "Option";
+  if (parameter.name === "key") return "Key";
+  if (parameter.name === "deltaY") return "Scroll delta";
+  if (parameter.name === "duration") return "Duration";
+  return parameterLabel(parameter.name);
+}
+
+function commandShowsInputValue(action: string) {
+  return Boolean(primaryValueParameterForCommand(action));
+}
+
+function commandSupportsTestData(action: string) {
+  const parameter = primaryValueParameterForCommand(action);
+  return Boolean(parameter && ["expected", "expectedText", "option", "text", "url", "value"].includes(parameter.name));
+}
+
+function commandCanSaveOutput(definition?: AutomationCommandDefinition | null) {
+  return Boolean(
+    definition?.canSaveOutput &&
+      definition.outputDefinition.canSaveAsVariable &&
+      definition.outputDefinition.outputType !== "void" &&
+      definition.outputDefinition.outputType !== "passFail",
+  );
+}
+
+function commandOutputDefaultName(definition?: AutomationCommandDefinition | null) {
+  return definition?.outputDefinition.defaultOutputVariableName || "result";
+}
+
+function commandOutputTypeLabel(definition?: AutomationCommandDefinition | null) {
+  const outputType = definition?.outputDefinition.outputType;
+  if (!outputType || outputType === "void") return "output";
+  if (outputType === "passFail") return "pass/fail result";
+  return `${outputType} output`;
+}
+
+function commandHasAdvancedRuntimeInput(action: string) {
+  const parameter = primaryValueParameterForCommand(action);
+  return Boolean(parameter && !commandSupportsTestData(action));
+}
+
+type CommandEditorUxKind =
+  | "actionOnly"
+  | "inputCommand"
+  | "outputCommand"
+  | "assertionCommand"
+  | "waitCommand"
+  | "dataCommand";
+
+function commandEditorUxKind(definition?: AutomationCommandDefinition | null): CommandEditorUxKind {
+  if (!definition) return "actionOnly";
+  const label = definition.label.toLowerCase();
+  const category = definition.category.toLowerCase();
+  const isAssertion =
+    definition.stepKind === "assertion" ||
+    definition.outputDefinition.outputType === "passFail" ||
+    category.includes(".verify") ||
+    /\b(assert|verify)\b/.test(label);
+  if (isAssertion) return "assertionCommand";
+  if (definition.stepKind === "wait" || category.startsWith("wait.")) return "waitCommand";
+  if (definition.domain === "data" || category.startsWith("dateTime") || category.startsWith("utility.generator")) {
+    return "dataCommand";
+  }
+  if (commandCanSaveOutput(definition)) return "outputCommand";
+  if (definition.parameters.some((parameter) => parameter.name !== "locator")) return "inputCommand";
+  return "actionOnly";
+}
+
+function commandEditorParameterSectionTitle(kind: CommandEditorUxKind) {
+  if (kind === "assertionCommand") return "Expected result";
+  if (kind === "outputCommand") return "Getter details";
+  if (kind === "waitCommand") return "Wait settings";
+  if (kind === "dataCommand") return "Data settings";
+  return "Command inputs";
+}
+
+function commandEditorParameterSectionHint(kind: CommandEditorUxKind) {
+  if (kind === "assertionCommand") return "Enter only what this verification needs.";
+  if (kind === "outputCommand") return "Set any lookup details, then choose where the returned value is stored.";
+  if (kind === "waitCommand") return "Choose the timing or element state this wait should use.";
+  if (kind === "dataCommand") return "Provide the data inputs this command needs.";
+  return "Fields are generated from the shared CaseForge command registry.";
+}
+
+function commandShowsOutputCapture(definition?: AutomationCommandDefinition | null) {
+  if (definition?.category.startsWith("web.table")) return commandCanSaveOutput(definition);
+  return commandCanSaveOutput(definition) && commandEditorUxKind(definition) !== "assertionCommand";
+}
+
+function commandRequiresLocator(action: string) {
+  const definition = commandDefinitionForAction(action);
+  return Boolean(definition?.parameters.some((parameter) => parameter.name === "locator" && parameter.required));
+}
+
+function commandParameterDisplayValue(step: AutomationStep, parameter: AutomationCommandParameterDefinition) {
+  if (parameter.name === "locator") return step.target?.value || "";
+  if (parameter.name === "expectedText" || parameter.name === "expected") {
+    return textValue(step.expectedValue) || String(step.options?.[parameter.name] ?? parameter.defaultValue ?? "");
+  }
+  const primaryParameter = primaryValueParameterForCommand(displayAction(step.action));
+  if (primaryParameter?.name === parameter.name) {
+    return textValue(step.inputValue) || String(step.options?.[parameter.name] ?? parameter.defaultValue ?? "");
+  }
+  const value = step.options?.[parameter.name] ?? parameter.defaultValue ?? "";
+  return typeof value === "boolean" ? value : String(value);
+}
+
+function shouldRenderCommandSchemaParameter(
+  action: string,
+  parameter: AutomationCommandParameterDefinition,
+) {
+  if (parameter.name === "locator") return false;
+  const primaryParameter = primaryValueParameterForCommand(action);
+  if (primaryParameter?.name === parameter.name) return false;
+  if (action === "wait" && parameter.name === "duration") return false;
+  return true;
+}
+
+function commandAdapterPendingMessage(action: string) {
+  const definition = commandDefinitionForAction(action);
+  const label = definition?.label || action;
+  return definition
+    ? `${label} is available for authoring, but its ${definition.domain} execution adapter is coming soon.`
+    : `${label} is not in the CaseForge command registry.`;
+}
+
+function isRunnableWebCommand(action: string) {
+  const definition = commandDefinitionForAction(action);
+  return Boolean(definition?.executable && definition.domain === "web");
+}
+
+function commandExecutionBadgeLabel(command: AutomationCommandDefinition) {
+  if (!command.executable) return "adapter pending";
+  if (command.domain === "web") return "web";
+  return "adapter pending";
+}
+
+function liveCommandText(action: string, elementLabel: string, command?: AutomationCommandDefinition) {
+  const label = elementLabel || "element";
+  if (action === "fill" || action === "type") return `Fill ${label}`;
+  if (action === "select") return `Select option in ${label}`;
+  if (action === "click") return `Click ${label}`;
+  if (action === "doubleClick") return `Double click ${label}`;
+  if (action === "rightClick") return `Right click ${label}`;
+  if (action === "hover") return `Hover over ${label}`;
+  if (action === "check") return `Check ${label}`;
+  if (action === "uncheck") return `Uncheck ${label}`;
+  if (action === "clear") return `Clear ${label}`;
+  if (action === "press") return `Press key on ${label}`;
+  if (action === "assert") return `Verify ${label}`;
+  return command?.label || action;
 }
 
 function readableStepLabel(step: AutomationStep) {
@@ -965,11 +1625,25 @@ function readableStepLabel(step: AutomationStep) {
     );
   if (action === "navigate") return `Navigate to ${step.inputValue || step.target?.value || "page"}`;
   if (action === "switchPage") return step.commandText || step.description || `Switch to ${targetName}`;
+  if (action === "reload") return "Reload page";
+  if (action === "doubleClick") return `Double click ${targetName}`;
+  if (action === "rightClick") return `Right click ${targetName}`;
+  if (action === "coordinateClick") return `Click coordinates ${step.options?.x || 0}, ${step.options?.y || 0}`;
+  if (action === "scroll") return `Scroll ${step.inputValue || step.options?.deltaY || 600}`;
+  if (action === "scrollIntoView") return `Scroll ${targetName} into view`;
   if (action === "fill") {
     const value = visibleStepInputValue(step);
     return value ? `Fill ${targetName} with "${value}"` : `Fill ${targetName}`;
   }
+  if (action === "type") {
+    const value = visibleStepInputValue(step);
+    return value ? `Type "${value}" in ${targetName}` : `Type in ${targetName}`;
+  }
+  if (action === "clear") return `Clear ${targetName}`;
+  if (action === "press") return `Press ${step.inputValue || "Enter"} on ${targetName}`;
   if (action === "select") return `Select ${step.inputValue || "option"} in ${targetName}`;
+  if (action === "check") return `Check ${targetName}`;
+  if (action === "uncheck") return `Uncheck ${targetName}`;
   if (action === "assert") {
     if (step.assertionType === "image_loaded") return `Verify ${targetName} is loaded`;
     if (step.assertionType === "css_property") {
@@ -996,6 +1670,176 @@ function readableStepLabel(step: AutomationStep) {
   return `Click ${targetName}`;
 }
 
+function commandOutputSummary(output: unknown) {
+  if (output === undefined || output === null) return "";
+  if (typeof output === "string") return output;
+  if (typeof output === "number" || typeof output === "boolean") return String(output);
+  try {
+    return JSON.stringify(output);
+  } catch {
+    return String(output);
+  }
+}
+
+function accordionValidationSummary(output: unknown) {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return "";
+  const record = output as {
+    accordionCount?: unknown;
+    failed?: unknown;
+    passed?: unknown;
+  };
+  const count = Number(record.accordionCount ?? 0);
+  const passed = Number(record.passed ?? 0);
+  const failed = Number(record.failed ?? 0);
+  if (![count, passed, failed].every(Number.isFinite)) return "";
+  return `Accordion validation: ${count} item${count === 1 ? "" : "s"}, ${passed} passed, ${failed} failed`;
+}
+
+function accordionValidationDetailLines(output: unknown) {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return [];
+  const record = output as {
+    countErrors?: unknown;
+    failedAccordionItems?: unknown;
+  };
+  const lines: string[] = [];
+  if (Array.isArray(record.countErrors)) {
+    for (const error of record.countErrors.slice(0, 5)) {
+      if (error) lines.push(`Accordion count check failed: ${String(error)}`);
+    }
+  }
+  if (Array.isArray(record.failedAccordionItems)) {
+    for (const item of record.failedAccordionItems.slice(0, 10)) {
+      const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      const index = Number(row.index ?? 0);
+      const question = textValue(row.question) || "Untitled accordion item";
+      const reason = textValue(row.errorReason) || "Validation failed.";
+      lines.push(`Accordion ${Number.isFinite(index) && index > 0 ? index : "?"} failed: ${question}. ${reason}`);
+    }
+  }
+  return lines;
+}
+
+function tableCommandSummary(output: unknown) {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return "";
+  const record = output as Record<string, unknown>;
+  if (typeof record.rowCount === "number" || typeof record.columnCount === "number") {
+    const rowCount = Number(record.rowCount ?? 0);
+    const columnCount = Number(record.columnCount ?? 0);
+    const failed =
+      Number(record.failed ?? 0) ||
+      (Array.isArray(record.failedCells) ? record.failedCells.length : 0) +
+        (Array.isArray(record.failedRows) ? record.failedRows.length : 0) +
+        (Array.isArray(record.failedColumns) ? record.failedColumns.length : 0);
+    return `Table: ${Number.isFinite(rowCount) ? rowCount : 0} row${rowCount === 1 ? "" : "s"}, ${Number.isFinite(columnCount) ? columnCount : 0} column${columnCount === 1 ? "" : "s"}${failed ? `, ${failed} issue${failed === 1 ? "" : "s"}` : ""}`;
+  }
+  if (typeof record.failedCount === "number" || typeof record.passedCount === "number") {
+    const failed = Number(record.failedCount ?? 0);
+    const passed = Number(record.passedCount ?? 0);
+    return `Table comparison: ${passed} passed, ${failed} failed`;
+  }
+  if (typeof record.matchedRowIndex === "number") {
+    return `Matched table row ${record.matchedRowIndex}`;
+  }
+  if (typeof record.columnIndex === "number" && record.columnName) {
+    return `Matched table column ${record.columnName} at ${record.columnIndex}`;
+  }
+  if ("actual" in record && "expected" in record) {
+    return `Table check: expected ${textValue(record.expected)}, actual ${textValue(record.actual)}`;
+  }
+  return "";
+}
+
+function tableCommandDetailLines(output: unknown) {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return [];
+  const record = output as Record<string, unknown>;
+  const lines: string[] = [];
+  const warnings = Array.isArray(record.warnings) ? record.warnings : [];
+  for (const warning of warnings.slice(0, 3)) {
+    if (warning) lines.push(`Table warning: ${String(warning)}`);
+  }
+  const failedRows = Array.isArray(record.failedRows) ? record.failedRows : [];
+  for (const item of failedRows.slice(0, 5)) {
+    const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    lines.push(`Table row ${row.rowIndex ?? "?"} failed: ${textValue(row.reason) || "Validation failed."}`);
+  }
+  const failedCells = Array.isArray(record.failedCells) ? record.failedCells : [];
+  for (const item of failedCells.slice(0, 5)) {
+    const cell = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    lines.push(`Table cell row ${cell.rowIndex ?? "?"}, ${textValue(cell.column) || textValue(cell.columnName) || "column"} failed: ${textValue(cell.reason) || "Validation failed."}`);
+  }
+  const failedColumns = Array.isArray(record.failedColumns) ? record.failedColumns : [];
+  for (const item of failedColumns.slice(0, 5)) {
+    const column = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    lines.push(`Table column ${textValue(column.column) || "?"} failed: ${textValue(column.reason) || "Validation failed."}`);
+  }
+  const mismatchedCells = Array.isArray(record.mismatchedCells) ? record.mismatchedCells : [];
+  for (const item of mismatchedCells.slice(0, 8)) {
+    const cell = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    lines.push(`Mismatch row ${cell.rowIndex ?? "?"}, ${textValue(cell.column) || "column"}: expected "${textValue(cell.expected)}", actual "${textValue(cell.actual)}"`);
+  }
+  const missingRows = Array.isArray(record.missingRows) ? record.missingRows : [];
+  if (missingRows.length) lines.push(`Missing rows: ${missingRows.length}`);
+  const extraRows = Array.isArray(record.extraRows) ? record.extraRows : [];
+  if (extraRows.length) lines.push(`Extra rows: ${extraRows.length}`);
+  const missingColumns = Array.isArray(record.missingColumns) ? record.missingColumns : [];
+  if (missingColumns.length) lines.push(`Missing columns: ${missingColumns.map(String).join(", ")}`);
+  const extraColumns = Array.isArray(record.extraColumns) ? record.extraColumns : [];
+  if (extraColumns.length) lines.push(`Extra columns: ${extraColumns.map(String).join(", ")}`);
+  return lines;
+}
+
+function commandConsoleOutputForStep(step: AutomationStep | undefined, output: unknown) {
+  if (!step) return "";
+  const action = displayAction(step.action);
+  if (action === "logMessage") return commandOutputSummary(output);
+  if (action === "validateAccordionSections") return accordionValidationSummary(output);
+  if (action.includes("WebTable") || action === "getWebTableData" || action === "validateWebTable") {
+    return tableCommandSummary(output);
+  }
+  const definition = commandDefinitionForAction(action);
+  if (!commandShowsOutputCapture(definition)) return "";
+  return commandOutputSummary(output);
+}
+
+function commandConsoleOutputLineForStep(step: AutomationStep | undefined, output: unknown) {
+  const displayOutput = commandConsoleOutputForStep(step, output);
+  if (!displayOutput) return "";
+  if (step && displayAction(step.action) === "logMessage") {
+    return `Log: ${displayOutput}.`;
+  }
+  const variableName = step ? phaseOutputVariable(step) : "";
+  return variableName
+    ? `Stored ${variableName} = ${displayOutput}.`
+    : `Output: ${displayOutput}.`;
+}
+
+function commandConsoleDetailLinesForStep(step: AutomationStep | undefined, output: unknown) {
+  if (!step) return [];
+  if (displayAction(step.action) === "validateAccordionSections") {
+    return accordionValidationDetailLines(output);
+  }
+  const action = displayAction(step.action);
+  if (action.includes("WebTable") || action === "getWebTableData" || action === "validateWebTable") {
+    return tableCommandDetailLines(output);
+  }
+  return [];
+}
+
+function commandPhraseForStep(
+  step: AutomationStep,
+  definition?: AutomationCommandDefinition | null,
+) {
+  const action = displayAction(step.action);
+  const commandDefinition =
+    definition ?? (action === "action" ? actionCommandDefinition : commandDefinitionForAction(action));
+  const basePhrase = commandDefinition?.label || readableStepLabel({ ...step, commandText: "" });
+  if (!commandShowsOutputCapture(commandDefinition)) return basePhrase;
+
+  const outputVariable =
+    phaseOutputVariable(step) || commandOutputDefaultName(commandDefinition);
+  return outputVariable ? `${basePhrase} -> ${outputVariable}` : basePhrase;
+}
+
 function validateCommandPromptStep(step: AutomationStep) {
   const action = displayAction(step.action);
   const prompt = textValue(step.commandText || step.description || readableStepLabel(step));
@@ -1015,7 +1859,7 @@ function validateCommandPromptStep(step: AutomationStep) {
   if (action === "wait" && waitType === "soft" && !targetValue) {
     return { field: "locator", message: "Add the locator to wait for.", ok: false };
   }
-  if (["click", "fill", "select", "hover", "assert"].includes(action) && !targetValue) {
+  if (commandRequiresLocator(action) && !targetValue) {
     return { field: "locator", message: "Add a locator for this command.", ok: false };
   }
   if (
@@ -1088,6 +1932,21 @@ function firstNavigationUrl(steps: AutomationStep[]) {
     if (url) return url;
   }
   return null;
+}
+
+function normalizedUrlPath(value?: string | null) {
+  if (!value) return "";
+  const parsed = safeUrl(value);
+  const path = parsed ? parsed.pathname : value;
+  return path.replace(/\/+$/, "") || "/";
+}
+
+function urlsRoughlyMatch(currentUrl?: string | null, expectedUrl?: string | null) {
+  if (!currentUrl || !expectedUrl) return false;
+  const current = safeUrl(currentUrl);
+  const expected = safeUrl(expectedUrl);
+  if (current && expected && current.origin !== expected.origin) return false;
+  return normalizedUrlPath(currentUrl) === normalizedUrlPath(expectedUrl);
 }
 
 function mergeUrlPath(baseUrl: string, sourceUrl: string) {
@@ -1207,6 +2066,111 @@ function makeWaitStep(): AutomationStep {
   };
 }
 
+function commandParameterInitialValue(
+  parameter: AutomationCommandParameterDefinition | undefined,
+  fallbackUrl: string,
+) {
+  if (!parameter) return "";
+  if (parameter.defaultValue !== undefined && parameter.defaultValue !== null) {
+    return String(parameter.defaultValue);
+  }
+  if (parameter.name === "url") return normalizeUrl(fallbackUrl);
+  if (parameter.name === "key") return "Enter";
+  if (parameter.name === "duration" || parameter.name === "timeoutMs") return "1000";
+  if (parameter.name === "amount") return "1";
+  if (parameter.name === "index" || parameter.name === "rowIndex" || parameter.name === "columnIndex") return "0";
+  if (parameter.options?.[0]?.value !== undefined) return String(parameter.options[0].value);
+  return "";
+}
+
+function commandParameterOptionValue(parameter: AutomationCommandParameterDefinition) {
+  if (parameter.defaultValue !== undefined) return parameter.defaultValue;
+  if (parameter.type === "boolean") return false;
+  if (parameter.type === "number") return 0;
+  if (parameter.options?.[0]?.value !== undefined) return parameter.options[0].value;
+  return "";
+}
+
+function commandTargetDisplayName(command: AutomationCommandDefinition) {
+  if (command.parameters.some((parameter) => parameter.name === "locator")) return "Element";
+  if (command.category.startsWith("browser.") || command.domain === "web") return "Browser";
+  return command.domain.replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+function makeCommandLibraryStep(
+  command: AutomationCommandDefinition,
+  fallbackUrl: string,
+): AutomationStep {
+  const action = normalizeAutomationAction(command.normalizedAction || command.action);
+  const primaryParameter = primaryValueParameterForCommand(action);
+  const inputValue = commandParameterInitialValue(primaryParameter, fallbackUrl);
+  const options = command.parameters.reduce<Record<string, unknown>>(
+    (record, parameter) => {
+      if (parameter.name === "locator") return record;
+      return {
+        ...record,
+        [parameter.name]:
+          primaryParameter?.name === parameter.name
+            ? inputValue
+            : commandParameterOptionValue(parameter),
+      };
+    },
+    {
+      adapterPending: !(command.executable && command.domain === "web"),
+      insertedFromCommandLibrary: true,
+      libraryCommandId: command.id,
+      outputVariableName: commandShowsOutputCapture(command)
+        ? commandOutputDefaultName(command)
+        : undefined,
+      runtimeAction: command.runtimeAction,
+      runtimeHandler: command.runtimeHandler,
+    },
+  );
+  const targetName = commandTargetDisplayName(command);
+  const stepBase: AutomationStep = {
+    action,
+    commandText: command.label,
+    description: command.description || command.label,
+    expectedValue:
+      primaryParameter?.name === "expected" || primaryParameter?.name === "expectedText"
+        ? inputValue
+        : "",
+    id: makeStepId(),
+    inputValue,
+    locatorCandidates: [],
+    options,
+    target: {
+      displayName: targetName,
+      elementKind: targetName.toLowerCase(),
+      locatorType: "css",
+      operator: "equals",
+      type: "manual",
+      value: "",
+    },
+  };
+  if (action === "wait" || action === "waitForTimeout" || action === "waitForElement") {
+    const duration = Number(inputValue || options.duration || 1000);
+    stepBase.inputValue = String(Number.isFinite(duration) && duration > 0 ? duration : 1000);
+    stepBase.options = {
+      ...stepBase.options,
+      duration: Number(stepBase.inputValue),
+      waitCondition: options.state || "visible",
+      waitType: action === "waitForElement" ? "soft" : "hard",
+    };
+    stepBase.target = {
+      ...stepBase.target,
+      displayName: action === "waitForElement" ? "Element" : "Timer",
+      elementKind: action === "waitForElement" ? "web element" : "timer",
+    };
+  }
+  const commandText = commandPhraseForStep(stepBase, command);
+  return withLocatorQuality({
+    ...stepBase,
+    commandText,
+    description: commandText,
+  });
+}
+
 function makeActionStep(action: { id: string; name: string }, count: number): AutomationStep {
   return {
     action: "action",
@@ -1263,6 +2227,15 @@ function eventToStep(event: RecorderEvent): AutomationStep | null {
     type: candidate && !isBrowserDialog ? ("smart" as const) : ("manual" as const),
     value: candidate?.value || (isBrowserDialog ? "browser_dialog" : ""),
   };
+  const capturedStep = {
+    command: event.command || event.type,
+    createdAt: event.createdAt,
+    id: event.id,
+    order: event.order,
+    params: event.params,
+    scenarioId: event.scenarioId,
+    updatedAt: event.updatedAt,
+  };
   const baseOptions =
     ambiguity?.matchCount && ambiguity.matchCount > 1
       ? {
@@ -1283,6 +2256,8 @@ function eventToStep(event: RecorderEvent): AutomationStep | null {
           healed: false,
           healedLocator: null,
           healingReason: "",
+          rawValue: event.rawValue,
+          domValue: event.domValue,
           pageId: event.pageId || textValue(event.element?.pageId),
           pageUrl: eventUrl,
         }
@@ -1290,6 +2265,8 @@ function eventToStep(event: RecorderEvent): AutomationStep | null {
           healed: false,
           healedLocator: null,
           healingReason: "",
+          rawValue: event.rawValue,
+          domValue: event.domValue,
           pageId: event.pageId || textValue(event.element?.pageId),
           pageUrl: eventUrl,
         };
@@ -1297,7 +2274,7 @@ function eventToStep(event: RecorderEvent): AutomationStep | null {
     element: event.element,
     id: event.id || makeStepId(),
     locatorCandidates: rankedLocators(event.locatorCandidates),
-    options: baseOptions,
+    options: { ...baseOptions, capturedStep },
     target,
   };
 
@@ -1339,20 +2316,48 @@ function eventToStep(event: RecorderEvent): AutomationStep | null {
     return { ...step, commandText: readableStepLabel(step) };
   }
   if (event.type === "input") {
+    const inputValue = event.rawValue ?? event.value ?? "";
     const step = {
       ...base,
       action: "fill",
-      description: `Enter ${event.value || "text"} in ${targetName}`,
-      inputValue: event.value || "",
+      description: `Type "${inputValue || "value"}" into ${targetName}`,
+      inputValue,
+      options: {
+        ...base.options,
+        domValue: event.domValue ?? event.value ?? inputValue,
+        rawValue: inputValue,
+      },
     };
     return withLocatorQuality({ ...step, commandText: readableStepLabel(step) });
   }
   if (event.type === "select" || event.type === "change") {
+    const optionValue = event.value || "";
+    const rawValue = event.rawValue || optionValue;
     const step = {
       ...base,
       action: "select",
-      description: `Select ${event.value || "option"} in ${targetName}`,
-      inputValue: event.value || "",
+      description: `Select "${rawValue || "option"}" from ${targetName}`,
+      inputValue: optionValue,
+      options: {
+        ...base.options,
+        domValue: event.domValue ?? optionValue,
+        rawValue,
+      },
+    };
+    return withLocatorQuality({ ...step, commandText: readableStepLabel(step) });
+  }
+  if (event.type === "check" || event.type === "uncheck") {
+    const checked = event.type === "check";
+    const step = {
+      ...base,
+      action: checked ? "check" : "uncheck",
+      description: `${checked ? "Check" : "Uncheck"} ${targetName}`,
+      inputValue: "",
+      options: {
+        ...base.options,
+        domValue: event.domValue ?? String(checked),
+        rawValue: event.rawValue ?? String(checked),
+      },
     };
     return withLocatorQuality({ ...step, commandText: readableStepLabel(step) });
   }
@@ -1438,8 +2443,10 @@ function providerEventToRecorderEvent(event: ProviderSessionEvent): RecorderEven
           ? "select"
           : action === "click"
             ? "click"
+            : action === "check" || action === "uncheck"
+              ? action
             : action;
-  if (!["navigation", "switchPage", "input", "select", "click", "assert", "wait", "press"].includes(type)) {
+  if (!["navigation", "switchPage", "input", "select", "click", "check", "uncheck", "assert", "wait", "press"].includes(type)) {
     return null;
   }
   const url =
@@ -1449,6 +2456,8 @@ function providerEventToRecorderEvent(event: ProviderSessionEvent): RecorderEven
         ? data.frameUrl
         : undefined;
   const value = typeof data.value === "string" ? data.value : undefined;
+  const rawValue = typeof data.rawValue === "string" ? data.rawValue : value;
+  const domValue = typeof data.domValue === "string" ? data.domValue : value;
   return {
     ambiguity:
       data.ambiguity && typeof data.ambiguity === "object"
@@ -1470,6 +2479,8 @@ function providerEventToRecorderEvent(event: ProviderSessionEvent): RecorderEven
     type,
     url: action === "navigate" ? value || url : url,
     value,
+    rawValue,
+    domValue,
     verify:
       data.verify && typeof data.verify === "object"
         ? (data.verify as RecorderEvent["verify"])
@@ -1572,6 +2583,8 @@ function companionCommandToRecorderEvent(command: CompanionCommand): RecorderEve
   const commandType = textValue(command.type);
   const recordedUrl = textValue(command.url || command.meta?.recordedUrl);
   const value = textValue(command.inputValue || command.expectedValue);
+  const rawValue = textValue(command.rawValue || command.params?.rawValue || command.meta?.rawValue || value);
+  const domValue = textValue(command.domValue || command.params?.value || command.meta?.domValue || value);
   const locator = command.locator;
   const locatorValue = textValue(locator?.value);
   const locatorType = textValue(locator?.strategy) || "css";
@@ -1596,9 +2609,18 @@ function companionCommandToRecorderEvent(command: CompanionCommand): RecorderEve
           },
         ]
       : [];
+  const capturedFields = {
+    command: command.command || commandType,
+    createdAt: command.meta?.recordedAt as string | number | undefined,
+    order: command.order,
+    params: command.params,
+    scenarioId: command.scenarioId,
+    updatedAt: command.meta?.recordedAt as string | number | undefined,
+  };
 
   if (commandType === "navigate" && recordedUrl) {
     return {
+      ...capturedFields,
       id: command.id || makeStepId(),
       timestamp: Date.now(),
       type: "navigation",
@@ -1609,31 +2631,69 @@ function companionCommandToRecorderEvent(command: CompanionCommand): RecorderEve
   if (commandType === "fill") {
     return {
       commandLabel: command.description || command.name,
+      command: command.command || commandType,
+      createdAt: command.meta?.recordedAt as string | number | undefined,
       element,
       id: command.id || makeStepId(),
       locatorCandidates,
+      order: command.order,
+      params: command.params,
+      scenarioId: command.scenarioId,
       timestamp: Date.now(),
       type: "input",
+      updatedAt: command.meta?.recordedAt as string | number | undefined,
       url: recordedUrl,
       value,
+      rawValue,
+      domValue,
     };
   }
 
   if (commandType === "select") {
     return {
       commandLabel: command.description || command.name,
+      command: command.command || commandType,
+      createdAt: command.meta?.recordedAt as string | number | undefined,
       element,
       id: command.id || makeStepId(),
       locatorCandidates,
+      order: command.order,
+      params: command.params,
+      scenarioId: command.scenarioId,
       timestamp: Date.now(),
       type: "select",
+      updatedAt: command.meta?.recordedAt as string | number | undefined,
       url: recordedUrl,
       value,
+      rawValue,
+      domValue,
+    };
+  }
+
+  if (commandType === "check" || commandType === "uncheck") {
+    return {
+      commandLabel: command.description || command.name,
+      command: command.command || commandType,
+      createdAt: command.meta?.recordedAt as string | number | undefined,
+      element,
+      id: command.id || makeStepId(),
+      locatorCandidates,
+      order: command.order,
+      params: command.params,
+      scenarioId: command.scenarioId,
+      timestamp: Date.now(),
+      type: commandType,
+      updatedAt: command.meta?.recordedAt as string | number | undefined,
+      url: recordedUrl,
+      value,
+      rawValue,
+      domValue,
     };
   }
 
   if (commandType === "press") {
     return {
+      ...capturedFields,
       commandLabel: command.description || command.name,
       element,
       id: command.id || makeStepId(),
@@ -1685,6 +2745,7 @@ function companionCommandToRecorderEvent(command: CompanionCommand): RecorderEve
 
   if (commandType === "click") {
     return {
+      ...capturedFields,
       commandLabel: command.description || command.name,
       element,
       id: command.id || makeStepId(),
@@ -1709,6 +2770,17 @@ function mergeStepsById(steps: AutomationStep[]) {
     seen.add(step.id);
     return true;
   });
+}
+
+function withoutAdjacentDuplicateNavigations(steps: AutomationStep[]) {
+  const nextSteps: AutomationStep[] = [];
+  for (const step of steps) {
+    const currentUrl = navigationUrlForStep(step);
+    const previousUrl = nextSteps.length ? navigationUrlForStep(nextSteps[nextSteps.length - 1]) : null;
+    if (currentUrl && previousUrl && currentUrl === previousUrl) continue;
+    nextSteps.push(step);
+  }
+  return nextSteps;
 }
 
 function cloneAutomationSteps(steps: AutomationStep[]) {
@@ -1744,6 +2816,62 @@ function parameterToken(name: string) {
 function exactParameterNameFromText(value?: string) {
   const match = textValue(value).match(/^\{\{\s*([a-zA-Z_][\w.-]*)\s*\}\}$/);
   return match?.[1] ?? "";
+}
+
+function optionRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function phaseValueSource(step: AutomationStep): StepParameterValueType {
+  const source = textValue(step.options?.valueSource || step.options?.valueType);
+  if (valueSourceOptions.some((option) => option.value === source)) {
+    return source as StepParameterValueType;
+  }
+  return exactParameterNameFromText(step.inputValue) ? "testData" : "static";
+}
+
+function phaseValueReference(step: AutomationStep) {
+  const source = phaseValueSource(step);
+  if (source === "static") return step.inputValue || "";
+  if (source === "testData") {
+    return textValue(step.options?.parameterName) || exactParameterNameFromText(step.inputValue);
+  }
+  return textValue(step.options?.valueReference || step.inputValue);
+}
+
+function phaseExpression(step: AutomationStep) {
+  return textValue(step.options?.expression || step.options?.conditionExpression);
+}
+
+function phaseOutputVariable(step: AutomationStep) {
+  return textValue(step.options?.outputVariableName);
+}
+
+function phaseFailureBehavior(step: AutomationStep) {
+  const behavior = optionRecord(step.options?.failureBehavior);
+  return {
+    continueOnFailure: Boolean(behavior.continueOnFailure),
+    recoveryActionId: textValue(behavior.recoveryActionId),
+    retryCount: Number(behavior.retryCount ?? 0) || 0,
+    screenshotOnFailure: behavior.screenshotOnFailure !== false,
+    stopOnFailure: behavior.stopOnFailure !== false && !behavior.continueOnFailure,
+    timeoutMs: Number(behavior.timeoutMs ?? step.options?.timeoutMs ?? 30000) || 30000,
+  };
+}
+
+function phaseParameterPreview(step: AutomationStep) {
+  const source = phaseValueSource(step);
+  const reference = phaseValueReference(step);
+  if (source === "static") return reference ? "Resolved immediately" : "No value set";
+  if (source === "testData") return reference ? `Resolves from {{${reference}}}` : "Choose a test data parameter";
+  if (source === "secret") return reference ? "Resolved from secrets at runtime" : "Enter a secret reference";
+  if (source === "environment") return reference ? "Resolved from selected run environment" : "Enter an environment key";
+  if (source === "previousStepOutput") return reference ? "Resolved from a previous step output" : "Enter an output variable";
+  if (source === "expression") return phaseExpression(step) ? "Evaluated safely at runtime" : "Enter a safe expression";
+  if (source === "generated") return reference ? "Generated at runtime" : "Enter a generated value type";
+  return "Resolved at runtime";
 }
 
 function inferParameterNamesFromSteps(steps: AutomationStep[]) {
@@ -1814,8 +2942,24 @@ function normalizeScenarioTestCases(value: unknown): ScenarioTestCase[] {
         data,
         description: typeof record.description === "string" ? record.description : "",
         enabled: record.enabled !== false,
+        expectedResult: typeof record.expectedResult === "string" ? record.expectedResult : "",
+        lastStatus:
+          record.lastStatus === "passed" || record.lastStatus === "failed"
+            ? record.lastStatus
+            : "notRun",
         id: typeof record.id === "string" ? record.id : makeTestCaseId(),
         name: textValue(record.name) || `Test Case ${index + 1}`,
+        priority:
+          record.priority === "low" ||
+          record.priority === "high" ||
+          record.priority === "critical"
+            ? record.priority
+            : "medium",
+        tags: Array.isArray(record.tags)
+          ? record.tags.map((tag) => textValue(tag)).filter(Boolean)
+          : typeof record.tags === "string"
+            ? record.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
+            : [],
       },
     ];
   });
@@ -1887,10 +3031,29 @@ function normalizedTestDataDrafts(
         data: allowedData,
         id: testCase.id || makeTestCaseId(),
         name: name || `Test Case ${index + 1}`,
+        priority: testCase.priority || "medium",
+        tags: testCase.tags ?? [],
       },
     ];
   });
   return { parameters, testCases };
+}
+
+function testCaseMatchesRunScope(testCase: ScenarioTestCase, config: RunConfig) {
+  if (!testCase.enabled) return false;
+  if (config.runScope === "tag") {
+    const tag = config.scopeTag.trim().toLowerCase();
+    if (!tag) return true;
+    return (testCase.tags ?? []).some((item) => item.toLowerCase() === tag);
+  }
+  if (config.runScope === "priority") {
+    if (config.scopePriority === "all") return true;
+    return testCase.priority === config.scopePriority;
+  }
+  if (config.runScope === "failedOnly") {
+    return testCase.lastStatus === "failed";
+  }
+  return true;
 }
 
 function substituteTemplate(value: string | undefined, data: Record<string, string>) {
@@ -1937,10 +3100,17 @@ function substituteStepsParameters(steps: AutomationStep[], data: Record<string,
 
 async function readJsonResponse<T>(response: Response, fallback: T): Promise<T> {
   const text = await response.text();
+  const path = (() => {
+    try {
+      return new URL(response.url).pathname || "request";
+    } catch {
+      return "request";
+    }
+  })();
   if (!text.trim()) {
     if (!response.ok) {
       throw new Error(
-        `Empty response from ${new URL(response.url).pathname || "request"} (${response.status}).`,
+        `The automation service returned an empty ${response.status} response from ${path}. Your commands were not changed.`,
       );
     }
     return fallback;
@@ -1948,10 +3118,25 @@ async function readJsonResponse<T>(response: Response, fallback: T): Promise<T> 
   try {
     return JSON.parse(text) as T;
   } catch {
+    const responseStart = text.replace(/\s+/g, " ").slice(0, 160);
     throw new Error(
-      `Invalid response from ${new URL(response.url).pathname || "request"} (${response.status}).`,
+      response.ok
+        ? `The automation service returned an invalid response from ${path}.`
+        : `The automation service returned ${response.status} from ${path}. Your commands were not changed. Response started with: ${responseStart}`,
     );
   }
+}
+
+function responseStatusError(message: string, status: number) {
+  return Object.assign(new Error(message), { status });
+}
+
+function isNotFoundStatusError(error: unknown) {
+  return (
+    error instanceof Error &&
+    typeof (error as Error & { status?: unknown }).status === "number" &&
+    (error as Error & { status?: number }).status === 404
+  );
 }
 
 function locatorText(locator?: Record<string, unknown> | null) {
@@ -2089,12 +3274,22 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [recording, setRecording] = useState(false);
   const [recordingPaused, setRecordingPaused] = useState(false);
   const [verifyPicking, setVerifyPicking] = useState(false);
+  const [recorderState, setRecorderState] = useState<RecorderState>("idle");
+  const [playbackState, setPlaybackState] = useState<PlaybackState>("idle");
+  const [browserSessionState, setBrowserSessionState] =
+    useState<BrowserSessionState>("disconnected");
   const [recordingSessionId, setRecordingSessionId] = useState<string | null>(null);
   const [providerEventCaptureAfter, setProviderEventCaptureAfter] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [glowCartPreparing, setGlowCartPreparing] = useState(false);
   const [runStatus, setRunStatus] = useState<"idle" | "running" | "paused" | "failed" | "completed">("idle");
   const [failedStepResult, setFailedStepResult] = useState<StepExecutionResult | null>(null);
   const [commandRunStates, setCommandRunStates] = useState<Record<string, CommandRunState>>({});
+  const [playbackJobs, setPlaybackJobs] = useState<PlaybackJob[]>([]);
+  const [playbackConfig, setPlaybackConfig] = useState<PlaybackConfig>(defaultPlaybackConfig);
+  const [playbackConsoleOpen, setPlaybackConsoleOpen] = useState(true);
+  const [playbackConfigOpen, setPlaybackConfigOpen] = useState(false);
+  const [playbackBusy, setPlaybackBusy] = useState(false);
   const [events, setEvents] = useState<RecorderEvent[]>([]);
   const [logs, setLogs] = useState<string[]>(["Studio ready"]);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
@@ -2157,6 +3352,39 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [runConfig, setRunConfig] = useState<RunConfig>(() =>
     defaultRunConfig(targetUrl),
   );
+  const [playbackStateGuard, setPlaybackStateGuard] = useState<PlaybackStateGuard | null>(null);
+  const [workspaceTab, setWorkspaceTab] = useState<"browser" | "canvas">("browser");
+  const [livePreviewTick, setLivePreviewTick] = useState(Date.now());
+  const [livePreviewFailed, setLivePreviewFailed] = useState(false);
+  const [livePreviewStreamConnected, setLivePreviewStreamConnected] = useState(false);
+  const [livePreviewStreamFrameSrc, setLivePreviewStreamFrameSrc] = useState("");
+  const [livePreviewSize, setLivePreviewSize] = useState<LivePreviewSizeKey>("normal");
+  const [livePreviewScroll, setLivePreviewScroll] = useState({ maxY: 0, y: 0 });
+  const [livePreviewTabNotice, setLivePreviewTabNotice] = useState<LivePreviewTabNotice>(null);
+  const [livePreviewTabsExpanded, setLivePreviewTabsExpanded] = useState(false);
+  const [browserAddressDraft, setBrowserAddressDraft] = useState(targetUrl);
+  const [browserNavBusy, setBrowserNavBusy] = useState(false);
+  const [liveInspectorEnabled, setLiveInspectorEnabled] = useState(true);
+  const [liveInspectorResult, setLiveInspectorResult] = useState<LiveInspectorResult | null>(null);
+  const [liveInspectorSelected, setLiveInspectorSelected] = useState<LiveInspectorResult | null>(null);
+  const [liveInspectorBusy, setLiveInspectorBusy] = useState(false);
+  const [liveCommandMenu, setLiveCommandMenu] = useState<LiveCommandMenu>(null);
+  const [authoringPreviewUrl, setAuthoringPreviewUrl] = useState("");
+  const [authoringPreviewError, setAuthoringPreviewError] = useState("");
+  const [canvasView, setCanvasView] = useState<CanvasView | null>(null);
+  const [canvasElements, setCanvasElements] = useState<CanvasElement[]>([]);
+  const [canvasMenu, setCanvasMenu] = useState<CanvasContextMenu>(null);
+  const [canvasHoverElement, setCanvasHoverElement] = useState<Record<string, unknown> | null>(null);
+  const [canvasExploreElement, setCanvasExploreElement] = useState<Record<string, unknown> | null>(null);
+  const [canvasExploreIndex, setCanvasExploreIndex] = useState(0);
+  const [canvasInsertPreview, setCanvasInsertPreview] = useState<{
+    action: string;
+    insertAfterStepId?: string | null;
+    locator: Record<string, unknown>;
+    snapshot: Record<string, unknown>;
+  } | null>(null);
+  const [canvasMessage, setCanvasMessage] = useState("");
+  const [commandInsertMenu, setCommandInsertMenu] = useState<CommandInsertMenu>(null);
   const [testDataOpen, setTestDataOpen] = useState(false);
   const [testDataSaving, setTestDataSaving] = useState(false);
   const [testDataError, setTestDataError] = useState("");
@@ -2167,17 +3395,341 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const ignoredRecorderStepIdsRef = useRef<Set<string>>(new Set());
   const timelineStepRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const actionCommandRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const livePreviewImageRef = useRef<HTMLImageElement | null>(null);
+  const livePreviewContainerRef = useRef<HTMLDivElement | null>(null);
+  const livePreviewSocketRef = useRef<WebSocket | null>(null);
+  const livePreviewFrameObjectUrlRef = useRef("");
+  const liveInspectorTimerRef = useRef<number | null>(null);
+  const liveInspectorAbortRef = useRef<AbortController | null>(null);
+  const livePreviewWheelDeltaRef = useRef<{
+    deltaX: number;
+    deltaY: number;
+    point: { x: number; y: number } | null;
+  }>({ deltaX: 0, deltaY: 0, point: null });
+  const livePreviewWheelTimerRef = useRef<number | null>(null);
+  const livePreviewWheelInFlightRef = useRef(false);
+  const livePreviewSliderTimerRef = useRef<number | null>(null);
+  const livePreviewKnownTabIdsRef = useRef<string[]>([]);
+  const livePreviewTabNoticeTimerRef = useRef<number | null>(null);
+
+  const activeLivePreviewSize =
+    LIVE_PREVIEW_SIZES.find((item) => item.key === livePreviewSize) ??
+    LIVE_PREVIEW_SIZES[0];
+  const livePreviewWorkspaceColumns =
+    livePreviewSize === "full"
+      ? "xl:grid-cols-1"
+      : livePreviewSize === "large"
+        ? "xl:grid-cols-[minmax(0,1fr)_280px]"
+        : "xl:grid-cols-[minmax(0,1fr)_380px]";
+
+  useEffect(() => {
+    setBrowserSessionState(browserSessionStateFor(session));
+  }, [session?.sessionId, session?.status]);
+
+  useEffect(() => {
+    if (verifyPicking) {
+      setRecorderState("verifyingTarget");
+    } else if (recordingPaused) {
+      setRecorderState("paused");
+    } else if (recording) {
+      setRecorderState("recording");
+    } else if (recorderState !== "selectingTarget") {
+      setRecorderState("idle");
+    }
+  }, [recorderState, recording, recordingPaused, verifyPicking]);
+
+  useEffect(() => {
+    if (runStatus === "running") setPlaybackState("running");
+    else if (runStatus === "failed") setPlaybackState("failed");
+    else if (runStatus === "completed") setPlaybackState("completed");
+    else if (!playbackBusy) setPlaybackState("idle");
+  }, [playbackBusy, runStatus]);
+
+  useEffect(() => {
+    setLivePreviewFailed(false);
+    setLivePreviewTick(Date.now());
+    if (!session?.liveViewUrl || !session.sessionId || workspaceTab !== "browser") {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setLivePreviewTick(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [session?.liveViewUrl, session?.sessionId, workspaceTab]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let reconnectTimer: number | null = null;
+
+    const clearFrameObjectUrl = () => {
+      if (livePreviewFrameObjectUrlRef.current) {
+        URL.revokeObjectURL(livePreviewFrameObjectUrlRef.current);
+        livePreviewFrameObjectUrlRef.current = "";
+      }
+      setLivePreviewStreamFrameSrc("");
+    };
+
+    const closeSocket = () => {
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      const socket = livePreviewSocketRef.current;
+      livePreviewSocketRef.current = null;
+      if (socket && socket.readyState <= WebSocket.OPEN) {
+        socket.close();
+      }
+    };
+
+    const connect = () => {
+      if (
+        cancelled ||
+        workspaceTab !== "browser" ||
+        !session?.sessionId ||
+        !session.liveViewUrl ||
+        !isCompanionPreviewSession(session)
+      ) {
+        return;
+      }
+
+      try {
+        const socket = new WebSocket(companionPreviewStreamUrl(session));
+        socket.binaryType = "arraybuffer";
+        livePreviewSocketRef.current = socket;
+
+        socket.onopen = () => {
+          if (cancelled) return;
+          setLivePreviewStreamConnected(true);
+          setLivePreviewFailed(false);
+          socket.send(JSON.stringify({ type: "ping" }));
+        };
+
+        socket.onmessage = (event) => {
+          if (cancelled) return;
+          if (typeof event.data === "string") {
+            try {
+              const data = JSON.parse(event.data) as {
+                activeTabId?: string | null;
+                error?: string;
+                scroll?: { maxY?: number; y?: number };
+                tabs?: CompanionPreviewTab[];
+                type?: string;
+                url?: string;
+              };
+              if (data.error) {
+                setLivePreviewFailed(true);
+                return;
+              }
+              if (data.url || data.tabs || data.activeTabId !== undefined) {
+                setSession((current) =>
+                  patchCompanionSession(current, {
+                    activeTabId: data.activeTabId,
+                    tabs: data.tabs,
+                    url: data.url,
+                  }),
+                );
+              }
+              if (data.scroll) {
+                setLivePreviewScroll({
+                  maxY: Math.max(0, Number(data.scroll.maxY ?? 0)),
+                  y: Math.max(0, Number(data.scroll.y ?? 0)),
+                });
+              }
+            } catch {
+              // Ignore non-JSON status frames.
+            }
+            return;
+          }
+
+          const blob =
+            event.data instanceof Blob
+              ? event.data
+              : new Blob([event.data], { type: "image/jpeg" });
+          const nextUrl = URL.createObjectURL(blob);
+          const previousUrl = livePreviewFrameObjectUrlRef.current;
+          livePreviewFrameObjectUrlRef.current = nextUrl;
+          setLivePreviewStreamFrameSrc(nextUrl);
+          setLivePreviewFailed(false);
+          if (previousUrl) {
+            window.setTimeout(() => URL.revokeObjectURL(previousUrl), 250);
+          }
+        };
+
+        socket.onclose = () => {
+          if (livePreviewSocketRef.current === socket) {
+            livePreviewSocketRef.current = null;
+          }
+          if (cancelled) return;
+          setLivePreviewStreamConnected(false);
+          setLivePreviewTick(Date.now());
+          reconnectTimer = window.setTimeout(connect, 1000);
+        };
+
+        socket.onerror = () => {
+          if (cancelled) return;
+          setLivePreviewStreamConnected(false);
+          setLivePreviewFailed(true);
+        };
+      } catch {
+        setLivePreviewStreamConnected(false);
+        setLivePreviewTick(Date.now());
+        reconnectTimer = window.setTimeout(connect, 1500);
+      }
+    };
+
+    closeSocket();
+    clearFrameObjectUrl();
+    connect();
+
+    return () => {
+      cancelled = true;
+      closeSocket();
+      clearFrameObjectUrl();
+      setLivePreviewStreamConnected(false);
+    };
+  }, [session?.liveViewUrl, session?.sessionId, workspaceTab]);
+
+  useEffect(() => {
+    const hasUsableCompanionPreview =
+      session?.sessionId &&
+      session.liveViewUrl &&
+      isCompanionPreviewSession(session) &&
+      session.status !== "stopped" &&
+      session.status !== "failed";
+    if (workspaceTab !== "browser" || hasUsableCompanionPreview) return;
+
+    let cancelled = false;
+
+    const reconnectCompanionPreview = async () => {
+      try {
+        const response = await fetch(`${localAgentUrl}/automation/browser`, {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+
+        const data = await readJsonResponse<CompanionBrowserResponse>(response, {});
+        const restoredSession = companionSessionMetadata(
+          data,
+          data.currentUrl || data.url || targetUrl,
+        );
+
+        if (cancelled || !restoredSession?.sessionId) return;
+
+        setSession(restoredSession);
+        setRecordingSessionId(
+          data.status === "recording" ? restoredSession.sessionId : "",
+        );
+        setLivePreviewFailed(false);
+        setLivePreviewTick(Date.now());
+      } catch {
+        // Companion may be closed; leave the empty Browser placeholder visible.
+      }
+    };
+
+    void reconnectCompanionPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session, targetUrl, workspaceTab]);
+
+  useEffect(() => {
+    setLiveInspectorResult(null);
+    setLiveInspectorSelected(null);
+    liveInspectorAbortRef.current?.abort();
+    if (liveInspectorTimerRef.current) {
+      window.clearTimeout(liveInspectorTimerRef.current);
+      liveInspectorTimerRef.current = null;
+    }
+    if (livePreviewWheelTimerRef.current) {
+      window.clearInterval(livePreviewWheelTimerRef.current);
+      livePreviewWheelTimerRef.current = null;
+    }
+    if (livePreviewSliderTimerRef.current) {
+      window.clearTimeout(livePreviewSliderTimerRef.current);
+      livePreviewSliderTimerRef.current = null;
+    }
+    livePreviewWheelDeltaRef.current = { deltaX: 0, deltaY: 0, point: null };
+    livePreviewWheelInFlightRef.current = false;
+  }, [session?.sessionId, workspaceTab]);
 
   const scenarioName = scenario?.name || "Untitled Scenario";
+  const previewTabs = useMemo(() => session?.tabs ?? [], [session?.tabs]);
+  const previewAddress = session?.currentUrl || targetUrl;
+  const activePreviewTab =
+    previewTabs.find((tab) => tab.id === session?.activeTabId || tab.active) ??
+    previewTabs[0] ??
+    null;
+  const previewTabCount = Math.max(previewTabs.length, session?.liveViewUrl ? 1 : 0);
+  const canControlLiveBrowser = Boolean(
+    session?.sessionId &&
+      session.liveViewUrl &&
+      isCompanionPreviewSession(session) &&
+      workspaceTab === "browser",
+  );
+
+  useEffect(() => {
+    setBrowserAddressDraft(previewAddress);
+  }, [previewAddress]);
+
+  useEffect(() => {
+    return () => {
+      if (livePreviewTabNoticeTimerRef.current) {
+        window.clearTimeout(livePreviewTabNoticeTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    livePreviewKnownTabIdsRef.current = previewTabs.map((tab) => tab.id);
+    setLivePreviewTabNotice(null);
+    if (livePreviewTabNoticeTimerRef.current) {
+      window.clearTimeout(livePreviewTabNoticeTimerRef.current);
+      livePreviewTabNoticeTimerRef.current = null;
+    }
+  }, [session?.sessionId]);
+
+  useEffect(() => {
+    const previousTabIds = livePreviewKnownTabIdsRef.current;
+    const nextTabIds = previewTabs.map((tab) => tab.id);
+    const newTabs =
+      previousTabIds.length > 0
+        ? previewTabs.filter((tab) => !previousTabIds.includes(tab.id))
+        : [];
+
+    if (newTabs.length > 0) {
+      const newestTab =
+        newTabs.find((tab) => tab.id === session?.activeTabId) ?? newTabs[newTabs.length - 1];
+      setLivePreviewTabNotice({
+        label: livePreviewTabLabel(newestTab),
+        tabId: newestTab.id,
+      });
+      if (livePreviewTabNoticeTimerRef.current) {
+        window.clearTimeout(livePreviewTabNoticeTimerRef.current);
+      }
+      livePreviewTabNoticeTimerRef.current = window.setTimeout(() => {
+        setLivePreviewTabNotice((current) =>
+          current?.tabId === newestTab.id ? null : current,
+        );
+        livePreviewTabNoticeTimerRef.current = null;
+      }, 3600);
+    }
+
+    livePreviewKnownTabIdsRef.current = nextTabIds;
+  }, [previewTabs, session?.activeTabId]);
+
   const scenarioMetadata = useMemo(() => scenarioMetadataRecord(scenario), [scenario]);
   const finalizedSteps = useMemo(() => normalizeSteps(scenario?.steps), [scenario?.steps]);
+  const scenarioSteps = finalizedSteps;
   const liveSteps = useMemo(
     () => events.map(eventToStep).filter(Boolean) as AutomationStep[],
     [events],
   );
   const visibleSteps = useMemo(
-    () => mergeStepsById([...finalizedSteps, ...liveSteps]),
-    [finalizedSteps, liveSteps],
+    () => mergeStepsById([...scenarioSteps, ...liveSteps]),
+    [scenarioSteps, liveSteps],
   );
   const inferredParameterNames = useMemo(
     () => inferParameterNamesFromSteps(visibleSteps),
@@ -2210,6 +3762,16 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const selectedStepAmbiguity = selectedStep ? stepAmbiguity(selectedStep) : null;
   const selectedStepQuality = selectedStep ? locatorQualityForStep(selectedStep) : null;
   const selectedStepAction = selectedStep ? displayAction(selectedStep.action) : "";
+  const selectedCommandDefinition =
+    selectedStepAction === "action"
+      ? actionCommandDefinition
+      : commandDefinitionForAction(selectedStepAction);
+  const selectedCommandSchemaParameters =
+    selectedStep && selectedCommandDefinition
+      ? selectedCommandDefinition.inputs.filter((parameter) =>
+          shouldRenderCommandSchemaParameter(selectedStepAction, parameter),
+        )
+      : [];
   const selectedStepParameterName = selectedStep ? exactParameterNameFromText(selectedStep.inputValue) : "";
   const selectedStepParameterPreviewData = dataForTestCase(
     enabledTestCases[0] ?? scenarioTestCases[0] ?? null,
@@ -2219,6 +3781,99 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     selectedStepParameterName && scenarioParameters.some((parameter) => parameter.name === selectedStepParameterName)
       ? selectedStepParameterPreviewData[selectedStepParameterName] ?? ""
       : "";
+  const selectedStepValueSource = selectedStep ? phaseValueSource(selectedStep) : "static";
+  const selectedStepValueReference = selectedStep ? phaseValueReference(selectedStep) : "";
+  const selectedStepExpression = selectedStep ? phaseExpression(selectedStep) : "";
+  const selectedStepOutputVariable = selectedStep ? phaseOutputVariable(selectedStep) : "";
+  const selectedCommandCanSaveOutput = commandShowsOutputCapture(selectedCommandDefinition);
+  const selectedCommandOutputDefaultName = commandOutputDefaultName(selectedCommandDefinition);
+  const selectedCommandOutputTypeLabel = commandOutputTypeLabel(selectedCommandDefinition);
+  const selectedCommandEditorUxKind = commandEditorUxKind(selectedCommandDefinition);
+  const selectedCommandHasAdvancedRuntimeInput = commandHasAdvancedRuntimeInput(selectedStepAction);
+  const selectedStepHasAdvancedRuntimeConfig =
+    selectedStepValueSource !== "static" ||
+    Boolean(selectedStepExpression || textValue(selectedStep?.options?.valueReference));
+  const selectedStepFailureBehavior = selectedStep
+    ? phaseFailureBehavior(selectedStep)
+    : {
+        continueOnFailure: false,
+        recoveryActionId: "",
+        retryCount: 0,
+        screenshotOnFailure: true,
+        stopOnFailure: true,
+        timeoutMs: 30000,
+      };
+  const activeLiveInspectorResult = liveInspectorSelected ?? liveInspectorResult;
+  const activeLiveInspectorLocator = rankedLocators(
+    activeLiveInspectorResult?.locatorCandidates ?? [],
+  )[0];
+  const liveCommandSearch = liveCommandMenu?.query.trim().toLowerCase() ?? "";
+  const liveCommandResults = useMemo(() => {
+    const visibleCommands = AUTOMATION_COMMAND_CATALOG.filter((command) => command.visibleInLibrary !== false);
+    if (!liveCommandSearch) return visibleCommands;
+    return visibleCommands.filter((command) => {
+      const haystack = [
+        command.action,
+        command.domain,
+        command.label,
+        command.normalizedAction,
+        ...command.aliases,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return liveCommandSearch
+        .split(/\s+/)
+        .filter(Boolean)
+        .every((token) => haystack.includes(token));
+    });
+  }, [liveCommandSearch]);
+  const liveCommandResultsByDomain = useMemo(
+    () =>
+      liveCommandResults.reduce<Record<string, AutomationCommandDefinition[]>>(
+        (groups, command) => ({
+          ...groups,
+          [command.domain]: [...(groups[command.domain] ?? []), command],
+        }),
+        {},
+      ),
+    [liveCommandResults],
+  );
+  const commandInsertSearch = commandInsertMenu?.query.trim().toLowerCase() ?? "";
+  const commandInsertResults = useMemo(() => {
+    const visibleCommands = [
+      ...AUTOMATION_COMMAND_CATALOG.filter((command) => command.visibleInLibrary !== false),
+      actionCommandDefinition,
+    ];
+    if (!commandInsertSearch) return visibleCommands;
+    const tokens = commandInsertSearch.split(/\s+/).filter(Boolean);
+    return visibleCommands.filter((command) => {
+      const haystack = [
+        command.action,
+        command.category,
+        command.description,
+        command.domain,
+        command.label,
+        command.normalizedAction,
+        command.runtimeAction,
+        command.runtimeHandler,
+        ...command.aliases,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return tokens.every((token) => haystack.includes(token));
+    });
+  }, [commandInsertSearch]);
+  const commandInsertResultsByDomain = useMemo(
+    () =>
+      commandInsertResults.reduce<Record<string, AutomationCommandDefinition[]>>(
+        (groups, command) => ({
+          ...groups,
+          [command.domain]: [...(groups[command.domain] ?? []), command],
+        }),
+        {},
+      ),
+    [commandInsertResults],
+  );
   const selectedSteps = visibleSteps.filter((step) => selectedStepIds.has(step.id));
   const timelineStepIds = useMemo(
     () => visibleSteps.map((step) => step.id).filter(Boolean) as string[],
@@ -2238,7 +3893,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     ? actionStepCommands[locatorFlyout.actionStepId]?.find((step) => step.id === locatorFlyout.stepId) ?? null
     : visibleSteps.find((step) => step.id === locatorFlyout?.stepId) ?? null;
   const locatorFlyoutQuality = locatorFlyoutStep ? locatorQualityForStep(locatorFlyoutStep) : null;
-  const recordingActive = recording;
+  const recordingActive = recorderState === "recording";
   const healingEventsByStepId = useMemo(() => {
     const byStep = new Map<string, HealingReviewEvent[]>();
     for (const event of healingEvents) {
@@ -2262,6 +3917,93 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const appendLog = useCallback((message: string) => {
     setLogs((current) => [...current.slice(-50), message]);
   }, []);
+
+  const commandConsoleLabel = useCallback(
+    (step: AutomationStep, fallbackIndex: number) =>
+      step.commandText || readableStepLabel(step) || `Command ${fallbackIndex + 1}`,
+    [],
+  );
+
+  const setCommandStatus = useCallback(
+    (
+      step: AutomationStep | undefined,
+      status: CommandRunState["status"],
+      message: string,
+      runId?: string | null,
+      suggestion?: string,
+    ) => {
+      if (!step?.id) return;
+      setCommandRunStates((current) => ({
+        ...current,
+        [step.id as string]: {
+          message,
+          runId: runId ?? null,
+          status,
+          suggestion,
+          updatedAt: new Date().toISOString(),
+        },
+      }));
+    },
+    [],
+  );
+
+  const logCommandRunStarted = useCallback(
+    (steps: AutomationStep[], runId: string | null, prefix = "Running command") => {
+      steps.forEach((step, index) => {
+        const label = commandConsoleLabel(step, index);
+        setCommandStatus(step, "running", "Running", runId);
+        appendLog(`${prefix} ${index + 1}/${steps.length}: ${label}`);
+      });
+    },
+    [appendLog, commandConsoleLabel, setCommandStatus],
+  );
+
+  const applyCompanionCommandResults = useCallback(
+    (steps: AutomationStep[], results: CompanionStepResult[] | undefined, runId: string | null) => {
+      if (!results?.length) {
+        steps.forEach((step, index) => {
+          const label = commandConsoleLabel(step, index);
+          setCommandStatus(step, "passed", "Passed", runId);
+          appendLog(`Command ${index + 1}/${steps.length} passed: ${label}`);
+        });
+        return;
+      }
+
+      for (const result of results) {
+        const index = typeof result.index === "number" ? result.index : -1;
+        const step =
+          (result.stepId
+            ? steps.find((item) => item.id === result.stepId)
+            : null) ??
+          (index >= 0 ? steps[index] : undefined);
+        const displayIndex = index >= 0 ? index + 1 : step ? steps.indexOf(step) + 1 : 0;
+        const label = step
+          ? commandConsoleLabel(step, Math.max(0, displayIndex - 1))
+          : `Command ${displayIndex || "?"}`;
+
+        if (result.status === "failed") {
+          const error = result.error || "Command failed.";
+          setCommandStatus(step, "failed", error, runId);
+          appendLog(`Command ${displayIndex || "?"}/${steps.length} failed: ${label}. ${error}`);
+          const outputLine = commandConsoleOutputLineForStep(step, result.output);
+          if (outputLine) appendLog(outputLine);
+          for (const detailLine of commandConsoleDetailLinesForStep(step, result.output)) {
+            appendLog(detailLine);
+          }
+          continue;
+        }
+
+        setCommandStatus(step, "passed", "Passed", runId);
+        appendLog(`Command ${displayIndex || "?"}/${steps.length} passed: ${label}`);
+        const outputLine = commandConsoleOutputLineForStep(step, result.output);
+        if (outputLine) appendLog(outputLine);
+        for (const detailLine of commandConsoleDetailLinesForStep(step, result.output)) {
+          appendLog(detailLine);
+        }
+      }
+    },
+    [appendLog, commandConsoleLabel, setCommandStatus],
+  );
 
   useEffect(() => {
     if (!timelineMenu) return;
@@ -2290,6 +4032,20 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [locatorFlyout]);
+
+  useEffect(() => {
+    if (!liveCommandMenu) return;
+    const close = () => setLiveCommandMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [liveCommandMenu]);
 
   useEffect(() => {
     if (!scenario || targetInitializedForScenario.current === scenarioId) return;
@@ -2377,6 +4133,47 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     return normalizeSteps(data.scenario.steps);
   }, [projectKey, scenarioId]);
 
+  const readLatestScenarioSteps = useCallback(async () => {
+    const response = await fetch(
+      `/api/automation/projects/${encodeURIComponent(projectKey)}/scenarios/${encodeURIComponent(scenarioId)}`,
+      { cache: "no-store" },
+    );
+    const data = await readJsonResponse<{
+      error?: string;
+      scenario?: AutomationScenario;
+    }>(response, {});
+    if (!response.ok || !data.scenario) {
+      throw new Error(data.error || "Could not load latest scenario.");
+    }
+    return normalizeSteps(data.scenario.steps);
+  }, [projectKey, scenarioId]);
+
+  const runtimeScenarioSteps = useCallback(async () => {
+    let latestSteps: AutomationStep[] = [];
+    try {
+      latestSteps = await readLatestScenarioSteps();
+    } catch (error) {
+      appendLog(error instanceof Error ? error.message : "Could not load latest saved commands.");
+    }
+    return mergeStepsById([...scenarioSteps, ...liveSteps, ...latestSteps]);
+  }, [appendLog, liveSteps, readLatestScenarioSteps, scenarioSteps]);
+
+  const persistRecorderEvents = useCallback(
+    (recorderEvents: RecorderEvent[]) => {
+      const recordedSteps = recorderEvents
+        .map(eventToStep)
+        .filter(Boolean) as AutomationStep[];
+      if (!recordedSteps.length) return;
+      const nextSteps = withoutAdjacentDuplicateNavigations(
+        mergeStepsById([...scenarioSteps, ...liveSteps, ...recordedSteps]),
+      );
+      void persistSteps(nextSteps, { skipUndo: true }).catch((error) => {
+        appendLog(error instanceof Error ? error.message : "Could not persist recorded commands.");
+      });
+    },
+    [appendLog, liveSteps, persistSteps, scenarioSteps],
+  );
+
   const undoLastTimelineChange = useCallback(async () => {
     const snapshot = undoStack.at(-1);
     if (!snapshot) {
@@ -2457,8 +4254,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             {
               data: defaultParameterData(parameters),
               enabled: true,
+              expectedResult: "",
               id: makeTestCaseId(),
               name: "Test Case 1",
+              priority: "medium",
+              tags: [],
             },
           ],
     );
@@ -2542,7 +4342,37 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     async (reason = "Browser session closed") => {
       if (!session?.sessionId) return;
       const sessionId = session.sessionId;
+      const isCompanionSession = isCompanionPreviewSession(session);
       setSession(null);
+      setVerifyPicking(false);
+      setRunStatus("idle");
+      try {
+        if (isCompanionSession) {
+          await companionBrowserRequest({
+            body: JSON.stringify({
+              action: "stop",
+              sessionId,
+            }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+          }).catch(() => undefined);
+        } else {
+          await fetch(`/api/automation/sessions/${encodeURIComponent(sessionId)}`, {
+            method: "DELETE",
+          });
+        }
+        appendLog(reason);
+      } catch (error) {
+        appendLog(error instanceof Error ? error.message : "Could not close browser session.");
+      }
+    },
+    [appendLog, session],
+  );
+
+  const closeSessionById = useCallback(
+    async (sessionId: string, reason = "Browser session closed") => {
+      if (!sessionId) return;
+      setSession((current) => (current?.sessionId === sessionId ? null : current));
       setVerifyPicking(false);
       setRunStatus("idle");
       try {
@@ -2554,10 +4384,43 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         appendLog(error instanceof Error ? error.message : "Could not close browser session.");
       }
     },
-    [appendLog, session?.sessionId],
+    [appendLog],
   );
 
   const setSessionRecorderMode = async (sessionId: string, mode: "off" | "record" | "verify") => {
+    if (session?.sessionId === sessionId && isCompanionPreviewSession(session)) {
+      if (mode === "off") {
+        setSession((current) =>
+          current && isCompanionPreviewSession(current)
+            ? {
+                ...current,
+                metadata: {
+                  ...(current.metadata ?? {}),
+                  recorderMode: "off",
+                },
+                status: current.status === "recording" ? "previewing" : current.status,
+              }
+            : current,
+        );
+        return session;
+      }
+      const data = await companionBrowserRequest({
+        body: JSON.stringify({
+          action: mode === "record" ? "resume" : "start",
+          sessionId,
+          startUrl: cleanUrlAuth(targetUrl),
+          viewport: viewportForRunConfig(runConfig),
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const sessionMetadata = companionSessionMetadata(data, data.url || targetUrl);
+      if (!sessionMetadata?.sessionId) {
+        throw new Error(data.error || "CaseForge Companion did not return a browser session.");
+      }
+      setSession(sessionMetadata);
+      return sessionMetadata;
+    }
     const response = await fetch(`/api/automation/sessions/${encodeURIComponent(sessionId)}/recorder-mode`, {
       body: JSON.stringify({ mode }),
       headers: { "Content-Type": "application/json" },
@@ -2580,7 +4443,14 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     try {
       const url = normalizeUrl(targetUrl);
       if (shouldUseLegacyDesktopBridge(url)) {
-        appendLog("Verify picker is available in the Playwright browser session.");
+        if (!isUsableBrokerSession(session) || !isCompanionPreviewSession(session)) {
+          appendLog("Start Live Preview or Recorder before adding a verification in Companion.");
+          return;
+        }
+        setRecordingSessionId(session.sessionId);
+        setVerifyPicking(true);
+        setRecorderState("verifyingTarget");
+        appendLog("Verify mode is attached to the current Companion session. Use Live Inspector to choose a target, then add an assertion command.");
         return;
       }
       const activeSession = isUsableBrokerSession(session) ? session : await createSession(url);
@@ -2588,10 +4458,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       setProviderEventCaptureAfter(new Date().toISOString());
       setRecordingSessionId(activeSession.sessionId);
       setVerifyPicking(true);
+      setRecorderState("verifyingTarget");
       await setSessionRecorderMode(activeSession.sessionId, "verify");
       appendLog("Verify mode started. Move over the browser, then click the element to verify.");
     } catch (error) {
       setVerifyPicking(false);
+      setRecorderState(recording ? "recording" : "idle");
       appendLog(error instanceof Error ? error.message : "Could not start verify mode.");
     } finally {
       setBusy(false);
@@ -2601,6 +4473,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const cancelVerifyCapture = async () => {
     const sessionId = recordingSessionId || session?.sessionId;
     setVerifyPicking(false);
+    setRecorderState(recording ? "recording" : "idle");
     if (!recording) {
       setRecordingSessionId(null);
       setProviderEventCaptureAfter(null);
@@ -2616,15 +4489,19 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     setBusy(true);
     const url = cleanUrlAuth(targetUrl);
     try {
-      const navigateStep = makeNavigateStep(url);
-      if (!visibleSteps.some((step) => step.action === "navigate" && step.target.value === url)) {
-        void persistSteps([...finalizedSteps, navigateStep]);
-      }
-      if (!shouldUseLegacyDesktopBridge(url)) {
+      const useLegacyBridge = shouldUseLegacyDesktopBridge(url);
+      if (!useLegacyBridge) {
+        const navigateStep = makeNavigateStep(url);
+        if (!visibleSteps.some((step) => step.action === "navigate" && step.target.value === url)) {
+          void persistSteps([...finalizedSteps, navigateStep]);
+        }
         if (session?.sessionId) {
           await closeSession("Previous browser session closed.");
         }
-        await createSession(url);
+        await createSession(url, {
+          browserMode: runConfig.browserMode,
+          viewport: viewportForRunConfig(runConfig),
+        });
         return;
       }
       const data = await companionBrowserRequest({
@@ -2633,6 +4510,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           httpCredentials: authFromUrl(targetUrl),
           scenarioId,
           startUrl: url,
+          viewport: viewportForRunConfig(runConfig),
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -2644,6 +4522,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       setRecording(true);
       setRecordingPaused(false);
       setRecordingSessionId(data.sessionId);
+      setSession(companionSessionMetadata(data, url));
+      setLivePreviewFailed(false);
       setEvents(companionCommandsToRecorderEvents(data.commands));
       if (data.logs) setLogs(data.logs.slice(-50));
       appendLog(`CaseForge Companion opened ${url}`);
@@ -2661,15 +4541,16 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       if (!shouldUseLegacyDesktopBridge(url)) {
         if (recordingActive) {
           let recordedEvents = events;
-          if (session?.sessionId && session.sessionId === recordingSessionId) {
-            await setSessionRecorderMode(session.sessionId, "off").catch(() => undefined);
+          const stoppedSessionId = recordingSessionId || session?.sessionId || "";
+          if (stoppedSessionId) {
+            await setSessionRecorderMode(stoppedSessionId, "off").catch(() => undefined);
             recordedEvents = mergeRecorderEvents([
               ...recordedEvents,
-              ...(await fetchSessionRecorderEvents(session.sessionId)),
+              ...(await fetchSessionRecorderEvents(stoppedSessionId)),
             ]);
           }
           const recordedSteps = recordedEvents.map(eventToStep).filter(Boolean) as AutomationStep[];
-          const nextSteps = mergeStepsById([...finalizedSteps, ...recordedSteps]);
+          const nextSteps = withoutAdjacentDuplicateNavigations(mergeStepsById([...finalizedSteps, ...recordedSteps]));
           if (recordedSteps.length) {
             const selectedActionSteps = actionCandidateSteps(nextSteps).filter((step) =>
               recordedSteps.some((recordedStep) => recordedStep.id === step.id),
@@ -2694,7 +4575,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           setRecordingSessionId(null);
           setProviderEventCaptureAfter(null);
           setEvents([]);
-          await closeSession(
+          await closeSessionById(
+            stoppedSessionId,
             recordedSteps.length
               ? `Recording stopped. Saved ${recordedSteps.length} new command${
                   recordedSteps.length === 1 ? "" : "s"
@@ -2707,7 +4589,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         setRecordingPaused(false);
         ignoredRecorderStepIdsRef.current = new Set();
         appendLog("Starting recording...");
-        const activeSession = isUsableBrokerSession(session) ? session : await createSession();
+        const activeSession = isUsableBrokerSession(session)
+          ? session
+          : await createSession(undefined, {
+              browserMode: runConfig.browserMode,
+              viewport: viewportForRunConfig(runConfig),
+            });
         if (!activeSession.sessionId) throw new Error("Browser session was not created.");
         setProviderEventCaptureAfter(new Date().toISOString());
         setRecordingSessionId(activeSession.sessionId);
@@ -2727,6 +4614,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             httpCredentials: authFromUrl(targetUrl),
             scenarioId,
             startUrl: url,
+            viewport: viewportForRunConfig(runConfig),
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -2736,6 +4624,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         }
         companionCursorRef.current = data.cursor ?? 0;
         setRecordingSessionId(data.sessionId);
+        setSession(companionSessionMetadata(data, url));
+        setLivePreviewFailed(false);
         setProviderEventCaptureAfter(null);
         setEvents(companionCommandsToRecorderEvents(data.commands));
         if (data.logs) setLogs(data.logs.slice(-50));
@@ -2756,7 +4646,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         ...companionCommandsToRecorderEvents(data.commands),
       ]);
       const recordedSteps = recordedEvents.map(eventToStep).filter(Boolean) as AutomationStep[];
-      const nextSteps = mergeStepsById([...finalizedSteps, ...recordedSteps]);
+      const nextSteps = withoutAdjacentDuplicateNavigations(mergeStepsById([...finalizedSteps, ...recordedSteps]));
       if (recordedSteps.length) {
         const selectedActionSteps = actionCandidateSteps(nextSteps).filter((step) =>
           recordedSteps.some((recordedStep) => recordedStep.id === step.id),
@@ -2817,6 +4707,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     setLocatorTestResult("");
     setLocatorFlyout(null);
     setTimelineMenu(null);
+    setCommandInsertMenu(null);
     setSelectedStepId(null);
   };
 
@@ -2953,6 +4844,111 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     );
   };
 
+  const updateCommandSchemaParameter = (
+    stepId: string,
+    parameter: AutomationCommandParameterDefinition,
+    rawValue: unknown,
+  ) => {
+    updateStep(stepId, (step) => {
+      const action = displayAction(step.action);
+      const primaryParameter = primaryValueParameterForCommand(action);
+      const options = {
+        ...step.options,
+        [parameter.name]: rawValue,
+      };
+      if (parameter.name === "locator") {
+        return {
+          ...step,
+          options,
+          target: {
+            ...step.target,
+            value: String(rawValue ?? ""),
+          },
+        };
+      }
+      if (primaryParameter?.name === parameter.name) {
+        const value = String(rawValue ?? "");
+        return {
+          ...step,
+          inputValue: value,
+          options: {
+            ...options,
+            parameterName: exactParameterNameFromText(value) || undefined,
+          },
+        };
+      }
+      if (parameter.name === "expected" || parameter.name === "expectedText") {
+        return {
+          ...step,
+          expectedValue: String(rawValue ?? ""),
+          options,
+        };
+      }
+      return {
+        ...step,
+        options,
+      };
+    });
+  };
+
+  const convertStepValueToParameter = async (step: AutomationStep) => {
+    const currentValue = textValue(step.inputValue);
+    const existingName = exactParameterNameFromText(currentValue);
+    const suggestedName =
+      existingName ||
+      textValue(step.target?.displayName || step.element?.labelText || step.element?.placeholder || "value")
+        .replace(/[^a-zA-Z0-9]+(.)/g, (_match, char: string) => char.toUpperCase())
+        .replace(/^[^a-zA-Z_]+/, "")
+        .replace(/^./, (char) => char.toLowerCase()) ||
+      "value";
+    const enteredName =
+      typeof window !== "undefined"
+        ? window.prompt("Parameter name", suggestedName)
+        : suggestedName;
+    const parameterName = textValue(enteredName).replace(/[{}\s]/g, "");
+    if (!parameterName) return;
+    const currentParameters = mergeParametersWithInferred(scenarioParameters, [parameterName]).map((parameter) =>
+      parameter.name === parameterName
+        ? {
+            ...parameter,
+            defaultValue: parameter.defaultValue || (existingName ? "" : currentValue),
+            required: true,
+          }
+        : parameter,
+    );
+    const currentTestCases = scenarioTestCases.length
+      ? scenarioTestCases.map((testCase) => ({
+          ...testCase,
+          data: {
+            ...testCase.data,
+            [parameterName]: testCase.data?.[parameterName] ?? (existingName ? "" : currentValue),
+          },
+        }))
+      : [];
+    updateStep(step.id, (current) => ({
+      ...current,
+      inputValue: parameterToken(parameterName),
+      options: {
+        ...current.options,
+        isResolvedAtRuntime: true,
+        isSecret: false,
+        parameterName,
+        valueReference: parameterName,
+        valueSource: "testData",
+        valueType: "testData",
+      },
+    }));
+    try {
+      await persistScenarioMetadata({
+        automationParameters: currentParameters,
+        testCases: currentTestCases,
+      });
+      appendLog(`Converted value to required scenario parameter {{${parameterName}}}.`);
+    } catch (error) {
+      appendLog(error instanceof Error ? error.message : "Could not save parameter.");
+    }
+  };
+
   const saveCommandPrompt = async () => {
     if (!selectedStep) {
       setCommandPromptError("Select a command before saving.");
@@ -3080,6 +5076,1054 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
 
   const openRecordModal = () => openRuntimeModal("record");
 
+  const inspectLivePoint = useCallback(async (x: number, y: number) => {
+    if (!session?.sessionId || !session.liveViewUrl) return;
+    liveInspectorAbortRef.current?.abort();
+    const controller = new AbortController();
+    liveInspectorAbortRef.current = controller;
+    setLiveInspectorBusy(true);
+    try {
+      const inspectUrl = isCompanionPreviewSession(session)
+        ? companionPreviewUrl(session, "inspect")
+        : `/api/automation/sessions/${encodeURIComponent(session.sessionId)}/inspect`;
+      const response = await fetch(
+        inspectUrl,
+        {
+          body: JSON.stringify({ x, y }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+          signal: controller.signal,
+        },
+      );
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        result?: LiveInspectorResult;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || "Could not inspect live browser point.");
+      }
+      setLiveInspectorResult(data.result ?? null);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      appendLog(error instanceof Error ? error.message : "Could not inspect live browser point.");
+    } finally {
+      if (liveInspectorAbortRef.current === controller) {
+        setLiveInspectorBusy(false);
+      }
+    }
+  }, [appendLog, session?.liveViewUrl, session?.sessionId]);
+
+  const clientPointToBrowserPoint = useCallback((clientX: number, clientY: number) => {
+    const media = livePreviewImageRef.current;
+    if (!media) return null;
+    const naturalWidth = media.naturalWidth || 1280;
+    const naturalHeight = media.naturalHeight || 720;
+    const rect = media.getBoundingClientRect();
+    const localX = clientX - rect.left;
+    const localY = clientY - rect.top;
+    if (
+      localX < 0 ||
+      localY < 0 ||
+      localX > rect.width ||
+      localY > rect.height
+    ) {
+      return null;
+    }
+    return {
+      x: Math.round((localX / Math.max(rect.width, 1)) * naturalWidth),
+      y: Math.round((localY / Math.max(rect.height, 1)) * naturalHeight),
+    };
+  }, []);
+
+  const mediaPointerToBrowserPoint = useCallback((event: MouseEvent<HTMLElement>) => {
+    return clientPointToBrowserPoint(event.clientX, event.clientY);
+  }, [clientPointToBrowserPoint]);
+
+  const handleLiveInspectorMove = useCallback((event: MouseEvent<HTMLElement>) => {
+    if (!liveInspectorEnabled || !session?.sessionId || workspaceTab !== "browser") return;
+    if (liveCommandMenu) return;
+    const point = mediaPointerToBrowserPoint(event);
+    if (!point) {
+      setLiveInspectorResult(null);
+      return;
+    }
+    if (liveInspectorTimerRef.current) {
+      window.clearTimeout(liveInspectorTimerRef.current);
+    }
+    liveInspectorTimerRef.current = window.setTimeout(() => {
+      void inspectLivePoint(point.x, point.y);
+    }, 180);
+  }, [
+    inspectLivePoint,
+    liveInspectorEnabled,
+    liveCommandMenu,
+    mediaPointerToBrowserPoint,
+    session?.sessionId,
+    workspaceTab,
+  ]);
+
+  const requestLivePreviewScroll = useCallback(async (
+    deltaX: number,
+    deltaY: number,
+    point?: { x: number; y: number } | null,
+    targetY?: number,
+  ) => {
+    if (
+      !session?.sessionId ||
+      workspaceTab !== "browser" ||
+      liveCommandMenu ||
+      !isCompanionPreviewSession(session)
+    ) {
+      return;
+    }
+
+    const socket = livePreviewSocketRef.current;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        deltaX,
+        deltaY,
+        targetY,
+        type: targetY === undefined ? "scroll" : "scrollTo",
+        x: point?.x,
+        y: point?.y,
+      }));
+      return;
+    }
+
+    await fetch(companionPreviewUrl(session, "scroll"), {
+      body: JSON.stringify({
+        deltaX,
+        deltaY,
+        targetY,
+        x: point?.x,
+        y: point?.y,
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    })
+      .then(async (response) => {
+        const data = (await response.json().catch(() => ({}))) as {
+          activeTabId?: string | null;
+          error?: string;
+          scroll?: { maxY?: number; y?: number };
+          tabs?: CompanionPreviewTab[];
+          url?: string;
+        };
+        if (!response.ok) throw new Error(data.error || "Could not scroll live preview.");
+        if (data.url || data.tabs || data.activeTabId !== undefined) {
+          setSession((current) =>
+            patchCompanionSession(current, {
+              activeTabId: data.activeTabId,
+              tabs: data.tabs,
+              url: data.url,
+            }),
+          );
+        }
+        if (data.scroll) {
+          setLivePreviewScroll({
+            maxY: Math.max(0, Number(data.scroll.maxY ?? 0)),
+            y: Math.max(0, Number(data.scroll.y ?? 0)),
+          });
+        }
+        setLivePreviewTick(Date.now());
+      })
+      .catch((error) => {
+        appendLog(error instanceof Error ? error.message : "Could not scroll live preview.");
+      });
+  }, [
+    appendLog,
+    liveCommandMenu,
+    session,
+    workspaceTab,
+  ]);
+
+  const requestLivePreviewInteraction = useCallback(async (
+    type: "click" | "doubleClick" | "key" | "rightClick",
+    point?: { x: number; y: number } | null,
+    keyData?: {
+      altKey?: boolean;
+      ctrlKey?: boolean;
+      key?: string;
+      metaKey?: boolean;
+      text?: string;
+    },
+  ) => {
+    if (
+      !session?.sessionId ||
+      workspaceTab !== "browser" ||
+      liveCommandMenu ||
+      !isCompanionPreviewSession(session)
+    ) {
+      return;
+    }
+
+    const payload = {
+      ...(keyData ?? {}),
+      type,
+      x: point?.x,
+      y: point?.y,
+    };
+    await fetch(companionPreviewUrl(session, "interact"), {
+      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    })
+      .then(async (response) => {
+        const data = (await response.json().catch(() => ({}))) as {
+          activeTabId?: string | null;
+          error?: string;
+          scroll?: { maxY?: number; y?: number };
+          tabs?: CompanionPreviewTab[];
+          url?: string;
+        };
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+              "Could not interact with live preview. Restart or update CaseForge Companion, then try again.",
+          );
+        }
+        if (data.url || data.tabs || data.activeTabId !== undefined) {
+          setSession((current) =>
+            patchCompanionSession(current, {
+              activeTabId: data.activeTabId,
+              tabs: data.tabs,
+              url: data.url,
+            }),
+          );
+        }
+        if (data.scroll) {
+          setLivePreviewScroll({
+            maxY: Math.max(0, Number(data.scroll.maxY ?? 0)),
+            y: Math.max(0, Number(data.scroll.y ?? 0)),
+          });
+        }
+        setLivePreviewTick(Date.now());
+      })
+      .catch((error) => {
+        appendLog(error instanceof Error ? error.message : "Could not interact with live preview.");
+      });
+  }, [
+    appendLog,
+    liveCommandMenu,
+    session,
+    workspaceTab,
+  ]);
+
+  const requestLiveBrowserCommand = useCallback(async (
+    command: "back" | "forward" | "reload" | "navigate" | "newTab" | "closeTab",
+    url?: string,
+  ) => {
+    if (!session?.sessionId || !canControlLiveBrowser) {
+      appendLog("Start a Companion Live Preview before using browser controls.");
+      return;
+    }
+
+    setBrowserNavBusy(true);
+    try {
+      const socket = livePreviewSocketRef.current;
+      if (
+        command !== "closeTab" &&
+        socket?.readyState === WebSocket.OPEN
+      ) {
+        socket.send(JSON.stringify({
+          command,
+          type: "browserCommand",
+          url,
+        }));
+        setLivePreviewFailed(false);
+        setLivePreviewTick(Date.now());
+        if (command === "newTab") setLivePreviewTabsExpanded(true);
+        window.setTimeout(() => setBrowserNavBusy(false), 700);
+        return;
+      }
+
+      const response = await fetch(`${localAgentUrl}/automation/browser`, {
+        body: JSON.stringify({
+          action: command === "closeTab" ? "closePage" : "browserCommand",
+          command,
+          sessionId: session.sessionId,
+          url,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const data = await readJsonResponse<CompanionBrowserResponse & { closed?: boolean }>(
+        response,
+        {},
+      );
+      if (!response.ok) {
+        throw new Error(data.error || "Could not control Live Preview browser.");
+      }
+      if (data.status === "stopped") {
+        setSession(null);
+        setRecording(false);
+        setRecordingSessionId("");
+      } else {
+        setSession((current) =>
+          companionSessionMetadata(
+            data,
+            data.currentUrl || data.url || current?.currentUrl || browserAddressDraft || targetUrl,
+          ) ?? current,
+        );
+      }
+      setLivePreviewFailed(false);
+      setLivePreviewTick(Date.now());
+      if (command === "newTab") setLivePreviewTabsExpanded(true);
+    } catch (error) {
+      appendLog(error instanceof Error ? error.message : "Could not control Live Preview browser.");
+    } finally {
+      setBrowserNavBusy(false);
+    }
+  }, [
+    appendLog,
+    browserAddressDraft,
+    canControlLiveBrowser,
+    session?.sessionId,
+    targetUrl,
+  ]);
+
+  const submitLiveBrowserAddress = useCallback((event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextUrl = normalizeUrl(browserAddressDraft);
+    setBrowserAddressDraft(nextUrl);
+    void requestLiveBrowserCommand("navigate", nextUrl);
+  }, [browserAddressDraft, requestLiveBrowserCommand]);
+
+  const switchLivePreviewTab = useCallback(async (tabId: string) => {
+    if (
+      !tabId ||
+      !session?.sessionId ||
+      workspaceTab !== "browser" ||
+      !isCompanionPreviewSession(session)
+    ) {
+      return;
+    }
+    try {
+      const response = await fetch(`${localAgentUrl}/automation/browser`, {
+        body: JSON.stringify({
+          action: "switchTab",
+          sessionId: session.sessionId,
+          tabId,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const data = await readJsonResponse<CompanionBrowserResponse>(response, {});
+      if (!response.ok) {
+        throw new Error(data.error || "Could not switch Live Preview tab.");
+      }
+      setSession((current) =>
+        companionSessionMetadata(
+          data,
+          data.currentUrl || data.url || current?.currentUrl || targetUrl,
+        ) ?? current,
+      );
+      setLivePreviewTick(Date.now());
+    } catch (error) {
+      appendLog(error instanceof Error ? error.message : "Could not switch Live Preview tab.");
+    }
+  }, [appendLog, session, targetUrl, workspaceTab]);
+
+  const startLivePreviewWheelPump = useCallback(() => {
+    if (
+      !session?.sessionId ||
+      workspaceTab !== "browser" ||
+      liveCommandMenu ||
+      !isCompanionPreviewSession(session)
+    ) {
+      return;
+    }
+
+    if (livePreviewWheelTimerRef.current) return;
+
+    livePreviewWheelTimerRef.current = window.setInterval(() => {
+      if (livePreviewWheelInFlightRef.current) return;
+      const next = livePreviewWheelDeltaRef.current;
+      const hasDelta = Math.abs(next.deltaX) >= 0.5 || Math.abs(next.deltaY) >= 0.5;
+      if (!hasDelta) {
+        if (livePreviewWheelTimerRef.current) {
+          window.clearInterval(livePreviewWheelTimerRef.current);
+          livePreviewWheelTimerRef.current = null;
+        }
+        return;
+      }
+
+      livePreviewWheelDeltaRef.current = { deltaX: 0, deltaY: 0, point: null };
+      livePreviewWheelInFlightRef.current = true;
+      void requestLivePreviewScroll(next.deltaX, next.deltaY, next.point)
+        .finally(() => {
+          livePreviewWheelInFlightRef.current = false;
+        });
+    }, 16);
+  }, [
+    liveCommandMenu,
+    requestLivePreviewScroll,
+    session,
+    workspaceTab,
+  ]);
+
+  const queueLivePreviewWheel = useCallback((
+    deltaX: number,
+    deltaY: number,
+    point: { x: number; y: number } | null,
+  ) => {
+    livePreviewWheelDeltaRef.current = {
+      deltaX: livePreviewWheelDeltaRef.current.deltaX + deltaX,
+      deltaY: livePreviewWheelDeltaRef.current.deltaY + deltaY,
+      point,
+    };
+    setLivePreviewScroll((current) => ({
+      maxY: current.maxY,
+      y: Math.min(Math.max(0, current.maxY || 0), Math.max(0, current.y + deltaY)),
+    }));
+    setLivePreviewTick(Date.now());
+    startLivePreviewWheelPump();
+  }, [startLivePreviewWheelPump]);
+
+  const handleLivePreviewWheel = useCallback((event: ReactWheelEvent<HTMLElement>) => {
+    if (
+      !session?.sessionId ||
+      workspaceTab !== "browser" ||
+      liveCommandMenu ||
+      !isCompanionPreviewSession(session)
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  }, [
+    liveCommandMenu,
+    session,
+    workspaceTab,
+  ]);
+
+  useEffect(() => {
+    const container = livePreviewContainerRef.current;
+    if (
+      !container ||
+      !session?.sessionId ||
+      workspaceTab !== "browser" ||
+      liveCommandMenu ||
+      !isCompanionPreviewSession(session)
+    ) {
+      return;
+    }
+
+    const handleNativeWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const point =
+        clientPointToBrowserPoint(event.clientX, event.clientY) ?? {
+          x: Math.round(activeLivePreviewSize.viewport.width / 2),
+          y: Math.round(activeLivePreviewSize.viewport.height / 2),
+        };
+      const deltaScale =
+        event.deltaMode === 1
+          ? 16
+          : event.deltaMode === 2
+            ? activeLivePreviewSize.viewport.height
+            : 1;
+      const deltaX = event.deltaX * deltaScale;
+      const deltaY = event.deltaY * deltaScale;
+      queueLivePreviewWheel(deltaX, deltaY, point);
+    };
+
+    container.addEventListener("wheel", handleNativeWheel, { passive: false });
+    return () => {
+      container.removeEventListener("wheel", handleNativeWheel);
+    };
+  }, [
+    activeLivePreviewSize.viewport.height,
+    activeLivePreviewSize.viewport.width,
+    clientPointToBrowserPoint,
+    liveCommandMenu,
+    queueLivePreviewWheel,
+    session,
+    workspaceTab,
+  ]);
+
+  const handleLivePreviewSliderChange = useCallback((value: number) => {
+    const targetY = Math.max(0, value);
+    setLivePreviewScroll((current) => ({
+      maxY: current.maxY,
+      y: Math.min(Math.max(0, current.maxY || targetY), targetY),
+    }));
+    if (livePreviewSliderTimerRef.current) {
+      window.clearTimeout(livePreviewSliderTimerRef.current);
+    }
+    livePreviewSliderTimerRef.current = window.setTimeout(() => {
+      livePreviewSliderTimerRef.current = null;
+      requestLivePreviewScroll(0, 0, null, targetY);
+    }, 55);
+  }, [requestLivePreviewScroll]);
+
+  const handleLivePreviewKeyDown = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
+    if (
+      !session?.sessionId ||
+      workspaceTab !== "browser" ||
+      liveCommandMenu ||
+      !isCompanionPreviewSession(session)
+    ) {
+      return;
+    }
+
+    if (!liveInspectorEnabled) {
+      event.preventDefault();
+      event.stopPropagation();
+      const text =
+        event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey
+          ? event.key
+          : undefined;
+      void requestLivePreviewInteraction("key", null, {
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey,
+        key: event.key,
+        metaKey: event.metaKey,
+        text,
+      });
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      requestLivePreviewScroll(0, 0, null, 0);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      requestLivePreviewScroll(0, 0, null, livePreviewScroll.maxY || activeLivePreviewSize.viewport.height);
+      return;
+    }
+
+    const keyboardScrollMap: Record<string, number> = {
+      " ": activeLivePreviewSize.viewport.height * 0.78,
+      ArrowDown: 120,
+      ArrowUp: -120,
+      PageDown: activeLivePreviewSize.viewport.height * 0.78,
+      PageUp: activeLivePreviewSize.viewport.height * -0.78,
+    };
+    const deltaY = keyboardScrollMap[event.key];
+    if (deltaY === undefined) return;
+
+    event.preventDefault();
+    requestLivePreviewScroll(0, deltaY, {
+      x: Math.round(activeLivePreviewSize.viewport.width / 2),
+      y: Math.round(activeLivePreviewSize.viewport.height / 2),
+    });
+  }, [
+    activeLivePreviewSize.viewport.height,
+    activeLivePreviewSize.viewport.width,
+    liveCommandMenu,
+    livePreviewScroll.maxY,
+    liveInspectorEnabled,
+    requestLivePreviewInteraction,
+    requestLivePreviewScroll,
+    session,
+    workspaceTab,
+  ]);
+
+  const handleLiveInspectorClick = useCallback((event: MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const point = mediaPointerToBrowserPoint(event);
+    if (point) void requestLivePreviewInteraction("click", point);
+  }, [
+    mediaPointerToBrowserPoint,
+    requestLivePreviewInteraction,
+  ]);
+
+  const handleLivePreviewDoubleClick = useCallback((event: MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const point = mediaPointerToBrowserPoint(event);
+    if (point) void requestLivePreviewInteraction("doubleClick", point);
+  }, [mediaPointerToBrowserPoint, requestLivePreviewInteraction]);
+
+  const liveInspectorSnapshot = (result: LiveInspectorResult) => {
+    const element = (result.element ?? {}) as Record<string, unknown>;
+    const candidates = rankedLocators(result.locatorCandidates ?? []);
+    const bestLocator = candidates[0];
+    const directLabel = textValue(
+      element.label ||
+        element.ariaLabel ||
+        element.labelText ||
+        element.placeholder ||
+        element.title ||
+        element.text,
+    );
+    const tag = textValue(element.tag).toLowerCase();
+    const role = textValue(element.role).toLowerCase();
+    const inputType = textValue(element.inputType).toLowerCase();
+    const genericLabel =
+      tag === "select" || role === "combobox"
+        ? "Dropdown"
+        : inputType === "password"
+          ? "Password field"
+          : inputType === "email"
+            ? "Email field"
+            : inputType === "checkbox" || role === "checkbox"
+              ? "Checkbox"
+              : inputType === "radio" || role === "radio"
+                ? "Radio button"
+                : tag === "input" || tag === "textarea" || role === "textbox"
+                  ? "Text field"
+                  : role === "button" || tag === "button"
+                    ? "Button"
+                    : role === "link" || tag === "a"
+                      ? "Link"
+                      : "Element";
+    const label =
+      directLabel && !isGenericElementLabel(directLabel)
+        ? elementName(element as AutomationStep["element"], directLabel)
+        : genericLabel;
+    const elementKind = textValue(
+      element.elementKind || element.inputType || element.role || element.tag || "element",
+    );
+    return {
+      bestLocator,
+      candidates,
+      label,
+      snapshot: {
+        ...element,
+        elementKind,
+        label,
+        locatorCandidates: candidates,
+        pageUrl: result.page?.url,
+        text: textValue(element.text || element.label),
+        type: elementKind,
+      },
+      targetValue: bestLocator?.value || label,
+    };
+  };
+
+  const openLiveCommandMenu = useCallback((event: MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!liveInspectorEnabled) {
+      const point = mediaPointerToBrowserPoint(event);
+      if (point) void requestLivePreviewInteraction("rightClick", point);
+      return;
+    }
+    if (workspaceTab !== "browser") return;
+    const result = liveInspectorResult?.element
+      ? liveInspectorResult
+      : activeLiveInspectorResult?.element
+        ? activeLiveInspectorResult
+        : null;
+    const point = mediaPointerToBrowserPoint(event);
+    if (!result?.element) {
+      if (point) void inspectLivePoint(point.x, point.y);
+      appendLog("Hover an element until the live inspector detects it, then right-click to author a command.");
+      return;
+    }
+    setLiveInspectorSelected(result);
+    setLiveCommandMenu({
+      query: "",
+      result,
+      x: Math.max(12, Math.min(event.clientX, window.innerWidth - 420)),
+      y: Math.max(12, Math.min(event.clientY, window.innerHeight - 480)),
+    });
+  }, [
+    activeLiveInspectorResult,
+    appendLog,
+    inspectLivePoint,
+    liveInspectorEnabled,
+    liveInspectorResult,
+    mediaPointerToBrowserPoint,
+    requestLivePreviewInteraction,
+    workspaceTab,
+  ]);
+
+  const insertLivePreviewCommand = async (command: AutomationCommandDefinition) => {
+    const result = liveCommandMenu?.result ?? activeLiveInspectorResult;
+    if (!result?.element) return;
+    const normalizedAction = normalizeAutomationAction(command.normalizedAction || command.action);
+    const { bestLocator, candidates, label, snapshot, targetValue } = liveInspectorSnapshot(result);
+    const needsValue = ["fill", "select", "type"].includes(normalizedAction);
+    const adapterPending = !(command.executable && command.domain === "web");
+    const draftCommand: AutomationStep = {
+      action: normalizedAction,
+      commandText: "",
+      description: "",
+      element: snapshot as AutomationStep["element"],
+      expectedValue: normalizedAction === "assert" ? textValue(snapshot.text) : "",
+      id: `step_${crypto.randomUUID().replace(/-/g, "")}`,
+      inputValue:
+        normalizedAction === "navigate"
+          ? normalizeUrl(targetUrl)
+          : normalizedAction === "press"
+            ? "Enter"
+            : "",
+      locatorCandidates: candidates,
+      options: {
+        adapterPending,
+        insertedFromLivePreview: true,
+        outputVariableName: commandShowsOutputCapture(command)
+          ? commandOutputDefaultName(command)
+          : undefined,
+        valueRequired: needsValue,
+      },
+      target: {
+        displayName: label,
+        elementKind: textValue(snapshot.elementKind || "element"),
+        locatorType: locatorType(bestLocator),
+        type: "smart",
+        value: targetValue,
+      },
+    };
+    const commandText =
+      commandShowsOutputCapture(command)
+        ? commandPhraseForStep(draftCommand, command)
+        : liveCommandText(normalizedAction, label, command);
+    const nextCommand: AutomationStep = withLocatorQuality({
+      ...draftCommand,
+      commandText,
+      description: commandText,
+    });
+    const timelineSteps = mergeStepsById([...finalizedSteps, ...liveSteps]);
+    const selectedIndex = selectedStepId ? timelineSteps.findIndex((step) => step.id === selectedStepId) : -1;
+    const insertAt = selectedIndex >= 0 ? selectedIndex + 1 : timelineSteps.length;
+    await persistSteps([
+      ...timelineSteps.slice(0, insertAt),
+      nextCommand,
+      ...timelineSteps.slice(insertAt),
+    ]);
+    setSelectedStepId(nextCommand.id);
+    setSelectedStepIds(new Set([nextCommand.id]));
+    setDrawerOpen(true);
+    setCommandPromptError("");
+    setLiveCommandMenu(null);
+    appendLog(
+      adapterPending
+        ? `${command.label} added to the script. Execution adapter is pending.`
+        : `${command.label} added to the script from live preview.`,
+    );
+  };
+
+  const liveInspectorOverlayStyle = (result: LiveInspectorResult | null) => {
+    const container = livePreviewContainerRef.current;
+    if (!container || !result?.bounds) return undefined;
+    const media = livePreviewImageRef.current;
+    if (!media) return undefined;
+    const viewport = result.page?.viewport ?? {};
+    const viewportWidth = Number(viewport.width ?? 1280) || 1280;
+    const viewportHeight = Number(viewport.height ?? 720) || 720;
+    const containerRect = container.getBoundingClientRect();
+    const mediaRect = media.getBoundingClientRect();
+    const bounds = numericRect(result.bounds);
+    return {
+      height: `${Math.max(4, (bounds.height / viewportHeight) * mediaRect.height)}px`,
+      left: `${mediaRect.left - containerRect.left + container.scrollLeft + (bounds.x / viewportWidth) * mediaRect.width}px`,
+      top: `${mediaRect.top - containerRect.top + container.scrollTop + (bounds.y / viewportHeight) * mediaRect.height}px`,
+      width: `${Math.max(4, (bounds.width / viewportWidth) * mediaRect.width)}px`,
+    };
+  };
+
+  const renderLiveInspectorOverlay = () => {
+    if (!liveInspectorEnabled) return null;
+    const result = activeLiveInspectorResult;
+    const element = result?.element;
+    const overlayStyle = liveInspectorOverlayStyle(result);
+    const label = elementName(
+      element as AutomationStep["element"],
+      textValue(element?.elementKind || "Element"),
+      result?.page?.url,
+    );
+    const actions = (result?.suggestedActions ?? []).slice(0, 4);
+
+    return (
+      <>
+        {overlayStyle && element ? (
+          <div
+            className={`pointer-events-none absolute z-20 rounded-sm border-2 ${
+              liveInspectorSelected
+                ? "border-emerald-300 bg-emerald-300/20"
+                : "border-sky-300 bg-sky-300/20"
+            } shadow-[0_0_0_9999px_rgba(2,6,23,0.14)]`}
+            style={overlayStyle}
+          />
+        ) : null}
+        <div className="pointer-events-none absolute bottom-4 left-4 z-30 max-w-[min(420px,calc(100%-2rem))] rounded-2xl border border-zinc-700 bg-zinc-950/90 p-3 text-left text-xs text-zinc-100 shadow-2xl backdrop-blur">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-semibold uppercase tracking-[0.14em] text-sky-200">
+                {liveInspectorSelected ? "Selected Element" : "Live Inspector"}
+              </p>
+              <p className="mt-1 truncate text-sm font-semibold text-white">
+                {element ? label : liveInspectorBusy ? "Inspecting..." : "Hover over the browser preview"}
+              </p>
+            </div>
+            {liveInspectorSelected ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setLiveInspectorSelected(null);
+                }}
+                className="pointer-events-auto rounded-lg border border-zinc-700 px-2 py-1 font-semibold text-zinc-200 hover:bg-zinc-900"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+          {element ? (
+            <>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="rounded-full bg-sky-500/15 px-2 py-0.5 font-semibold text-sky-100">
+                  {textValue(element.elementKind || element.tag || "element")}
+                </span>
+                {textValue(element.role) ? (
+                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-200">
+                    role: {textValue(element.role)}
+                  </span>
+                ) : null}
+                {element.modal ? (
+                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-semibold text-emerald-100">
+                    modal
+                  </span>
+                ) : null}
+                {actions.map((action) => (
+                  <span key={action} className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-200">
+                    {commandDefinitionForAction(action)?.label || action}
+                  </span>
+                ))}
+              </div>
+              {activeLiveInspectorLocator ? (
+                <p className="mt-2 break-all font-mono text-[11px] text-zinc-300">
+                  {locatorType(activeLiveInspectorLocator)}={activeLiveInspectorLocator.value}
+                </p>
+              ) : null}
+              <p className="mt-2 text-[11px] text-zinc-400">
+                Click the preview to lock this element for command authoring.
+              </p>
+            </>
+          ) : null}
+        </div>
+      </>
+    );
+  };
+
+  const renderLivePreviewScrollControls = () => {
+    if (!session?.sessionId || !isCompanionPreviewSession(session)) return null;
+    const scrollMax = Math.max(1, livePreviewScroll.maxY || activeLivePreviewSize.viewport.height);
+    const scrollValue = Math.min(scrollMax, Math.max(0, livePreviewScroll.y));
+    return (
+      <div
+        className="absolute right-1 top-16 z-30 flex h-[calc(100%-7rem)] w-5 flex-col items-center rounded-full bg-zinc-950/20 py-1 opacity-60 transition hover:bg-zinc-950/70 hover:opacity-100"
+        onClick={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={() => requestLivePreviewScroll(0, 0, null, 0)}
+          className="h-5 w-4 rounded-full text-[9px] font-bold leading-none text-zinc-100 hover:bg-zinc-800"
+          title="Go to top of browser page"
+        >
+          T
+        </button>
+        <button
+          type="button"
+          onClick={() => requestLivePreviewScroll(0, -520)}
+          className="h-5 w-4 rounded-full text-[10px] font-bold leading-none text-zinc-100 hover:bg-zinc-800"
+          title="Scroll page up"
+        >
+          ^
+        </button>
+        <input
+          type="range"
+          min={0}
+          max={scrollMax}
+          value={scrollValue}
+          onChange={(event) => handleLivePreviewSliderChange(Number(event.currentTarget.value))}
+          className="min-h-0 flex-1 w-3 accent-emerald-400 [writing-mode:vertical-rl]"
+          title="Drag to scroll the browser page"
+        />
+        <button
+          type="button"
+          onClick={() => requestLivePreviewScroll(0, 520)}
+          className="h-5 w-4 rounded-full text-[10px] font-bold leading-none text-zinc-100 hover:bg-zinc-800"
+          title="Scroll page down"
+        >
+          v
+        </button>
+        <button
+          type="button"
+          onClick={() => requestLivePreviewScroll(0, 0, null, scrollMax)}
+          className="h-5 w-4 rounded-full text-[9px] font-bold leading-none text-zinc-100 hover:bg-zinc-800"
+          title="Go to bottom of browser page"
+        >
+          B
+        </button>
+      </div>
+    );
+  };
+
+  const resolveGlowCartDemoUrl = async () => {
+    const configuredUrl = process.env.NEXT_PUBLIC_GLOWCART_DEMO_URL?.trim();
+    if (configuredUrl) return normalizeUrl(configuredUrl);
+
+    try {
+      const response = await fetch(`${localAgentUrl}/demo/glowcart/start`, {
+        method: "POST",
+      });
+      const data = await readJsonResponse<{ error?: string; url?: string }>(
+        response,
+        {},
+      );
+      if (!response.ok || !data.url) {
+        throw new Error(data.error || "CaseForge Companion could not start GlowCart.");
+      }
+      return normalizeUrl(data.url);
+    } catch (error) {
+      throw new Error(companionOfflineMessage(error));
+    }
+  };
+
+  const startHiddenLivePreview = async (
+    previewUrl: string,
+    sizeKey: LivePreviewSizeKey,
+  ) => {
+    const previewSize =
+      LIVE_PREVIEW_SIZES.find((item) => item.key === sizeKey) ??
+      LIVE_PREVIEW_SIZES[0];
+    const data = await companionBrowserRequest({
+      body: JSON.stringify({
+        action: "start",
+        browserMode: "headless",
+        headless: true,
+        livePreviewOnly: true,
+        recorderMode: "off",
+        scenarioId,
+        startUrl: previewUrl,
+        viewport: previewSize.viewport,
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    if (!data.sessionId) {
+      throw new Error(data.error || "CaseForge Companion did not return a Live Preview session.");
+    }
+    let sessionData = data;
+    try {
+      const navigatedData = await companionBrowserRequest({
+        body: JSON.stringify({
+          action: "browserCommand",
+          command: "navigate",
+          sessionId: data.sessionId,
+          url: previewUrl,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (navigatedData.sessionId) {
+        sessionData = navigatedData;
+      }
+    } catch (error) {
+      appendLog(
+        error instanceof Error
+          ? `GlowCart preview opened, but navigation refresh failed: ${error.message}`
+          : "GlowCart preview opened, but navigation refresh failed.",
+      );
+    }
+    companionCursorRef.current = sessionData.cursor ?? 0;
+    setRecording(false);
+    setRecordingPaused(false);
+    setRecordingSessionId(sessionData.sessionId || data.sessionId);
+    setProviderEventCaptureAfter(null);
+    setSession(companionSessionMetadata(sessionData, previewUrl));
+    setLivePreviewFailed(false);
+    setBrowserAddressDraft(previewUrl);
+    setLivePreviewTick(Date.now());
+    setEvents(companionCommandsToRecorderEvents(sessionData.commands));
+    if (sessionData.logs) setLogs(sessionData.logs.slice(-50));
+    return previewSize;
+  };
+
+  const prepareGlowCartDemoAuthoring = async () => {
+    if (busy) return;
+    setBusy(true);
+    setGlowCartPreparing(true);
+    setWorkspaceTab("browser");
+    setAuthoringPreviewError("");
+    try {
+      const demoUrl = await resolveGlowCartDemoUrl();
+      const demoEnvironment = environmentDraftFromUrl(demoUrl);
+      setTargetUrl(demoUrl);
+      setAuthoringPreviewUrl(demoUrl);
+      setRunConfig({
+        ...defaultRunConfig(demoUrl),
+        browserMode,
+        environments: [
+          {
+            ...demoEnvironment,
+            name: "GlowCart Demo",
+          },
+        ],
+      });
+      setRunModalError("");
+      appendLog(`GlowCart demo selected at ${demoUrl}. Starting hidden Live Preview session.`);
+      const previewSize = await startHiddenLivePreview(demoUrl, livePreviewSize);
+      appendLog(`Hidden Live Preview started at ${demoUrl} (${previewSize.label}). Right-click elements to add commands, then use Run when ready.`);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "CaseForge Companion could not start GlowCart.";
+      setAuthoringPreviewError(message);
+      appendLog(message);
+    } finally {
+      setGlowCartPreparing(false);
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleGlowCartDemoClick = (event: globalThis.MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const actionButton = target?.closest('[data-live-preview-action="glowcart-demo"]');
+      if (!actionButton) return;
+      event.preventDefault();
+      void prepareGlowCartDemoAuthoring();
+    };
+
+    document.addEventListener("click", handleGlowCartDemoClick);
+    return () => document.removeEventListener("click", handleGlowCartDemoClick);
+  }, [prepareGlowCartDemoAuthoring]);
+
+  const cycleLivePreviewSize = async () => {
+    if (busy) return;
+    const previewUrl = authoringPreviewUrl || targetUrl;
+    if (!previewUrl || !isCompanionPreviewSession(session)) {
+      appendLog("Start a Live Preview session before changing preview size.");
+      return;
+    }
+    const currentIndex = Math.max(
+      0,
+      LIVE_PREVIEW_SIZES.findIndex((item) => item.key === livePreviewSize),
+    );
+    const nextPreviewSize =
+      LIVE_PREVIEW_SIZES[(currentIndex + 1) % LIVE_PREVIEW_SIZES.length];
+    setBusy(true);
+    setAuthoringPreviewError("");
+    try {
+      setLivePreviewSize(nextPreviewSize.key);
+      const previewSize = await startHiddenLivePreview(previewUrl, nextPreviewSize.key);
+      appendLog(
+        `Live Preview size changed to ${previewSize.label} (${previewSize.viewport.width} x ${previewSize.viewport.height}).`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not change Live Preview size.";
+      setAuthoringPreviewError(message);
+      appendLog(message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const updateRunEnvironment = (
     environmentId: string,
     update: Partial<RunEnvironmentDraft>,
@@ -3144,17 +6188,92 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       const viewport = viewportForRunConfig(config);
       const url = normalizeUrl(environment.baseUrl);
       setTargetUrl(url);
-      const navigateStep = makeNavigateStep(url);
-      if (!visibleSteps.some((step) => step.action === "navigate" && step.target.value === url)) {
-        void persistSteps([...finalizedSteps, navigateStep]);
+      const useLegacyBridge = shouldUseLegacyDesktopBridge(url);
+      const reusableSession = isUsableBrokerSession(session) ? session : null;
+      const canPromoteCompanionPreview =
+        useLegacyBridge &&
+        isCompanionPreviewSession(reusableSession) &&
+        Boolean(reusableSession?.sessionId);
+      if (!useLegacyBridge) {
+        const navigateStep = makeNavigateStep(url);
+        if (!visibleSteps.some((step) => step.action === "navigate" && step.target.value === url)) {
+          void persistSteps([...scenarioSteps, navigateStep]);
+        }
       }
-      if (session?.sessionId) {
-        await closeSession("Previous browser session closed.");
+      if (!useLegacyBridge && reusableSession?.sessionId) {
+        setRecording(true);
+        setRecordingPaused(false);
+        setRecorderState("recording");
+        setRecordingSessionId(reusableSession.sessionId);
+        setProviderEventCaptureAfter(new Date().toISOString());
+        await setSessionRecorderMode(reusableSession.sessionId, "record");
+        setRunModalOpen(false);
+        appendLog("Recording attached to the current browser session.");
+        return;
       }
       setRecording(true);
       setRecordingPaused(false);
+      setRecorderState("recording");
       ignoredRecorderStepIdsRef.current = new Set();
       appendLog(`Opening recorder at ${url}`);
+      if (useLegacyBridge) {
+        if (canPromoteCompanionPreview && session?.sessionId) {
+          const data = await companionBrowserRequest({
+            body: JSON.stringify({
+              action: "mode",
+              mode: "record",
+              sessionId: session.sessionId,
+            }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+          });
+          if (!data.sessionId) {
+            throw new Error(data.error || "CaseForge Companion did not return a browser session.");
+          }
+          companionCursorRef.current = data.cursor ?? companionCursorRef.current;
+          setRecordingSessionId(data.sessionId);
+          setSession(companionSessionMetadata(data, data.url || url));
+          setLivePreviewFailed(false);
+          setProviderEventCaptureAfter(null);
+          if (data.logs) setLogs(data.logs.slice(-50));
+          setRunModalOpen(false);
+          appendLog("Recording started in the current CaseForge Companion Live Preview.");
+          return;
+        }
+        if (reusableSession?.sessionId && !isCompanionPreviewSession(reusableSession)) {
+          throw new Error("The active browser session is not a Companion session. End it before starting private/local recording.");
+        }
+        const data = await companionBrowserRequest({
+          body: JSON.stringify({
+            action: "start",
+            httpCredentials:
+              environment.basicAuthEnabled && environment.username.trim()
+                ? {
+                    password: environment.password,
+                    username: environment.username,
+                  }
+                : authFromUrl(environment.baseUrl),
+            scenarioId,
+            startUrl: url,
+            viewport,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        if (!data.sessionId) {
+          throw new Error(data.error || "CaseForge Companion did not return a browser session.");
+        }
+        companionCursorRef.current = data.cursor ?? 0;
+        setRecordingSessionId(data.sessionId);
+        setSession(companionSessionMetadata(data, url));
+        setLivePreviewFailed(false);
+        setProviderEventCaptureAfter(null);
+        setEvents(companionCommandsToRecorderEvents(data.commands));
+        if (data.logs) setLogs(data.logs.slice(-50));
+        setRunModalOpen(false);
+        appendLog(`Recording started in CaseForge Companion on ${deviceLabelForRunConfig(config)}.`);
+        return;
+      }
       const activeSession = await createSession(url, {
         browserMode: config.browserMode,
         environment,
@@ -3169,12 +6288,65 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     } catch (error) {
       setRecording(false);
       setRecordingPaused(false);
+      setRecorderState("idle");
       setRecordingSessionId(null);
       setProviderEventCaptureAfter(null);
       appendLog(error instanceof Error ? error.message : "Could not start recording.");
     } finally {
       setBusy(false);
     }
+  };
+
+  const startRecording = async (config: RunConfig = runConfig) => {
+    await startRecordingFromConfig(config);
+  };
+
+  const pauseRecording = async () => {
+    const sessionId = recordingSessionId || session?.sessionId;
+    if (!recording || !sessionId) return;
+    if (!shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl))) {
+      await setSessionRecorderMode(sessionId, "off");
+    }
+    setRecordingPaused(true);
+    setRecorderState("paused");
+    appendLog("Recording paused.");
+  };
+
+  const resumeRecording = async () => {
+    const sessionId = recordingSessionId || session?.sessionId;
+    if (!recording || !sessionId) return;
+    if (!shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl))) {
+      await setSessionRecorderMode(sessionId, "record");
+    }
+    setRecordingPaused(false);
+    setRecorderState("recording");
+    appendLog("Recording resumed.");
+  };
+
+  const stopRecording = async () => {
+    if (!recording && !verifyPicking) return;
+    if (verifyPicking && !recording) {
+      await cancelVerifyCapture();
+      return;
+    }
+    await toggleRecording();
+    setRecorderState("idle");
+  };
+
+  const enterTargetSelectionMode = () => {
+    setRecorderState("selectingTarget");
+  };
+
+  const exitTargetSelectionMode = () => {
+    setRecorderState(recordingPaused ? "paused" : recording ? "recording" : "idle");
+  };
+
+  const enterVerifyMode = async () => {
+    await startVerifyCapture();
+  };
+
+  const exitVerifyMode = async () => {
+    await cancelVerifyCapture();
   };
 
   const resumeRunParameterContext = () => {
@@ -3595,7 +6767,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
 
   const contextMenuPosition = (event: MouseEvent, isAction = false) => {
     const estimatedWidth = 224;
-    const estimatedHeight = isAction ? 360 : 330;
+    const estimatedHeight = isAction ? 420 : 390;
     if (typeof window === "undefined") {
       return { x: event.clientX, y: event.clientY };
     }
@@ -3641,6 +6813,171 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       stepId: command.id,
       ...contextMenuPosition(event, command.action === "action"),
     });
+  };
+
+  const openCommandInsertLibrary = (position: "before" | "after") => {
+    if (!timelineMenu) return;
+    const actionStep = timelineMenu.actionStepId
+      ? visibleSteps.find((step) => step.id === timelineMenu.actionStepId) ?? null
+      : null;
+    const pickerWidth = 440;
+    const pickerHeight = 560;
+    const viewportWidth = typeof window === "undefined" ? 1280 : window.innerWidth;
+    const viewportHeight = typeof window === "undefined" ? 800 : window.innerHeight;
+    setCommandInsertMenu({
+      actionId: actionStep?.target?.value ?? null,
+      actionStepId: timelineMenu.actionStepId ?? null,
+      anchorStepId: timelineMenu.stepId,
+      position,
+      query: "",
+      x: Math.max(12, Math.min(timelineMenu.x, viewportWidth - pickerWidth - 12)),
+      y: Math.max(12, Math.min(timelineMenu.y, viewportHeight - pickerHeight - 12)),
+    });
+    setTimelineMenu(null);
+  };
+
+  const insertTimelineCommandFromLibrary = async (
+    target: NonNullable<CommandInsertMenu>,
+    command: AutomationStep,
+  ) => {
+    const timelineSteps = mergeStepsById([...finalizedSteps, ...liveSteps]);
+    const anchorIndex = timelineSteps.findIndex((step) => step.id === target.anchorStepId);
+    const insertAt =
+      anchorIndex >= 0
+        ? anchorIndex + (target.position === "after" ? 1 : 0)
+        : timelineSteps.length;
+    await persistSteps(
+      [
+        ...timelineSteps.slice(0, insertAt),
+        command,
+        ...timelineSteps.slice(insertAt),
+      ],
+      { throwOnError: true },
+    );
+    setEvents([]);
+    setActionCommandEditor(null);
+    setCommandPromptDraft(command);
+    setSelectedStepId(command.id);
+    setSelectedStepIds(new Set([command.id]));
+    setCommandPromptError("");
+    setLocatorDiagnosticsOpen(false);
+    setDrawerOpen(true);
+  };
+
+  const insertActionCommandFromLibrary = async (
+    target: NonNullable<CommandInsertMenu>,
+    command: AutomationStep,
+  ) => {
+    if (!target.actionStepId || !target.actionId) {
+      throw new Error("Action target was not found.");
+    }
+    const commands = actionStepCommands[target.actionStepId] ?? [];
+    const anchorIndex = commands.findIndex((step) => step.id === target.anchorStepId);
+    const targetIndex =
+      anchorIndex >= 0
+        ? anchorIndex + (target.position === "after" ? 1 : 0)
+        : commands.length;
+    const afterStepId = targetIndex > 0 ? commands[targetIndex - 1]?.id ?? null : null;
+    const previousCommandIds = new Set(commands.map((step) => step.id).filter(Boolean));
+
+    const response = await fetch(
+      `/api/automation/projects/${encodeURIComponent(projectKey)}/actions/${encodeURIComponent(
+        target.actionId,
+      )}/steps`,
+      {
+        body: JSON.stringify({
+          afterStepId,
+          step: command,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      },
+    );
+    const data = await readJsonResponse<{
+      action?: { steps?: AutomationStep[] };
+      error?: string;
+    }>(response, {});
+    if (!response.ok || !data.action) {
+      throw new Error(data.error || "Could not insert command into action.");
+    }
+
+    let nextCommands = normalizeSteps(data.action.steps ?? []);
+    let insertedCommand =
+      nextCommands.find((step) => step.id && !previousCommandIds.has(step.id)) ??
+      nextCommands[targetIndex];
+    if (
+      insertedCommand?.id &&
+      targetIndex < nextCommands.length &&
+      nextCommands.findIndex((step) => step.id === insertedCommand?.id) !== targetIndex
+    ) {
+      const reordered = nextCommands.filter((step) => step.id !== insertedCommand?.id);
+      reordered.splice(targetIndex, 0, insertedCommand);
+      const reorderResponse = await fetch(
+        `/api/automation/projects/${encodeURIComponent(projectKey)}/actions/${encodeURIComponent(
+          target.actionId,
+        )}`,
+        {
+          body: JSON.stringify({
+            stepIds: reordered.map((step) => step.id).filter(Boolean),
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        },
+      );
+      const reorderData = await readJsonResponse<{
+        action?: { steps?: AutomationStep[] };
+        error?: string;
+      }>(reorderResponse, {});
+      if (!reorderResponse.ok || !reorderData.action) {
+        throw new Error(reorderData.error || "Could not place command in action.");
+      }
+      nextCommands = normalizeSteps(reorderData.action.steps ?? []);
+      insertedCommand =
+        nextCommands.find((step) => step.id === insertedCommand?.id) ??
+        nextCommands[targetIndex];
+    }
+
+    setActionStepCommands((current) => ({
+      ...current,
+      [target.actionStepId as string]: nextCommands,
+    }));
+    setExpandedActionStepIds((current) => new Set(current).add(target.actionStepId as string));
+    if (insertedCommand?.id) {
+      setActionCommandEditor({
+        actionId: target.actionId,
+        actionStepId: target.actionStepId,
+        stepId: insertedCommand.id,
+      });
+      setSelectedStepId(insertedCommand.id);
+      setSelectedActionCommandKeys(
+        new Set([actionCommandSelectionKey(target.actionStepId, insertedCommand.id)]),
+      );
+      setCommandPromptDraft(insertedCommand);
+    }
+    setCommandPromptError("");
+    setLocatorDiagnosticsOpen(false);
+    setDrawerOpen(true);
+  };
+
+  const insertCommandFromLibrary = async (command: AutomationCommandDefinition) => {
+    const target = commandInsertMenu;
+    if (!target) return;
+    const draftCommand = makeCommandLibraryStep(command, targetUrl);
+    setCommandInsertMenu(null);
+    try {
+      if (target.actionStepId) {
+        await insertActionCommandFromLibrary(target, draftCommand);
+      } else {
+        await insertTimelineCommandFromLibrary(target, draftCommand);
+      }
+      appendLog(
+        `${command.label} inserted ${target.position} the selected command${
+          target.actionStepId ? " inside the action" : ""
+        }.`,
+      );
+    } catch (error) {
+      appendLog(error instanceof Error ? error.message : "Could not insert command.");
+    }
   };
 
   const openLocatorFlyout = (
@@ -4925,6 +8262,629 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     throw new Error("Replay timed out before recording could resume.");
   }, [appendLog]);
 
+  const refreshPlaybackState = useCallback(async () => {
+    const [jobsResponse, configResponse] = await Promise.all([
+      fetch(
+        `/api/automation/projects/${encodeURIComponent(projectKey)}/playback?scenarioId=${encodeURIComponent(scenarioId)}`,
+        { cache: "no-store" },
+      ),
+      fetch(
+        `/api/automation/projects/${encodeURIComponent(projectKey)}/playback/config?scenarioId=${encodeURIComponent(scenarioId)}`,
+        { cache: "no-store" },
+      ),
+    ]);
+    const jobsData = await readJsonResponse<{ jobs?: PlaybackJob[]; error?: string }>(jobsResponse, {});
+    const configData = await readJsonResponse<{ config?: PlaybackConfig; error?: string }>(configResponse, {});
+    if (jobsResponse.ok) setPlaybackJobs(jobsData.jobs ?? []);
+    if (configResponse.ok && configData.config) {
+      setPlaybackConfig({ ...defaultPlaybackConfig, ...configData.config });
+    }
+  }, [projectKey, scenarioId]);
+
+  const playbackStepsForScope = (scope: PlaybackScope, anchorStep?: AutomationStep | null) => {
+    const timelineSteps = mergeStepsById([...finalizedSteps, ...liveSteps]);
+    const anchorId = anchorStep?.id || selectedStepId || "";
+    const anchorIndex = anchorId ? timelineSteps.findIndex((step) => step.id === anchorId) : -1;
+    if (scope === "selected") {
+      const selected = timelineSteps.filter((step) => step.id && selectedStepIds.has(step.id));
+      return selected.length ? selected : timelineSteps;
+    }
+    if (scope === "selectedToEnd" && anchorIndex >= 0) return timelineSteps.slice(anchorIndex);
+    if (scope === "startToSelected" && anchorIndex >= 0) return timelineSteps.slice(0, anchorIndex + 1);
+    if (scope === "singleCommand" && anchorStep) return timelineContextStepsForStep(anchorStep, timelineSteps);
+    return timelineSteps;
+  };
+
+  const expectedUrlForPlayback = (scopedSteps: AutomationStep[]) => {
+    const scopedNavigationUrl = firstNavigationUrl(scopedSteps);
+    if (scopedNavigationUrl) return scopedNavigationUrl;
+    const timelineSteps = mergeStepsById([...finalizedSteps, ...liveSteps]);
+    const firstScopedStepId = scopedSteps.find((step) => step.id)?.id;
+    const firstScopedIndex = firstScopedStepId
+      ? timelineSteps.findIndex((step) => step.id === firstScopedStepId)
+      : -1;
+    const priorSteps = firstScopedIndex >= 0 ? timelineSteps.slice(0, firstScopedIndex + 1) : timelineSteps;
+    return lastNavigationUrl(priorSteps) || firstNavigationUrl(timelineSteps) || normalizeUrl(targetUrl);
+  };
+
+  const playbackStateGuardFor = (
+    scope: PlaybackScope,
+    scopedSteps: AutomationStep[],
+    anchorStep?: AutomationStep | null,
+  ): PlaybackStateGuard | null => {
+    const expectedUrl = expectedUrlForPlayback(scopedSteps);
+    if (shouldUseLegacyDesktopBridge(expectedUrl || normalizeUrl(targetUrl))) {
+      return null;
+    }
+    const currentUrl = session?.currentUrl || "";
+    if (!isUsableBrokerSession(session)) {
+      return {
+        anchorStepId: anchorStep?.id || selectedStepId || null,
+        currentUrl: "No active Recorder Browser session",
+        expectedUrl,
+        message:
+          "Playback uses the current Recorder Browser state. Start or connect a browser session before selected playback, or choose an option below.",
+        scope,
+      };
+    }
+    if (!currentUrl) {
+      return {
+        anchorStepId: anchorStep?.id || selectedStepId || null,
+        currentUrl: "Unknown",
+        expectedUrl,
+        message:
+          "The active browser session did not report its current URL. Selected playback may fail if the browser is not already on the required page.",
+        scope,
+      };
+    }
+    if (expectedUrl && !urlsRoughlyMatch(currentUrl, expectedUrl)) {
+      return {
+        anchorStepId: anchorStep?.id || selectedStepId || null,
+        currentUrl,
+        expectedUrl,
+        message:
+          "Browser may not be in the correct state for the selected playback scope.",
+        scope,
+      };
+    }
+    return null;
+  };
+
+  const startPlayback = async (
+    scope: PlaybackScope,
+    anchorStep?: AutomationStep | null,
+    options: { navigateToExpected?: boolean; skipStateGuard?: boolean } = {},
+  ) => {
+    setPlaybackConsoleOpen(true);
+    try {
+      const scopedSteps = playbackStepsForScope(scope, anchorStep);
+      const executableScope = actionCandidateSteps(scopedSteps);
+      if (!executableScope.length) {
+        appendLog("Playback has no executable commands.");
+        return;
+      }
+      const guard = !options.skipStateGuard ? playbackStateGuardFor(scope, scopedSteps, anchorStep) : null;
+      if (guard) {
+        setPlaybackStateGuard(guard);
+        appendLog("Playback State Guard opened.");
+        return;
+      }
+      setPlaybackBusy(true);
+      setPlaybackState("running");
+      const selectedActionStepIds = new Set(
+        [...selectedActionCommandKeys].map((key) => key.split(":")[0]).filter(Boolean),
+      );
+      const expanded = await expandActionSteps(executableScope, {
+        selectedActionCommandKeys,
+        selectedActionStepIds,
+      });
+      const unsupported = expanded.steps.find((step) => {
+        const definition = commandDefinitionForAction(displayAction(step.action));
+        return !definition || !definition.executable || definition.domain !== "web";
+      });
+      const jobResponse = await fetch(`/api/automation/projects/${encodeURIComponent(projectKey)}/playback`, {
+        body: JSON.stringify({
+          configSnapshot: playbackConfig,
+          scenarioId,
+          scope,
+          steps: executableScope,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const jobData = await readJsonResponse<{ error?: string; job?: PlaybackJob }>(jobResponse, {});
+      if (!jobResponse.ok || !jobData.job) {
+        throw new Error(jobData.error || "Could not queue playback.");
+      }
+      setPlaybackJobs((current) => [jobData.job as PlaybackJob, ...current].slice(0, 20));
+      if (unsupported) {
+        const label = commandDefinitionForAction(displayAction(unsupported.action))?.label || unsupported.action;
+        const message = `${label} is a first-class CaseForge authoring command, but this phase only executes implemented web commands through CaseForge Companion. Its execution adapter is pending.`;
+        if (unsupported.id) {
+          setCommandRunStates((current) => ({
+            ...current,
+            [unsupported.id as string]: {
+              message,
+              runId: jobData.job?.id,
+              status: "failed",
+              updatedAt: new Date().toISOString(),
+            },
+          }));
+        }
+        await fetch(`/api/automation/projects/${encodeURIComponent(projectKey)}/playback`, {
+          body: JSON.stringify({ jobId: jobData.job.id, logs: [message], status: "blocked" }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        });
+        appendLog(message);
+        await refreshPlaybackState();
+        setPlaybackState("failed");
+        return;
+      }
+
+      const { parameterData, testCase } = resumeRunParameterContext();
+      const baseRunSteps = withScenarioInitSteps(
+        substituteStepsParameters(expanded.steps, parameterData),
+        substituteStepsParameters(scopedSteps, parameterData),
+      );
+      const expectedUrl = expectedUrlForPlayback(scopedSteps);
+      const runSteps =
+        options.navigateToExpected && expectedUrl
+          ? [makeNavigateStep(expectedUrl, `playback_state_${Date.now().toString(36)}`), ...baseRunSteps]
+          : baseRunSteps;
+      const playbackRunId = `playback-${Date.now().toString(36)}`;
+      if (shouldUseLegacyDesktopBridge(firstNavigationUrl(runSteps) || normalizeUrl(targetUrl))) {
+        let companionSessionId =
+          recordingSessionId ||
+          (isUsableBrokerSession(session) && isCompanionPreviewSession(session)
+            ? session.sessionId
+            : "");
+        if (!companionSessionId) {
+          const startUrl = firstNavigationUrl(runSteps) || normalizeUrl(targetUrl);
+          const data = await companionBrowserRequest({
+            body: JSON.stringify({
+              action: "start",
+              httpCredentials: authFromUrl(startUrl),
+              scenarioId,
+              startUrl,
+              viewport: viewportForRunConfig(runConfig),
+            }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+          });
+          if (!data.sessionId) {
+            throw new Error(data.error || "CaseForge Companion did not return a browser session.");
+          }
+          companionSessionId = data.sessionId;
+          companionCursorRef.current = data.cursor ?? 0;
+          setRecordingSessionId(data.sessionId);
+          setSession(companionSessionMetadata(data, startUrl));
+          setLivePreviewFailed(false);
+          setProviderEventCaptureAfter(null);
+          setEvents((current) => mergeRecorderEvents([...current, ...companionCommandsToRecorderEvents(data.commands)]));
+          if (data.logs) setLogs(data.logs.slice(-50));
+        }
+
+        appendLog(`Playback running in the current CaseForge Companion browser.`);
+        await fetch(`/api/automation/projects/${encodeURIComponent(projectKey)}/playback`, {
+          body: JSON.stringify({ jobId: jobData.job.id, logs: ["Companion playback running."], status: "running" }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        });
+        const playbackData = await companionBrowserRequest({
+          body: JSON.stringify({
+            action: "run",
+            cursor: companionCursorRef.current,
+            runId: playbackRunId,
+            sessionId: companionSessionId,
+            steps: runSteps,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        companionCursorRef.current = playbackData.cursor ?? companionCursorRef.current;
+        setSession((current) =>
+          isCompanionPreviewSession(current)
+            ? companionSessionMetadata(playbackData, playbackData.url || current?.currentUrl || targetUrl)
+            : current,
+        );
+        await fetch(`/api/automation/projects/${encodeURIComponent(projectKey)}/playback`, {
+          body: JSON.stringify({ jobId: jobData.job.id, logs: ["Companion playback passed."], status: "passed" }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        });
+        appendLog(`Playback passed in Companion${testCase ? ` for ${testCase.name}` : ""}.`);
+        await refreshPlaybackState();
+        setPlaybackState("completed");
+        return;
+      }
+      const activeSession = isUsableBrokerSession(session)
+        ? session
+        : await createSession(firstNavigationUrl(runSteps) || normalizeUrl(targetUrl), {
+            browserMode: runConfig.browserMode,
+            viewport: viewportForRunConfig(runConfig),
+          });
+      if (!activeSession.sessionId) throw new Error("Browser session was not created.");
+      appendLog(`Playback queued: ${scope} (${runSteps.length} command${runSteps.length === 1 ? "" : "s"}).`);
+      const runResponse = await fetch(
+        `/api/automation/sessions/${encodeURIComponent(activeSession.sessionId)}/run`,
+        {
+          body: JSON.stringify({
+            closeOnComplete: false,
+            executionMode: "interactive_persistent",
+            keepSessionOpen: true,
+            parameterData,
+            runId: playbackRunId,
+            steps: runSteps,
+            suppressRecording: true,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        },
+      );
+      const runData = await readJsonResponse<{ error?: string }>(runResponse, {});
+      if (!runResponse.ok) throw new Error(runData.error || "Could not start playback.");
+      await fetch(`/api/automation/projects/${encodeURIComponent(projectKey)}/playback`, {
+        body: JSON.stringify({ jobId: jobData.job.id, logs: ["Playback running."], status: "running" }),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      });
+      await waitForRunEvent(activeSession.sessionId, playbackRunId);
+      await fetch(`/api/automation/projects/${encodeURIComponent(projectKey)}/playback`, {
+        body: JSON.stringify({ jobId: jobData.job.id, logs: ["Playback passed."], status: "passed" }),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      });
+      appendLog(`Playback passed${testCase ? ` for ${testCase.name}` : ""}.`);
+      await refreshPlaybackState();
+      setPlaybackState("completed");
+    } catch (error) {
+      setPlaybackState("failed");
+      appendLog(error instanceof Error ? error.message : "Playback failed.");
+    } finally {
+      setPlaybackBusy(false);
+    }
+  };
+
+  const stopPlaybackQueue = async () => {
+    await fetch(
+      `/api/automation/projects/${encodeURIComponent(projectKey)}/playback?scenarioId=${encodeURIComponent(scenarioId)}`,
+      { method: "DELETE" },
+    );
+    appendLog("Stopped pending playback requests.");
+    await refreshPlaybackState();
+  };
+
+  const savePlaybackConfig = async (nextConfig: PlaybackConfig) => {
+    setPlaybackConfig(nextConfig);
+    const response = await fetch(
+      `/api/automation/projects/${encodeURIComponent(projectKey)}/playback/config`,
+      {
+        body: JSON.stringify({ ...nextConfig, scenarioId }),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      },
+    );
+    const data = await readJsonResponse<{ config?: PlaybackConfig; error?: string }>(response, {});
+    if (!response.ok || !data.config) {
+      throw new Error(data.error || "Could not save playback configuration.");
+    }
+    setPlaybackConfig({ ...defaultPlaybackConfig, ...data.config });
+  };
+
+  const refreshCanvasState = useCallback(async () => {
+    const [viewsResponse, elementsResponse] = await Promise.all([
+      fetch(
+        `/api/automation/projects/${encodeURIComponent(projectKey)}/views?scenarioId=${encodeURIComponent(scenarioId)}`,
+        { cache: "no-store" },
+      ),
+      fetch(`/api/automation/projects/${encodeURIComponent(projectKey)}/elements`, {
+        cache: "no-store",
+      }),
+    ]);
+    const viewsData = await readJsonResponse<{
+      error?: string;
+      latestView?: CanvasView | null;
+      views?: CanvasView[];
+    }>(viewsResponse, {});
+    const elementsData = await readJsonResponse<{
+      elements?: CanvasElement[];
+      error?: string;
+    }>(elementsResponse, {});
+    if (viewsResponse.ok) setCanvasView(viewsData.latestView ?? viewsData.views?.[0] ?? null);
+    if (elementsResponse.ok) setCanvasElements(elementsData.elements ?? []);
+  }, [projectKey, scenarioId]);
+
+  const canvasSnapshotFromStep = (step: AutomationStep, index: number) => {
+    const element = step.element ?? {};
+    const bounds = rectRecord(element.bounds ?? element.boundingBox);
+    const targetName = elementName(step.element, readableStepLabel(step));
+    const locator = rankedLocators(step.locatorCandidates)[0];
+    return {
+      action: displayAction(step.action),
+      bounds,
+      elementKind: String(element.elementKind ?? step.target?.elementKind ?? "element"),
+      id: step.id || `canvas-step-${index}`,
+      label: targetName,
+      locatorCandidates: step.locatorCandidates ?? [],
+      repositoryStatus: canvasElements.some((item) => {
+        const itemLocator = String(item.canonicalLocator.value ?? "");
+        return itemLocator && itemLocator === (locator?.value || step.target?.value);
+      })
+        ? "saved"
+        : "new",
+      stepId: step.id,
+      tag: String(element.tag ?? ""),
+      text: String(element.text ?? element.labelText ?? targetName),
+      type: String(element.elementKind ?? step.target?.elementKind ?? "element"),
+    };
+  };
+
+  const captureCanvasFromTimeline = async () => {
+    const elementSnapshots = visibleSteps
+      .map(canvasSnapshotFromStep)
+      .filter((item) => {
+        const bounds = numericRect(item.bounds);
+        return bounds.width > 0 && bounds.height > 0;
+      });
+    const response = await fetch(`/api/automation/projects/${encodeURIComponent(projectKey)}/views`, {
+      body: JSON.stringify({
+        elementSnapshots,
+        metadata: { source: "scenario-timeline", stepCount: visibleSteps.length },
+        name: `${scenarioName} Canvas`,
+        scenarioId,
+        title: scenarioName,
+        url: cleanUrlAuth(targetUrl),
+        viewport: viewportForRunConfig(runConfig),
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    const data = await readJsonResponse<{ error?: string; view?: CanvasView }>(response, {});
+    if (!response.ok || !data.view) throw new Error(data.error || "Could not capture Canvas view.");
+    setCanvasView(data.view);
+    setWorkspaceTab("canvas");
+    setCanvasMessage(`Captured ${elementSnapshots.length} canvas element${elementSnapshots.length === 1 ? "" : "s"}.`);
+    await refreshCanvasState();
+  };
+
+  const canvasCandidateStack = (snapshot: Record<string, unknown>) => {
+    const hierarchy = snapshot.candidateHierarchy ?? snapshot.exploreCandidates ?? snapshot.overlapCandidates;
+    if (Array.isArray(hierarchy)) {
+      const candidates = hierarchy.filter(
+        (item): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item)),
+      );
+      if (candidates.length) return candidates;
+    }
+    const locatorCandidates = Array.isArray(snapshot.locatorCandidates)
+      ? (snapshot.locatorCandidates as AutomationLocatorCandidate[])
+      : [];
+    const locatorSnapshots = locatorCandidates.map((candidate, index) => ({
+      ...snapshot,
+      candidateRole: index === 0 ? "current" : index === 1 ? "parent" : index === 2 ? "child" : "sibling",
+      label: snapshot.label || candidate.strategy,
+      locatorCandidates: [candidate],
+      text: candidate.value,
+    }));
+    return locatorSnapshots.length ? locatorSnapshots : [snapshot];
+  };
+
+  const openCanvasExploreMode = (snapshot: Record<string, unknown>) => {
+    setCanvasExploreElement(snapshot);
+    setCanvasExploreIndex(0);
+    setCanvasMenu(null);
+    setCanvasMessage("Explore Mode: cycle through overlapping candidates, choose parent/child/sibling, or press Esc to exit.");
+  };
+
+  const currentCanvasExploreCandidate = canvasExploreElement
+    ? canvasCandidateStack(canvasExploreElement)[canvasExploreIndex] ?? canvasExploreElement
+    : null;
+
+  const saveCanvasElement = async (snapshot: Record<string, unknown>) => {
+    const candidates = Array.isArray(snapshot.locatorCandidates)
+      ? (snapshot.locatorCandidates as AutomationLocatorCandidate[])
+      : [];
+    const bestLocator = rankedLocators(candidates)[0] ?? {
+      score: 0,
+      strategy: "css",
+      value: String(snapshot.value ?? snapshot.label ?? ""),
+    };
+    const response = await fetch(`/api/automation/projects/${encodeURIComponent(projectKey)}/elements`, {
+      body: JSON.stringify({
+        aliases: [String(snapshot.label ?? ""), String(snapshot.text ?? "")].filter(Boolean),
+        boundingBox: rectRecord(snapshot.bounds),
+        businessName: String(snapshot.label ?? snapshot.text ?? "Saved Element"),
+        canonicalLocator: bestLocator,
+        description: String(snapshot.text ?? snapshot.label ?? ""),
+        elementSnapshot: snapshot,
+        elementType: String(snapshot.elementKind ?? snapshot.type ?? "element"),
+        fallbackLocators: rankedLocators(candidates).slice(1),
+        lastVerifiedAt: new Date().toISOString(),
+        locatorCandidates: candidates,
+        metadata: {
+          aliases: [String(snapshot.label ?? ""), String(snapshot.text ?? "")].filter(Boolean),
+          businessName: String(snapshot.label ?? snapshot.text ?? "Saved Element"),
+          description: String(snapshot.text ?? snapshot.label ?? ""),
+          lastVerifiedAt: new Date().toISOString(),
+          preferredLocatorStrategy: bestLocator.strategy ?? null,
+          source: "canvas",
+          stabilityScore: Number(bestLocator.score ?? 0),
+          stepId: snapshot.stepId,
+          technicalName: String(snapshot.label ?? snapshot.text ?? "savedElement")
+            .replace(/\W+/g, " ")
+            .trim()
+            .replace(/\s+(.)/g, (_match, letter: string) => letter.toUpperCase())
+            .replace(/^(.)/, (_match, letter: string) => letter.toLowerCase()),
+        },
+        name: String(snapshot.label ?? snapshot.text ?? "Saved Element"),
+        preferredLocatorStrategy: bestLocator.strategy ?? null,
+        stabilityScore: Number(bestLocator.score ?? 0),
+        status: "active",
+        technicalName: String(snapshot.label ?? snapshot.text ?? "savedElement")
+          .replace(/\W+/g, " ")
+          .trim()
+          .replace(/\s+(.)/g, (_match, letter: string) => letter.toUpperCase())
+          .replace(/^(.)/, (_match, letter: string) => letter.toLowerCase()),
+        viewId: canvasView?.id ?? null,
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    const data = await readJsonResponse<{ element?: CanvasElement; error?: string }>(response, {});
+    if (!response.ok || !data.element) throw new Error(data.error || "Could not save element.");
+    setCanvasElements((current) => [data.element as CanvasElement, ...current.filter((item) => item.id !== data.element?.id)]);
+    setCanvasMessage(`Saved ${data.element.name} to Element Repository.`);
+  };
+
+  const remapCanvasElement = async (snapshot: Record<string, unknown>) => {
+    const candidates = Array.isArray(snapshot.locatorCandidates)
+      ? (snapshot.locatorCandidates as AutomationLocatorCandidate[])
+      : [];
+    const probable = canvasElements[0];
+    if (!probable) {
+      setCanvasMessage("Save an element before using re-map.");
+      return;
+    }
+    const response = await fetch(
+      `/api/automation/projects/${encodeURIComponent(projectKey)}/elements/${encodeURIComponent(probable.id)}`,
+      {
+        body: JSON.stringify({
+          boundingBox: rectRecord(snapshot.bounds),
+          canonicalLocator: rankedLocators(candidates)[0] ?? probable.canonicalLocator,
+          elementSnapshot: snapshot,
+          fallbackLocators: rankedLocators(candidates).slice(1),
+          locatorCandidates: candidates,
+          metadata: { source: "canvas-remap", stepId: snapshot.stepId },
+          mode: "remap",
+          viewId: canvasView?.id ?? null,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      },
+    );
+    const data = await readJsonResponse<{ element?: CanvasElement; error?: string }>(response, {});
+    if (!response.ok || !data.element) throw new Error(data.error || "Could not re-map element.");
+    setCanvasElements((current) => current.map((item) => (item.id === data.element?.id ? data.element : item)));
+    setCanvasMessage(`Re-mapped ${data.element.name}.`);
+  };
+
+  const showCanvasElementUsage = async (snapshot: Record<string, unknown>) => {
+    const candidates = Array.isArray(snapshot.locatorCandidates)
+      ? (snapshot.locatorCandidates as AutomationLocatorCandidate[])
+      : [];
+    const bestLocator = rankedLocators(candidates)[0];
+    const targetValue = bestLocator?.value || String(snapshot.value ?? snapshot.label ?? "");
+    const repositoryElement = canvasElements.find((item) => {
+      const locatorValue = String(item.canonicalLocator.value ?? "");
+      return item.name === snapshot.label || (locatorValue && locatorValue === targetValue);
+    });
+    if (!repositoryElement) {
+      setCanvasMessage("Save this element before showing usage.");
+      return;
+    }
+    const response = await fetch(
+      `/api/automation/projects/${encodeURIComponent(projectKey)}/elements/${encodeURIComponent(repositoryElement.id)}/usages`,
+      { cache: "no-store" },
+    );
+    const data = await readJsonResponse<{ error?: string; usages?: Array<Record<string, unknown>> }>(response, {});
+    if (!response.ok) throw new Error(data.error || "Could not load element usage.");
+    const usageCount = data.usages?.length ?? 0;
+    setCanvasMessage(
+      usageCount
+        ? `${repositoryElement.name} is used by ${usageCount} command${usageCount === 1 ? "" : "s"}.`
+        : `${repositoryElement.name} has no saved command usage yet.`,
+    );
+  };
+
+  const previewCanvasCommandInsert = (snapshot: Record<string, unknown>, action: string) => {
+    const candidates = Array.isArray(snapshot.locatorCandidates)
+      ? (snapshot.locatorCandidates as AutomationLocatorCandidate[])
+      : [];
+    setCanvasInsertPreview({
+      action,
+      insertAfterStepId: selectedStepId,
+      locator: rankedLocators(candidates)[0] ?? {
+        score: 0,
+        strategy: "css",
+        value: String(snapshot.value ?? snapshot.label ?? ""),
+      },
+      snapshot,
+    });
+    setCanvasMenu(null);
+  };
+
+  const insertCanvasCommand = async (snapshot: Record<string, unknown>, action: string) => {
+    const normalizedAction = normalizeAutomationAction(action);
+    const candidates = Array.isArray(snapshot.locatorCandidates)
+      ? (snapshot.locatorCandidates as AutomationLocatorCandidate[])
+      : [];
+    const bestLocator = rankedLocators(candidates)[0];
+    const targetValue = bestLocator?.value || String(snapshot.value ?? snapshot.label ?? "");
+    const repositoryElement = canvasElements.find((item) => {
+      const locatorValue = String(item.canonicalLocator.value ?? "");
+      return (
+        item.name === snapshot.label ||
+        (locatorValue && locatorValue === targetValue)
+      );
+    });
+    const command: AutomationStep = withLocatorQuality({
+      action: normalizedAction,
+      commandText: commandDefinitionForAction(normalizedAction)?.label || normalizedAction,
+      description: commandDefinitionForAction(normalizedAction)?.label || normalizedAction,
+      element: snapshot,
+      expectedValue: normalizedAction === "assert" ? String(snapshot.text ?? "") : "",
+      id: `step_${crypto.randomUUID().replace(/-/g, "")}`,
+      inputValue:
+        normalizedAction === "fill"
+          ? ""
+          : normalizedAction === "select"
+            ? ""
+            : normalizedAction === "press"
+              ? "Enter"
+              : "",
+      locatorCandidates: candidates,
+      options: {
+        insertedFromCanvas: true,
+        repositoryElementId: repositoryElement?.id,
+      },
+      target: {
+        displayName: String(snapshot.label ?? snapshot.text ?? "Canvas Element"),
+        elementKind: String(snapshot.elementKind ?? snapshot.type ?? "element"),
+        locatorType: bestLocator?.strategy ?? "css",
+        type: "smart",
+        value: targetValue,
+      },
+    });
+    const timelineSteps = mergeStepsById([...finalizedSteps, ...liveSteps]);
+    const selectedIndex = selectedStepId ? timelineSteps.findIndex((step) => step.id === selectedStepId) : -1;
+    const insertAt = selectedIndex >= 0 ? selectedIndex + 1 : timelineSteps.length;
+    await persistSteps([
+      ...timelineSteps.slice(0, insertAt),
+      command,
+      ...timelineSteps.slice(insertAt),
+    ]);
+    if (repositoryElement?.id && command.id) {
+      await fetch(
+        `/api/automation/projects/${encodeURIComponent(projectKey)}/elements/${encodeURIComponent(repositoryElement.id)}/usages`,
+        {
+          body: JSON.stringify({
+            metadata: { commandAction: normalizedAction },
+            scenarioId,
+            stepId: command.id,
+            usageType: "command",
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        },
+      ).catch(() => undefined);
+    }
+    setSelectedStepId(command.id ?? null);
+    setSelectedStepIds(new Set(command.id ? [command.id] : []));
+    setCanvasMenu(null);
+    setCanvasInsertPreview(null);
+    setCanvasMessage(`Inserted ${command.commandText}.`);
+  };
+
   const appendRunFailures = useCallback(
     async (sessionId: string, runId: string) => {
       const response = await fetch(
@@ -5048,18 +9008,47 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     if ("basicAuthPassword" in summaryParameterData) {
       summaryParameterData.basicAuthPassword = "***";
     }
-    if (input.forceNewSession && session?.sessionId) {
+    if (input.forceNewSession && session?.sessionId && !isCompanionPreviewSession(session)) {
       await closeSession("Previous run session closed.");
     }
-    const activeSession = !input.forceNewSession && isUsableBrokerSession(session)
-      ? session
-      : await createSession(sessionStartUrlForRun(input.runSteps, input.startUrl), {
-          browserMode: input.browserMode,
-          environment: input.environment,
-          viewport: input.viewport,
-        });
-    if (!activeSession.sessionId) {
-      throw new Error("Browser session was not created.");
+    const startUrl = sessionStartUrlForRun(input.runSteps, input.startUrl) || normalizeUrl(targetUrl);
+    let companionSessionId =
+      !input.forceNewSession && isUsableBrokerSession(session) && isCompanionPreviewSession(session)
+        ? session.sessionId
+        : "";
+    if (!companionSessionId) {
+      const started = await companionBrowserRequest({
+        body: JSON.stringify({
+          action: "start",
+          browserMode: input.browserMode ?? runConfig.browserMode,
+          httpCredentials:
+            input.environment?.basicAuthEnabled && input.environment.username.trim()
+              ? {
+                  password: input.environment.password,
+                  username: input.environment.username,
+                }
+              : authFromUrl(startUrl),
+          scenarioId,
+          startUrl,
+          viewport: input.viewport ?? viewportForRunConfig(runConfig),
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (!started.sessionId) {
+        throw new Error(started.error || "CaseForge Companion did not return a browser session.");
+      }
+      companionSessionId = started.sessionId;
+      companionCursorRef.current = started.cursor ?? 0;
+      setRecordingSessionId(started.sessionId);
+      setSession(companionSessionMetadata(started, started.url || startUrl));
+      setLivePreviewFailed(false);
+      setProviderEventCaptureAfter(null);
+      setEvents((current) => mergeRecorderEvents([...current, ...companionCommandsToRecorderEvents(started.commands)]));
+      if (started.logs) setLogs(started.logs.slice(-50));
+    }
+    if (!companionSessionId) {
+      throw new Error("CaseForge Companion session was not created.");
     }
     setRunStatus("running");
     setFailedStepResult(null);
@@ -5067,7 +9056,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     const response = await fetch(`/api/automation/projects/${encodeURIComponent(projectKey)}/runs`, {
       body: JSON.stringify({
         scenarioId,
-        sessionId: activeSession.sessionId,
+        sessionId: companionSessionId,
         summary: {
           device: input.deviceLabel ?? null,
           environment: input.environment
@@ -5094,7 +9083,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             : null,
           worker: {
             state: "queued",
-            type: "automation-execution-service",
+            type: "caseforge-companion",
           },
         },
         status: "queued",
@@ -5104,70 +9093,82 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     });
     const data = await readJsonResponse<{ error?: string; run?: { id: string } }>(response, {});
     if (!response.ok || !data.run) throw new Error(data.error || "Could not queue run.");
-    const runResponse = await fetch(
-      `/api/automation/sessions/${encodeURIComponent(activeSession.sessionId)}/run`,
-      {
+    appendLog(
+      `Companion accepted ${input.runSteps.length} command${
+        input.runSteps.length === 1 ? "" : "s"
+      } for ${input.name}.`,
+    );
+    logCommandRunStarted(input.runSteps, data.run.id);
+    let runPassed = false;
+    let stepResults: StepExecutionResult[] = [];
+    try {
+      const playbackResponse = await fetch(`${localAgentUrl}/automation/browser`, {
         body: JSON.stringify({
+          action: "run",
           actionId:
             input.actionId ??
             (input.summarySteps.length === 1 && input.summarySteps[0]?.action === "action"
               ? input.summarySteps[0].target?.value
               : undefined),
           closeOnComplete: input.closeOnComplete,
+          cursor: companionCursorRef.current,
           executionMode: keepSessionOpen ? "interactive_persistent" : "ephemeral_ci",
           keepSessionOpen,
           parameterData: input.parameterData ?? {},
           runId: data.run.id,
+          sessionId: companionSessionId,
           steps: input.runSteps,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
-      },
-    );
-    const runData = await readJsonResponse<{
-      code?: string;
-      error?: string;
-      result?: { status?: string };
-    }>(runResponse, {});
-    if (!runResponse.ok) {
-      throw new Error(
-        runData.code === "SESSION_BUSY"
-          ? "Session is already running another action. Wait for it to finish, then run again."
-          : runData.error || "Could not start run.",
-      );
-    }
-    appendLog(
-      `Worker accepted ${input.runSteps.length} command${
-        input.runSteps.length === 1 ? "" : "s"
-      } for ${input.name}.`,
-    );
-    let runPassed = false;
-    let stepResults: StepExecutionResult[] = [];
-    try {
-      await waitForRunEvent(activeSession.sessionId, data.run.id);
+      });
+      const runData = await readJsonResponse<CompanionBrowserResponse>(playbackResponse, {});
+      companionCursorRef.current = runData.cursor ?? companionCursorRef.current;
+      setSession(companionSessionMetadata(runData, runData.url || startUrl));
+      setLivePreviewTick(Date.now());
+      applyCompanionCommandResults(input.runSteps, runData.results, data.run.id);
+      const normalizedResults: CompanionStepResult[] = runData.results?.length
+        ? runData.results
+        : input.runSteps.map((step, index) => ({
+            index,
+            status: "passed",
+            stepId: step.id ?? null,
+          }));
+      stepResults = normalizedResults.map((result) => ({
+        endedAt: new Date().toISOString(),
+        errorMessage: result.status === "failed" ? result.error || "Command failed." : undefined,
+        index: result.index,
+        runId: data.run?.id ?? null,
+        startedAt: new Date().toISOString(),
+        status: result.status === "failed" ? "failed" : "passed",
+        stepId: result.stepId ?? null,
+      }));
+      const failedResult = runData.results?.find((result) => result.status === "failed");
+      if (!playbackResponse.ok || failedResult) {
+        throw new Error(
+          failedResult?.error ||
+            runData.error ||
+            "A command failed in CaseForge Companion.",
+        );
+      }
       runPassed = true;
       setRunStatus("completed");
     } catch (error) {
-      await appendRunFailures(activeSession.sessionId, data.run.id);
+      const failedResult: StepExecutionResult = {
+        endedAt: new Date().toISOString(),
+        errorMessage: error instanceof Error ? error.message : "Run failed in CaseForge Companion.",
+        index: stepResults.length,
+        runId: data.run.id,
+        startedAt: new Date().toISOString(),
+        status: "failed",
+        stepId: input.runSteps[stepResults.length]?.id ?? null,
+      };
+      stepResults = [...stepResults, failedResult];
+      setFailedStepResult(failedResult);
       setRunStatus("failed");
       throw error;
     } finally {
-      const refreshed = await fetch(`/api/automation/sessions/${encodeURIComponent(activeSession.sessionId)}`, {
-        cache: "no-store",
-      })
-        .then(async (response) => {
-          const refreshedData = await readJsonResponse<{ sessionMetadata?: BrokerSessionMetadata }>(
-            response,
-            {},
-          );
-          return response.ok
-            ? normalizeBrokerSessionMetadata(refreshedData.sessionMetadata, activeSession.sessionId)
-            : null;
-        })
-        .catch(() => null);
-      if (refreshed) setSession(refreshed);
-      const persistedHealingEvents = await persistRunHealingEvents(activeSession.sessionId, data.run.id);
-      stepResults = await collectRunStepResults(activeSession.sessionId, data.run.id);
+      const persistedHealingEvents: HealingReviewEvent[] = [];
       const failedResult = stepResults.find((result) => result.status === "failed");
       if (failedResult) setFailedStepResult(failedResult);
       await updateRunSummary(data.run.id, runPassed ? "passed" : "failed", {
@@ -5190,12 +9191,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         totalSteps: input.runSteps.length,
       });
     }
-    await appendRunFailures(activeSession.sessionId, data.run.id);
-    appendLog("Run completed. Session ready.");
-    return { runId: data.run.id, sessionId: activeSession.sessionId, status: runData.result?.status || "started" };
+    appendLog("Run completed in CaseForge Companion. Session ready.");
+    return { runId: data.run.id, sessionId: companionSessionId, status: runPassed ? "passed" : "failed" };
   };
 
-  const resumeRecording = async () => {
+  const resumeRecordingFromSavedState = async () => {
     setBusy(true);
     try {
       const latestSteps = await fetchLatestScenarioSteps();
@@ -5209,6 +9209,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       setRecordingPaused(false);
       setRecordingSessionId(null);
       setProviderEventCaptureAfter(null);
+      setSession((current) => (isCompanionPreviewSession(current) ? null : current));
       setEvents([]);
       const replay = await expandActionSteps(resumeSteps);
       const replaySteps = replay.steps;
@@ -5236,6 +9237,53 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         lastNavigationUrl(parameterizedResumeSteps) ||
         resumeStartUrl;
       setTargetUrl(resumeStartUrl);
+      if (shouldUseLegacyDesktopBridge(resumeStartUrl)) {
+        if (session?.sessionId && !isCompanionPreviewSession(session)) {
+          await closeSession("Previous browser session closed.");
+        }
+        appendLog(`Opening Companion browser at ${resumeStartUrl}`);
+        const data = await companionBrowserRequest({
+          body: JSON.stringify({
+            action: "start",
+            httpCredentials: authFromUrl(resumeStartUrl),
+            scenarioId,
+            startUrl: resumeStartUrl,
+            viewport: viewportForRunConfig(runConfig),
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        if (!data.sessionId) {
+          throw new Error(data.error || "CaseForge Companion did not return a browser session.");
+        }
+        companionCursorRef.current = data.cursor ?? 0;
+        setRecordingSessionId(data.sessionId);
+        setSession(companionSessionMetadata(data, resumeStartUrl));
+        setLivePreviewFailed(false);
+        setProviderEventCaptureAfter(null);
+        setEvents([]);
+        if (data.logs) setLogs(data.logs.slice(-50));
+
+        const replayRunId = `resume-${Date.now().toString(36)}`;
+        const playbackData = await companionBrowserRequest({
+          body: JSON.stringify({
+            action: "run",
+            cursor: companionCursorRef.current,
+            runId: replayRunId,
+            sessionId: data.sessionId,
+            steps: parameterizedReplaySteps,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        companionCursorRef.current = playbackData.cursor ?? companionCursorRef.current;
+        setSession(companionSessionMetadata(playbackData, playbackData.url || resumeEndUrl));
+        setTargetUrl(playbackData.url || resumeEndUrl);
+        setRecording(true);
+        setRecordingPaused(false);
+        appendLog("Resumed recording in CaseForge Companion from the last saved state.");
+        return;
+      }
       if (session?.sessionId) {
         await closeSession("Previous browser session closed.");
       }
@@ -5291,8 +9339,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       const viewport = viewportForRunConfig(config);
       const deviceLabel = deviceLabelForRunConfig(config);
       const runTestData = activeRunTestData();
-      const latestSteps = await fetchLatestScenarioSteps();
-      const runSteps = mergeStepsById([...finalizedSteps, ...liveSteps, ...latestSteps]);
+      const runSteps = await runtimeScenarioSteps();
       if (!runSteps.length) {
         appendLog("Add commands before running.");
         return;
@@ -5336,15 +9383,21 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         selectedActionCommandKeys,
         selectedActionStepIds,
       })).steps;
-      const activeTestCases = runTestData.testCases;
+      const activeTestCases = runTestData.testCases.filter((testCase) =>
+        testCaseMatchesRunScope(testCase, config),
+      );
       const runRows = activeTestCases.length
         ? activeTestCases
         : [null];
       const totalRuns = environments.length * runRows.length;
+      if (runTestData.testCases.length && !activeTestCases.length) {
+        appendLog("No active test cases match the selected run scope.");
+        return;
+      }
       appendLog(
         `Queued ${totalRuns} run${totalRuns === 1 ? "" : "s"} across ${environments.length} environment${
           environments.length === 1 ? "" : "s"
-        } on ${deviceLabel}.`,
+        } on ${deviceLabel}. Execution mode: ${config.executionMode}.`,
       );
       let runIndex = 0;
       for (const environment of environments) {
@@ -5399,9 +9452,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       setRecordingPaused(false);
       setRecordingSessionId(null);
       setProviderEventCaptureAfter(null);
-      setSession(null);
     } catch (error) {
-      setSession(null);
       appendLog(error instanceof Error ? error.message : "Could not queue run.");
     } finally {
       setBusy(false);
@@ -5416,13 +9467,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       if (!(await saveOpenCommandPromptDraft())) return;
       const runTestData = activeRunTestData();
       const runnableStep = currentStepForRun(step);
-      const latestSteps = await fetchLatestScenarioSteps();
-      const setupSourceSteps = mergeStepsById([...finalizedSteps, ...liveSteps, ...latestSteps]);
+      const setupSourceSteps = await runtimeScenarioSteps();
       setRecording(false);
       setRecordingPaused(false);
       setRecordingSessionId(null);
       setProviderEventCaptureAfter(null);
-      setEvents([]);
+      setPlaybackState("stepRunning");
       if (actionStepId) {
         setCommandRunStates((current) => ({
           ...current,
@@ -5501,8 +9551,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           },
         }));
       }
+      setPlaybackState("completed");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not run action.";
+      setPlaybackState("failed");
       if (actionStepId) {
         setCommandRunStates((current) => ({
           ...current,
@@ -5526,55 +9578,122 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       if (!(await saveOpenCommandPromptDraft())) return;
       const runTestData = activeRunTestData();
       const runnableStep = currentStepForRun(step);
-      const latestSteps = await fetchLatestScenarioSteps();
-      const setupSourceSteps = mergeStepsById([...finalizedSteps, ...liveSteps, ...latestSteps]);
-      setRecording(false);
-      setRecordingPaused(false);
-      setRecordingSessionId(null);
-      setProviderEventCaptureAfter(null);
-      setEvents([]);
       if (runnableStep.action === "action") {
         await runActionStep(runnableStep);
         return;
       }
-      const commandContextSteps = timelineContextStepsForStep(runnableStep, setupSourceSteps);
-      const commandRun = await expandActionSteps(commandContextSteps);
+      const commandAction = displayAction(runnableStep.action);
+      if (!isRunnableWebCommand(commandAction)) {
+        const message = commandAdapterPendingMessage(commandAction);
+        setPlaybackState("failed");
+        setCommandRunStates((current) => ({
+          ...current,
+          [runnableStep.id]: {
+            message,
+            runId: null,
+            status: "failed",
+            updatedAt: new Date().toISOString(),
+          },
+        }));
+        appendLog(message);
+        return;
+      }
+      const commandRun = await expandActionSteps([runnableStep]);
       const commandSteps = commandRun.steps;
+      if (!commandSteps.length) throw new Error("Command has no executable step.");
       setCommandRunStates((current) => ({
         ...current,
         [runnableStep.id]: {
-          message: "Queued",
+          message: "Running",
           runId: null,
           status: "running",
           updatedAt: new Date().toISOString(),
         },
       }));
+      setPlaybackState("stepRunning");
       const commandName = runnableStep.commandText || readableStepLabel(runnableStep);
-      if (runTestData.testCases.length) {
-        for (const testCase of runTestData.testCases) {
-          const parameterData = dataForTestCase(testCase, runTestData.parameters);
-          const parameterizedSteps = substituteStepsParameters(commandSteps, parameterData);
-          const parameterizedSummarySteps = substituteStepsParameters([runnableStep], parameterData);
-          const parameterizedSetupSteps = substituteStepsParameters(setupSourceSteps, parameterData);
-          const executableSteps = withScenarioInitSteps(parameterizedSteps, parameterizedSetupSteps);
-          await startSessionRun({
-            closeOnComplete: false,
-            keepSessionOpen: true,
-            name: `${commandName} / ${testCase.name}`,
-            parameterData,
-            runSteps: executableSteps,
-            startUrl: firstNavigationUrl(executableSteps) || normalizeUrl(targetUrl),
-            summarySteps: parameterizedSummarySteps,
-            testCase,
+      const activeTestCase = runTestData.testCases[0] ?? null;
+      const parameterData = activeTestCase
+        ? dataForTestCase(activeTestCase, runTestData.parameters)
+        : defaultParameterData(runTestData.parameters);
+      const parameterizedSteps = substituteStepsParameters(commandSteps, parameterData);
+      const parameterizedSummarySteps = substituteStepsParameters([runnableStep], parameterData);
+      const activeCompanionSession =
+        isUsableBrokerSession(session) && isCompanionPreviewSession(session)
+          ? session
+          : null;
+      if (activeCompanionSession?.sessionId) {
+        const commandRunId = `command-${Date.now().toString(36)}`;
+        const beforeCommandUrl = activeCompanionSession.currentUrl || targetUrl;
+        appendLog(`Running command in current Live Preview: ${commandName}.`);
+        const playbackResponse = await fetch(`${localAgentUrl}/automation/browser`, {
+          body: JSON.stringify({
+            action: "run",
+            cursor: companionCursorRef.current,
+            runId: commandRunId,
+            sessionId: activeCompanionSession.sessionId,
+            steps: parameterizedSteps,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        const playbackData = await readJsonResponse<CompanionBrowserResponse>(playbackResponse, {});
+        companionCursorRef.current = playbackData.cursor ?? companionCursorRef.current;
+        setSession((current) =>
+          isCompanionPreviewSession(current)
+            ? companionSessionMetadata(playbackData, playbackData.url || current?.currentUrl || targetUrl)
+            : current,
+        );
+        setLivePreviewTick(Date.now());
+        const failedResult = playbackData.results?.find((result) => result.status === "failed");
+        const resultLogLines = (playbackData.results ?? []).flatMap((result) => {
+            const resultIndex = typeof result.index === "number" ? result.index : -1;
+            const resultStep =
+              (result.stepId
+                ? parameterizedSteps.find((item) => item.id === result.stepId)
+                : null) ??
+              (resultIndex >= 0 ? parameterizedSteps[resultIndex] : undefined);
+            const outputLine = commandConsoleOutputLineForStep(resultStep, result.output);
+            return [
+              ...(outputLine ? [outputLine] : []),
+              ...commandConsoleDetailLinesForStep(resultStep, result.output),
+            ];
           });
+        if (!playbackResponse.ok || failedResult) {
+          for (const line of resultLogLines) {
+            appendLog(line);
+          }
+          const message =
+            failedResult?.error ||
+            playbackData.error ||
+            "Command failed in Live Preview.";
+          throw new Error(message);
+        }
+        setCommandRunStates((current) => ({
+          ...current,
+          [runnableStep.id]: {
+            message: "Passed",
+            runId: commandRunId,
+            status: "passed",
+            updatedAt: new Date().toISOString(),
+          },
+        }));
+        appendLog(`Command passed in Live Preview: ${commandName}.`);
+        const afterCommandUrl = playbackData.url || playbackData.currentUrl || "";
+        if (
+          afterCommandUrl &&
+          normalizeUrl(afterCommandUrl) !== normalizeUrl(beforeCommandUrl)
+        ) {
+          appendLog(`Current URL changed to: ${afterCommandUrl}.`);
+        }
+        for (const line of resultLogLines) {
+          appendLog(line);
         }
       } else {
-        const parameterData = defaultParameterData(runTestData.parameters);
-        const parameterizedSteps = substituteStepsParameters(commandSteps, parameterData);
-        const parameterizedSummarySteps = substituteStepsParameters([runnableStep], parameterData);
+        const setupSourceSteps = await runtimeScenarioSteps();
         const parameterizedSetupSteps = substituteStepsParameters(setupSourceSteps, parameterData);
         const executableSteps = withScenarioInitSteps(parameterizedSteps, parameterizedSetupSteps);
-        await startSessionRun({
+        const runResult = await startSessionRun({
           closeOnComplete: false,
           keepSessionOpen: true,
           name: `${commandName} run`,
@@ -5582,10 +9701,24 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           runSteps: executableSteps,
           startUrl: firstNavigationUrl(executableSteps) || normalizeUrl(targetUrl),
           summarySteps: parameterizedSummarySteps,
+          testCase: activeTestCase,
         });
+        setCommandRunStates((current) => ({
+          ...current,
+          [runnableStep.id]: {
+            message: "Passed",
+            runId: runResult.runId,
+            status: "passed",
+            updatedAt: new Date().toISOString(),
+          },
+        }));
+        appendLog(`Command passed: ${commandName}.`);
+        if (runResult.runId) appendLog(`Run ID: ${runResult.runId}.`);
       }
+      setPlaybackState("completed");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not run command.";
+      setPlaybackState("failed");
       if (step.id) {
         setCommandRunStates((current) => ({
           ...current,
@@ -5664,14 +9797,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     if (!recording || !sessionId) return;
     const nextPaused = !recordingPaused;
     try {
-      if (shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl))) {
-        setRecordingPaused(nextPaused);
-        appendLog(nextPaused ? "Companion sync paused." : "Companion sync resumed.");
+      if (nextPaused) {
+        await pauseRecording();
         return;
       }
-      await setSessionRecorderMode(sessionId, nextPaused ? "off" : "record");
-      setRecordingPaused(nextPaused);
-      appendLog(nextPaused ? "Recording paused." : "Recording resumed.");
+      await resumeRecording();
     } catch (error) {
       appendLog(error instanceof Error ? error.message : "Could not update recording mode.");
     }
@@ -5679,36 +9809,73 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
 
   useEffect(() => {
     let cancelled = false;
-    void fetch(
-      `/api/automation/projects/${encodeURIComponent(projectKey)}/scenarios/${encodeURIComponent(scenarioId)}`,
-      { cache: "no-store" },
-    )
-      .then(async (response) => {
-        const data = await readJsonResponse<{
-          error?: string;
-          scenario?: AutomationScenario;
-        }>(response, {});
-        if (!response.ok) throw new Error(data.error || "Could not load scenario.");
-        if (!cancelled && data.scenario) {
+
+    const fetchScenario = async () => {
+      const response = await fetch(
+        `/api/automation/projects/${encodeURIComponent(projectKey)}/scenarios/${encodeURIComponent(scenarioId)}`,
+        { cache: "no-store" },
+      );
+      const data = await readJsonResponse<{
+        error?: string;
+        scenario?: AutomationScenario;
+      }>(response, {});
+      if (!response.ok) {
+        throw responseStatusError(data.error || "Could not load scenario.", response.status);
+      }
+      return data.scenario ?? null;
+    };
+
+    const loadScenario = async () => {
+      try {
+        await ensureBrowserProjectSynced(projectKey);
+        let loadedScenario: AutomationScenario | null;
+        try {
+          loadedScenario = await fetchScenario();
+        } catch (loadError) {
+          if (!isNotFoundStatusError(loadError)) {
+            throw loadError;
+          }
+          const synced = await ensureBrowserProjectSynced(projectKey);
+          if (!synced) {
+            throw loadError;
+          }
+          loadedScenario = await fetchScenario();
+        }
+
+        if (!cancelled && loadedScenario) {
           const cached = readDraftCache(projectKey, scenarioId);
-          if (shouldUseCachedScenario(data.scenario, cached)) {
+          if (shouldUseCachedScenario(loadedScenario, cached)) {
             setScenario(cached);
           } else {
-            setScenario(data.scenario);
+            setScenario(loadedScenario);
             clearDraftCache(projectKey, scenarioId);
           }
         }
-      })
-      .catch((error) => {
+      } catch (error) {
         const cached = readDraftCache(projectKey, scenarioId);
         if (!cancelled && cached) setScenario(cached);
         appendLog(error instanceof Error ? error.message : "Could not load scenario.");
-      });
+      }
+    };
+
+    void loadScenario();
 
     return () => {
       cancelled = true;
     };
   }, [appendLog, projectKey, scenarioId]);
+
+  useEffect(() => {
+    void refreshPlaybackState().catch((error) => {
+      appendLog(error instanceof Error ? error.message : "Could not load playback state.");
+    });
+  }, [appendLog, refreshPlaybackState]);
+
+  useEffect(() => {
+    void refreshCanvasState().catch((error) => {
+      appendLog(error instanceof Error ? error.message : "Could not load Canvas state.");
+    });
+  }, [appendLog, refreshCanvasState]);
 
   useEffect(() => {
     if (
@@ -5728,12 +9895,18 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         .then((data) => {
           companionCursorRef.current = data.cursor ?? companionCursorRef.current;
           if (data.url) setTargetUrl(data.url);
+          setSession((current) =>
+            isCompanionPreviewSession(current)
+              ? companionSessionMetadata(data, data.url || current?.currentUrl || targetUrl)
+              : current,
+          );
           if (data.status === "stopped" || data.status === "failed") {
             setRecording(false);
           }
           const recorderEvents = companionCommandsToRecorderEvents(data.commands);
           if (recorderEvents.length) {
             setEvents((current) => mergeRecorderEvents([...current, ...recorderEvents]));
+            persistRecorderEvents(recorderEvents);
           }
           if (data.logs) setLogs(data.logs.slice(-50));
         })
@@ -5742,7 +9915,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     poll();
     const intervalId = window.setInterval(poll, 1000);
     return () => window.clearInterval(intervalId);
-  }, [recordingActive, recordingPaused, recordingSessionId, targetUrl]);
+  }, [persistRecorderEvents, recordingActive, recordingPaused, recordingSessionId, targetUrl]);
 
   useEffect(() => {
     if (shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl)) || !session?.sessionId) return;
@@ -5813,6 +9986,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           );
           if (recorderEvents.length) {
             setEvents((current) => mergeRecorderEvents([...current, ...recorderEvents]));
+            persistRecorderEvents(recorderEvents);
             const verifyEvent = recorderEvents.find((event) => event.type === "assert");
             if (verifyEvent) {
               setVerifyPicking(false);
@@ -5836,7 +10010,19 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [appendLog, providerEventCaptureAfter, recording, recordingSessionId, session?.sessionId, targetUrl, verifyPicking]);
+  }, [appendLog, persistRecorderEvents, providerEventCaptureAfter, recording, recordingSessionId, session?.sessionId, targetUrl, verifyPicking]);
+
+  useEffect(() => {
+    if (!canvasExploreElement) return;
+    const handleCanvasExploreKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setCanvasExploreElement(null);
+        setCanvasExploreIndex(0);
+      }
+    };
+    window.addEventListener("keydown", handleCanvasExploreKey);
+    return () => window.removeEventListener("keydown", handleCanvasExploreKey);
+  }, [canvasExploreElement]);
 
   return (
     <div className="mt-4 min-h-[760px] overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
@@ -5849,29 +10035,106 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
               {session?.status || "not started"}
             </span>
+            <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
+              Browser: {browserSessionState}
+            </span>
+            {advancedRecordingUiEnabled ? (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+                Recorder: {recorderState}
+              </span>
+            ) : null}
+            {advancedPlaybackUiEnabled ? (
+              <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-800 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-100">
+                Playback: {playbackState}
+              </span>
+            ) : null}
           </div>
           <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
             {visibleSteps.length} commands{selectedSteps.length ? ` | ${selectedSteps.length} selected` : ""}
             {recordingPaused ? " | paused" : ""}
           </p>
         </div>
-        <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:justify-end lg:max-w-4xl">
+        <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end lg:max-w-4xl">
           <a
             href={companionDownloadUrl}
+            target="_blank"
+            rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.6
+            Download Companion 0.1.25
           </a>
           <button
             type="button"
-            onClick={() => void (recordingActive ? toggleRecording() : openRecordModal())}
-            disabled={busy || verifyPicking}
-            className={`rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition disabled:opacity-50 ${
-              recordingActive ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"
-            }`}
+            data-live-preview-action="glowcart-demo"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void prepareGlowCartDemoAuthoring();
+            }}
+            disabled={busy || recordingActive || verifyPicking}
+            className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100 dark:hover:bg-emerald-500/20"
           >
-            {recordingActive ? "Stop" : "Record"}
+            {glowCartPreparing ? "Preparing Demo..." : "Try GlowCart Demo"}
           </button>
+          {advancedRecordingUiEnabled ? (
+            <button
+              type="button"
+              onClick={() => void (recordingActive ? stopRecording() : openRecordModal())}
+              disabled={busy || verifyPicking}
+              className={`rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition disabled:opacity-50 ${
+                recordingActive ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"
+              }`}
+            >
+              {recordingActive ? "Stop" : "Record"}
+            </button>
+          ) : null}
+          {advancedPlaybackUiEnabled ? (
+            <>
+              <div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-sky-200 bg-sky-50 dark:border-sky-500/30 dark:bg-sky-500/10">
+                <button
+                  type="button"
+                  onClick={() => void startPlayback(selectedStepIds.size ? "selected" : "fullScenario")}
+                  disabled={busy || playbackBusy || verifyPicking}
+                  className="min-w-[92px] whitespace-nowrap px-3 py-1.5 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-50 dark:text-sky-100 dark:hover:bg-sky-500/20"
+                >
+                  Playback
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void startPlayback("selectedToEnd")}
+                  disabled={busy || playbackBusy || verifyPicking || !selectedStepId}
+                  className="min-w-[72px] whitespace-nowrap border-l border-sky-200 px-2.5 py-1.5 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-40 dark:border-sky-500/30 dark:text-sky-100 dark:hover:bg-sky-500/20"
+                  title="Playback from selected command to the end"
+                >
+                  To End
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void startPlayback("startToSelected")}
+                  disabled={busy || playbackBusy || verifyPicking || !selectedStepId}
+                  className="min-w-[72px] whitespace-nowrap border-l border-sky-200 px-2.5 py-1.5 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-40 dark:border-sky-500/30 dark:text-sky-100 dark:hover:bg-sky-500/20"
+                  title="Playback from the beginning to selected command"
+                >
+                  To Here
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => void stopPlaybackQueue()}
+                disabled={playbackBusy && !playbackJobs.some((job) => job.status === "queued")}
+                className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              >
+                Stop Queue
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlaybackConfigOpen(true)}
+                className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              >
+                Playback Config
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={openRunModal}
@@ -5883,34 +10146,561 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         </div>
       </div>
 
-      <div className="grid min-h-[700px] min-w-0 gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <main className="grid min-h-[660px] min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-3 overflow-hidden">
+      <div className={`grid min-h-[700px] min-w-0 gap-3 p-3 ${livePreviewWorkspaceColumns}`}>
+        <main
+          className="grid min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-3 overflow-hidden"
+          style={{ minHeight: `${Math.max(660, activeLivePreviewSize.panelMinHeight + 100)}px` }}
+        >
           <section className="relative min-w-0 overflow-hidden rounded-[16px] border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-            <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
-              <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
-              <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-              <div className="ml-2 min-w-0 flex-1 truncate rounded-lg bg-zinc-100 px-3 py-1.5 text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-                {targetUrl}
-              </div>
-              {session?.liveViewUrl ? (
-                <a
-                  href={session.liveViewUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
+            <div className="border-b border-zinc-200 dark:border-zinc-800">
+              <div className="flex min-w-0 items-center gap-1.5 px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => void requestLiveBrowserCommand("back")}
+                  disabled={!canControlLiveBrowser || browserNavBusy}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-950 disabled:opacity-35 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+                  title="Back"
+                  aria-label="Back"
                 >
-                  Pop out
-                </a>
+                  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4">
+                    <path d="M11.8 4.8 6.6 10l5.2 5.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void requestLiveBrowserCommand("forward")}
+                  disabled={!canControlLiveBrowser || browserNavBusy}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-950 disabled:opacity-35 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+                  title="Forward"
+                  aria-label="Forward"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4">
+                    <path d="m8.2 4.8 5.2 5.2-5.2 5.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void requestLiveBrowserCommand("reload")}
+                  disabled={!canControlLiveBrowser || browserNavBusy}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-950 disabled:opacity-35 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+                  title="Reload"
+                  aria-label="Reload"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 20 20" className={`h-4 w-4 ${browserNavBusy ? "animate-spin" : ""}`}>
+                    <path d="M15.2 7.2A5.8 5.8 0 1 0 16 10" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" />
+                    <path d="M15.3 3.9v3.4h-3.4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+                  </svg>
+                </button>
+                <form onSubmit={submitLiveBrowserAddress} className="min-w-[160px] flex-1">
+                  <div className="flex h-8 w-full items-center rounded-full border border-transparent bg-zinc-100 transition focus-within:border-sky-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-100 dark:bg-zinc-900 dark:focus-within:border-sky-500/60 dark:focus-within:bg-zinc-950 dark:focus-within:ring-sky-500/15">
+                    <input
+                      value={browserAddressDraft}
+                      onChange={(event) => setBrowserAddressDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          const nextUrl = normalizeUrl(browserAddressDraft);
+                          setBrowserAddressDraft(nextUrl);
+                          void requestLiveBrowserCommand("navigate", nextUrl);
+                        }
+                      }}
+                      disabled={!canControlLiveBrowser || browserNavBusy}
+                      className="min-w-0 flex-1 bg-transparent px-3 text-sm text-zinc-800 outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-100"
+                      aria-label="Preview address"
+                      spellCheck={false}
+                    />
+                    <button
+                      type="submit"
+                      disabled={!canControlLiveBrowser || browserNavBusy}
+                      className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white hover:text-zinc-950 disabled:opacity-35 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+                      title="Go"
+                      aria-label="Go"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3.5 w-3.5">
+                        <path d="m7.2 4.8 5.2 5.2-5.2 5.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                      </svg>
+                    </button>
+                  </div>
+                </form>
+                {session?.liveViewUrl ? (
+                  <>
+                    <span className="rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">
+                      Live preview
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLiveInspectorEnabled((current) => {
+                          const next = !current;
+                          if (!next) {
+                            setLiveInspectorResult(null);
+                            setLiveInspectorSelected(null);
+                            setLiveCommandMenu(null);
+                          }
+                          return next;
+                        })
+                      }
+                      className={`rounded-lg px-2 py-1 text-xs font-semibold transition ${
+                        liveInspectorEnabled
+                          ? "bg-sky-700 text-white"
+                          : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                      }`}
+                      title={
+                        liveInspectorEnabled
+                          ? "Inspect is on: hover/right-click to author commands"
+                          : "Inspect is off: interact with the browser without recording"
+                      }
+                    >
+                      Inspect
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void cycleLivePreviewSize()}
+                      disabled={busy}
+                      className="rounded-lg border border-zinc-200 px-2 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                      title="Increase both the hidden browser viewport and the Live Preview panel"
+                    >
+                      Preview Size: {activeLivePreviewSize.label}
+                    </button>
+                    <span className="hidden rounded-lg bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 sm:inline">
+                      {activeLivePreviewSize.viewport.width} x {activeLivePreviewSize.viewport.height}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setLivePreviewTabsExpanded((current) => !current)}
+                      className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                      title="Detected preview tabs and windows"
+                      aria-label="Detected preview tabs and windows"
+                    >
+                      {previewTabCount}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void requestLiveBrowserCommand("newTab", previewAddress)}
+                      disabled={!canControlLiveBrowser || browserNavBusy}
+                      className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-950 disabled:opacity-35 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+                      title="Open current page in a new preview tab"
+                      aria-label="Open current page in a new preview tab"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4">
+                        <rect x="4" y="6" width="9" height="8" rx="1.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+                        <path d="M7 4h7.2c1 0 1.8.8 1.8 1.8V12" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void requestLiveBrowserCommand("closeTab")}
+                      disabled={!canControlLiveBrowser || browserNavBusy}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-rose-50 hover:text-rose-700 disabled:opacity-35 dark:text-zinc-400 dark:hover:bg-rose-500/10 dark:hover:text-rose-200"
+                      title="Close active preview tab"
+                      aria-label="Close active preview tab"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4">
+                        <path d="m6 6 8 8M14 6l-8 8" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+                      </svg>
+                    </button>
+                  </>
+                ) : null}
+                {advancedCanvasUiEnabled ? (
+                  <div className="ml-1 flex overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
+                    {(["browser", "canvas"] as const).map((tab) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => setWorkspaceTab(tab)}
+                        className={`px-2 py-1 text-xs font-semibold capitalize transition ${
+                          workspaceTab === tab
+                            ? "bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950"
+                            : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                        }`}
+                      >
+                        {tab}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {advancedCanvasUiEnabled && workspaceTab === "canvas" ? (
+                  <button
+                    type="button"
+                    onClick={() => void captureCanvasFromTimeline()}
+                    className="rounded-lg px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10"
+                  >
+                    Capture Canvas
+                  </button>
+                ) : null}
+              </div>
+              {(livePreviewTabsExpanded && previewTabs.length > 0) || livePreviewTabNotice ? (
+                <div className="border-t border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/60">
+                  {livePreviewTabNotice ? (
+                    <div className="mb-2 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+                      <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                      <span className="truncate">Opened new tab: {livePreviewTabNotice.label}</span>
+                    </div>
+                  ) : null}
+                  {livePreviewTabsExpanded && previewTabs.length > 0 ? (
+                    <>
+                      <div className="mb-2 min-w-0 truncate text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                        Active: {livePreviewTabLabel(activePreviewTab)}
+                      </div>
+                      <div className="flex items-center gap-2 overflow-x-auto">
+                        {previewTabs.map((tab, index) => {
+                          const active = tab.id === session?.activeTabId || tab.active;
+                          const label = tab.title || tab.url || `Tab ${index + 1}`;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              onClick={() => void switchLivePreviewTab(tab.id)}
+                              className={`max-w-[220px] shrink-0 truncate rounded-lg border px-3 py-1.5 text-left text-xs font-semibold transition ${
+                                active
+                                  ? "border-zinc-950 bg-zinc-950 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950"
+                                  : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                              }`}
+                              title={tab.url || label}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
               ) : null}
             </div>
-            <div className="h-full min-h-[560px] min-w-0 overflow-hidden bg-zinc-100 dark:bg-zinc-900">
-              {session?.liveViewUrl ? (
-                <iframe
-                  src={session.liveViewUrl}
-                  className="h-full min-h-[560px] w-full border-0 bg-white"
-                  title="Automation browser live view"
-                />
+            <div
+              className="h-full min-w-0 overflow-hidden bg-zinc-100 dark:bg-zinc-900"
+              style={{ minHeight: `${activeLivePreviewSize.panelMinHeight}px` }}
+            >
+              {advancedCanvasUiEnabled && workspaceTab === "canvas" ? (
+                <div
+                  className="relative h-full min-h-[560px] overflow-auto bg-zinc-950 p-4"
+                  onClick={() => setCanvasMenu(null)}
+                >
+                  <div className="mb-3 flex min-w-0 flex-wrap items-center justify-between gap-2 text-xs text-zinc-300">
+                    <span className="truncate">
+                      {canvasView
+                        ? `${canvasView.title || canvasView.name || "Captured View"} | ${canvasView.url || targetUrl}`
+                        : "No Canvas captured yet"}
+                    </span>
+                    <span>
+                      {canvasElements.length} repository element{canvasElements.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="relative mx-auto aspect-[16/9] min-h-[420px] max-w-5xl overflow-hidden rounded-xl border border-zinc-700 bg-white shadow-2xl">
+                    {canvasView?.screenshotUri ? (
+                      <img
+                        src={canvasView.screenshotUri}
+                        alt=""
+                        className="absolute inset-0 h-full w-full object-contain"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(15,23,42,0.06)_1px,transparent_1px),linear-gradient(rgba(15,23,42,0.06)_1px,transparent_1px)] bg-[size:32px_32px]" />
+                    )}
+                    {(canvasView?.elementSnapshots ?? []).map((snapshot, index) => {
+                      const bounds = rectRecord(snapshot.bounds);
+                      const saved = canvasElements.some((element) => {
+                        const locatorValue = String(element.canonicalLocator.value ?? "");
+                        const snapshotLocator = rankedLocators(
+                          Array.isArray(snapshot.locatorCandidates)
+                            ? (snapshot.locatorCandidates as AutomationLocatorCandidate[])
+                            : [],
+                        )[0]?.value;
+                        return locatorValue && locatorValue === snapshotLocator;
+                      });
+                      const ambiguous = Number(snapshot.matchCount ?? 0) > 1 || snapshot.repositoryStatus === "ambiguous";
+                      const tableCell = String(snapshot.elementKind ?? snapshot.type).toLowerCase().includes("table");
+                      return (
+                        <button
+                          key={String(snapshot.id ?? index)}
+                          type="button"
+                          onMouseEnter={() => setCanvasHoverElement(snapshot)}
+                          onMouseLeave={() => setCanvasHoverElement(null)}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            setCanvasMenu({ element: snapshot, x: event.clientX, y: event.clientY });
+                          }}
+                          onDoubleClick={() => {
+                            if (ambiguous) openCanvasExploreMode(snapshot);
+                          }}
+                          className={`absolute rounded-sm border-2 text-left outline-none transition ${
+                            ambiguous
+                              ? "border-orange-400 bg-orange-300/20"
+                              : saved
+                                ? "border-emerald-500 bg-emerald-300/15"
+                                : "border-sky-500 bg-sky-300/15"
+                          } ${tableCell ? "border-dotted" : ""}`}
+                          style={canvasBoxStyle(bounds, canvasView?.viewport ?? {})}
+                          title={String(snapshot.label ?? snapshot.text ?? "Canvas element")}
+                        >
+                          <span className="absolute -top-5 left-0 max-w-40 truncate rounded bg-zinc-950 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                            {String(snapshot.label ?? snapshot.elementKind ?? "Element")}
+                          </span>
+                          {tableCell ? (
+                            <span className="absolute bottom-0 right-0 rounded-tl bg-zinc-950 px-1 text-[9px] font-semibold text-white">
+                              r{String(snapshot.row ?? 1)} c{String(snapshot.column ?? 1)}
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                    {!canvasView ? (
+                      <div className="absolute inset-0 flex items-center justify-center p-6 text-center">
+                        <div>
+                          <p className="text-xs font-semibold uppercase text-sky-700">View Canvas</p>
+                          <p className="mt-2 text-sm text-zinc-600">
+                            Capture a Canvas from recorded commands, then right-click elements to save,
+                            re-map, or insert commands.
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                  {currentCanvasExploreCandidate ? (
+                    <div className="absolute bottom-4 left-4 z-30 w-[min(420px,calc(100%-32px))] rounded-xl border border-orange-300 bg-white p-3 text-xs shadow-2xl dark:border-orange-500/40 dark:bg-zinc-950">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold uppercase tracking-[0.14em] text-orange-700 dark:text-orange-200">
+                            Canvas Explore Mode
+                          </p>
+                          <p className="mt-1 truncate font-semibold text-zinc-950 dark:text-zinc-50">
+                            {String(currentCanvasExploreCandidate.label ?? currentCanvasExploreCandidate.text ?? "Candidate")}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCanvasExploreElement(null)}
+                          className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                        >
+                          Esc
+                        </button>
+                      </div>
+                      <p className="mt-2 text-zinc-600 dark:text-zinc-300">
+                        Candidate hierarchy: parent / current / child / sibling. Double-click ambiguous regions to move deeper.
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {canvasCandidateStack(canvasExploreElement ?? {}).map((candidate, index) => (
+                          <button
+                            key={`${String(candidate.label ?? candidate.text ?? "candidate")}-${index}`}
+                            type="button"
+                            onClick={() => setCanvasExploreIndex(index)}
+                            className={`rounded-lg border px-2 py-1 font-semibold ${
+                              index === canvasExploreIndex
+                                ? "border-orange-400 bg-orange-50 text-orange-800 dark:bg-orange-500/10 dark:text-orange-100"
+                                : "border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                            }`}
+                          >
+                            {String(candidate.candidateRole ?? (index === 0 ? "current" : `candidate ${index + 1}`))}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const stack = canvasCandidateStack(canvasExploreElement ?? {});
+                            setCanvasExploreIndex((current) => (current + stack.length - 1) % Math.max(stack.length, 1));
+                          }}
+                          className="rounded-lg border border-zinc-200 px-3 py-1.5 font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const stack = canvasCandidateStack(canvasExploreElement ?? {});
+                            setCanvasExploreIndex((current) => (current + 1) % Math.max(stack.length, 1));
+                          }}
+                          className="rounded-lg border border-zinc-200 px-3 py-1.5 font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                        >
+                          Next
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCanvasHoverElement(currentCanvasExploreCandidate);
+                            setCanvasMessage("Explore candidate selected.");
+                          }}
+                          className="rounded-lg bg-orange-600 px-3 py-1.5 font-semibold text-white hover:bg-orange-700"
+                        >
+                          Select Candidate
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {canvasHoverElement ? (
+                    <div className="mt-3 rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-xs text-zinc-200">
+                      <span className="font-semibold">{String(canvasHoverElement.label ?? "Element")}</span>
+                      <span className="ml-2 text-zinc-400">
+                        {String(canvasHoverElement.elementKind ?? canvasHoverElement.type ?? "element")}
+                      </span>
+                      <span className="ml-2 text-zinc-400">
+                        {String(canvasHoverElement.text ?? "")}
+                      </span>
+                    </div>
+                  ) : canvasMessage ? (
+                    <div className="mt-3 rounded-xl border border-sky-700 bg-sky-950/60 p-3 text-xs text-sky-100">
+                      {canvasMessage}
+                    </div>
+                  ) : null}
+                  {canvasMenu ? (
+                    <div
+                      className="fixed z-50 w-64 rounded-xl border border-zinc-200 bg-white p-2 text-sm shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+                      style={{ left: canvasMenu.x, top: canvasMenu.y }}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <p className="truncate px-2 py-1 text-xs font-semibold text-zinc-500">
+                        {String(canvasMenu.element.label ?? "Canvas Element")}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void saveCanvasElement(canvasMenu.element)}
+                        className="w-full rounded-lg px-2 py-1.5 text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                      >
+                        Save Element
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void remapCanvasElement(canvasMenu.element)}
+                        className="w-full rounded-lg px-2 py-1.5 text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                      >
+                        Re-map Saved Element
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCanvasMessage("Locator test uses the command drawer Test Locator action.");
+                          setCanvasMenu(null);
+                        }}
+                        className="w-full rounded-lg px-2 py-1.5 text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                      >
+                        Test Locator
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void showCanvasElementUsage(canvasMenu.element).finally(() => setCanvasMenu(null))}
+                        className="w-full rounded-lg px-2 py-1.5 text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                      >
+                        Show Usage
+                      </button>
+                      <div className="my-1 border-t border-zinc-200 dark:border-zinc-800" />
+                      <button
+                        type="button"
+                        onClick={() => openCanvasExploreMode(canvasMenu.element)}
+                        className="w-full rounded-lg px-2 py-1.5 text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                      >
+                        Explore Mode
+                      </button>
+                      <div className="my-1 border-t border-zinc-200 dark:border-zinc-800" />
+                      <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Insert Command
+                      </p>
+                      {["click", "doubleClick", "rightClick", "fill", "select", "check", "uncheck", "assert"].map((action) => (
+                        <button
+                          key={action}
+                          type="button"
+                          onClick={() => previewCanvasCommandInsert(canvasMenu.element, action)}
+                          className="w-full rounded-lg px-2 py-1.5 text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                        >
+                          Insert {commandDefinitionForAction(action)?.label || action}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : session?.liveViewUrl && session.sessionId ? (
+                <div
+                  ref={livePreviewContainerRef}
+                  className={`relative h-full overflow-auto bg-zinc-100 p-2 dark:bg-zinc-950 ${
+                    liveInspectorEnabled ? "cursor-crosshair" : ""
+                  }`}
+                  style={{ minHeight: `${activeLivePreviewSize.panelMinHeight}px` }}
+                  onClick={handleLiveInspectorClick}
+                  onContextMenu={openLiveCommandMenu}
+                  onDoubleClick={handleLivePreviewDoubleClick}
+                  onKeyDown={handleLivePreviewKeyDown}
+                  onMouseLeave={() => {
+                    if (!liveInspectorSelected) setLiveInspectorResult(null);
+                  }}
+                  onMouseMove={handleLiveInspectorMove}
+                  onWheel={handleLivePreviewWheel}
+                  tabIndex={0}
+                >
+                  <img
+                    ref={livePreviewImageRef}
+                    src={livePreviewStreamFrameSrc || liveFrameSrcForSession(session, livePreviewTick)}
+                    alt="Live browser preview"
+                    className="mx-auto block h-auto w-full bg-white object-contain"
+                    style={{ maxWidth: `${activeLivePreviewSize.viewport.width}px` }}
+                    draggable={false}
+                    onError={() => setLivePreviewFailed(true)}
+                    onLoad={() => {
+                      setLivePreviewFailed(false);
+                      if (!livePreviewScroll.maxY) requestLivePreviewScroll(0, 0);
+                    }}
+                  />
+                  <div className="absolute left-3 top-3 rounded-full border border-zinc-700 bg-zinc-950/86 px-3 py-1 text-xs font-semibold text-zinc-100 shadow-lg backdrop-blur">
+                    {livePreviewFailed
+                      ? "Reconnecting preview"
+                      : livePreviewStreamConnected
+                        ? `Live preview | streaming`
+                        : `Live preview | ${session.status || "active"}`}
+                  </div>
+                  {renderLiveInspectorOverlay()}
+                  {renderLivePreviewScrollControls()}
+                  {livePreviewFailed ? (
+                    <div className="absolute inset-x-6 bottom-6 rounded-2xl border border-amber-300/30 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 shadow-lg dark:bg-amber-500/15 dark:text-amber-100">
+                      Waiting for the browser preview to update.
+                    </div>
+                  ) : null}
+                </div>
+              ) : session?.liveViewUrl ? (
+                <div className="flex h-full min-h-[560px] items-center justify-center px-6 text-center">
+                  <div className="max-w-md">
+                    <p className="text-xs font-semibold uppercase text-amber-700 dark:text-amber-300">
+                      Browser Preview
+                    </p>
+                    <h3 className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+                      Session id is not available yet.
+                    </h3>
+                    <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+                      Start or refresh the automation session to connect the live preview.
+                    </p>
+                  </div>
+                </div>
+              ) : authoringPreviewUrl || authoringPreviewError ? (
+                <div className="flex h-full min-h-[560px] flex-col overflow-hidden bg-zinc-950">
+                  <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-4 py-2">
+                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-100">
+                      Authoring preview
+                    </span>
+                    <span className="min-w-0 flex-1 truncate rounded-lg bg-zinc-900 px-3 py-1.5 font-mono text-xs text-zinc-200">
+                      {authoringPreviewUrl || targetUrl}
+                    </span>
+                  </div>
+                  {authoringPreviewError ? (
+                    <div className="flex flex-1 items-center justify-center px-6 text-center">
+                      <div className="max-w-lg rounded-2xl border border-amber-300/30 bg-amber-50 px-5 py-4 text-amber-950 shadow-lg dark:bg-amber-500/15 dark:text-amber-100">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em]">
+                          GlowCart preview unavailable
+                        </p>
+                        <h3 className="mt-2 text-xl font-semibold">
+                          CaseForge Companion could not start the local demo.
+                        </h3>
+                        <p className="mt-3 text-sm leading-6">
+                          {authoringPreviewError}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <iframe
+                      key={authoringPreviewUrl}
+                      src={authoringPreviewUrl}
+                      title="GlowCart authoring preview"
+                      className="h-full min-h-[520px] w-full flex-1 border-0 bg-white"
+                    />
+                  )}
+                </div>
               ) : (
                 <div className="flex h-full min-h-[560px] items-center justify-center px-6 text-center">
                   <div className="max-w-md">
@@ -5927,11 +10717,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 </div>
               )}
             </div>
-            {recordingActive || verifyPicking ? (
+            {advancedRecordingUiEnabled && (recordingActive || verifyPicking) ? (
               <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full border border-zinc-200 bg-white/95 px-2 py-1.5 text-xs font-semibold shadow-xl backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95">
                 <button
                   type="button"
-                  onClick={() => void toggleRecording()}
+                  onClick={() => void stopRecording()}
                   className="rounded-full bg-rose-600 px-3 py-1.5 text-white hover:bg-rose-700"
                 >
                   Stop
@@ -5946,7 +10736,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 </button>
                 <button
                   type="button"
-                  onClick={() => void (verifyPicking ? cancelVerifyCapture() : startVerifyCapture())}
+                  onClick={() => void (verifyPicking ? exitVerifyMode() : enterVerifyMode())}
                   className="rounded-full px-3 py-1.5 text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
                 >
                   {verifyPicking ? "Cancel Verify" : "Add Verify"}
@@ -6022,12 +10812,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 onClick={openTestData}
                 className="rounded-md px-2 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
               >
-                Test Data
-                {enabledTestCases.length ? ` (${enabledTestCases.length})` : ""}
+                  Test Cases
+                  {enabledTestCases.length ? ` (${enabledTestCases.length})` : ""}
               </button>
               <button
                 type="button"
-                onClick={() => void resumeRecording()}
+                onClick={() => void resumeRecordingFromSavedState()}
                 disabled={busy || verifyPicking || !visibleSteps.length}
                 className="rounded-md px-2 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-900"
               >
@@ -6045,6 +10835,58 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
               ) : null}
             </div>
           </section>
+
+          {playbackConsoleOpen ? (
+            <section className="min-w-0 rounded-[14px] border border-zinc-200 bg-white px-3 py-3 text-xs text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
+              <div className="flex min-w-0 items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold">Command Console</p>
+                  <p className="mt-0.5 truncate text-zinc-500 dark:text-zinc-400">
+                    Latest command activity, outputs, URL changes, and errors.
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setLogs(["Console cleared"])}
+                    className="rounded-md px-2 py-1 font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPlaybackConsoleOpen(false)}
+                    className="rounded-md px-2 py-1 font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  >
+                    Hide
+                  </button>
+                </div>
+              </div>
+              <div className="mt-3 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 p-2 font-mono text-[11px] leading-5 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+                {logs.slice(-18).map((log, index) => (
+                  <div
+                    key={`${index}-${log}`}
+                    className="break-words rounded-md px-1.5 py-0.5 hover:bg-white dark:hover:bg-zinc-950"
+                  >
+                    {log}
+                  </div>
+                ))}
+                {!logs.length ? (
+                  <div className="rounded-md px-1.5 py-0.5 text-zinc-500 dark:text-zinc-400">
+                    No command activity yet.
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPlaybackConsoleOpen(true)}
+              className="justify-self-start rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
+            >
+              Show Command Console
+            </button>
+          )}
 
           {runStatus === "failed" && failedStepResult ? (
             <section className="min-w-0 rounded-[14px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-950 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
@@ -6098,7 +10940,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           ) : null}
         </main>
 
-        <aside className="grid min-h-[660px] min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-3 overflow-hidden">
+        <aside
+          className={`grid min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-3 overflow-hidden ${
+            livePreviewSize === "full" ? "min-h-[420px]" : "min-h-[660px]"
+          }`}
+        >
           <section className="min-w-0 overflow-hidden rounded-[16px] border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
             <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
               <div>
@@ -6124,6 +10970,59 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
               </label>
             </div>
             <div className="h-full min-h-[560px] overflow-y-auto p-2">
+              <details className="mb-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-700 dark:text-zinc-200 [&::-webkit-details-marker]:hidden">
+                  Command Library
+                </summary>
+                <div className="mt-3 max-h-52 space-y-3 overflow-y-auto pr-1">
+                  {Object.entries(commandCatalogByDomain).map(([domain, commands]) => (
+                    <div key={domain}>
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        {domain}
+                      </p>
+                      <div className="grid gap-1">
+                        {commands.slice(0, 8).map((command) => (
+                          <button
+                            key={command.action}
+                            type="button"
+                            onClick={() => {
+                              if (!command.executable || command.domain !== "web") {
+                                appendLog(
+                                  `${command.label} is a first-class CaseForge authoring command, but this phase only executes implemented web commands through CaseForge Companion. Its execution adapter is pending.`,
+                                );
+                                return;
+                              }
+                              const step = makeManualStep(visibleSteps.length + 1);
+                              const nextStep = {
+                                ...step,
+                                action: command.normalizedAction,
+                                commandText: command.label,
+                                description: command.label,
+                              };
+                              void persistSteps([...finalizedSteps, nextStep]);
+                              setSelectedStepId(nextStep.id);
+                              setSelectedStepIds(new Set([nextStep.id]));
+                              setDrawerOpen(true);
+                            }}
+                            className="flex min-w-0 items-center justify-between gap-2 rounded-lg px-2 py-1 text-left text-[11px] font-semibold text-zinc-700 hover:bg-white dark:text-zinc-200 dark:hover:bg-zinc-950"
+                          >
+                            <span className="truncate">{command.label}</span>
+                            <span
+                              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] ${
+                                command.executable && command.domain === "web"
+                                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
+                                  : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200"
+                              }`}
+                            >
+                                  {commandExecutionBadgeLabel(command)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </details>
               {visibleSteps.length ? (
                 <div className="space-y-2" role="listbox" aria-label="Command timeline" aria-multiselectable="true">
                   {visibleSteps.map((step, index) => {
@@ -6639,7 +11538,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                   </div>
                 ) : null}
                 <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
-                  Prompt
+                  Command phrase
                   <textarea
                     value={selectedStep.commandText || readableStepLabel(selectedStep)}
                     onChange={(event) =>
@@ -6651,6 +11550,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                     }
                     className="mt-1 min-h-24 w-full resize-y rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium leading-6 text-zinc-950 outline-none placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
                   />
+                  <span className="mt-1 block text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                    Human-readable step name. Put typed text, selected options, and dynamic data in the fields below.
+                  </span>
                 </label>
                 <div className="grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-3">
                 <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
@@ -6660,8 +11562,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                     onChange={(event) =>
                       updateStep(selectedStep.id, (step) => {
                         const action = event.target.value;
+                        const definition =
+                          action === "action" ? actionCommandDefinition : commandDefinitionForAction(action);
                         if (action === "wait") {
-                          return {
+                          const nextStep = {
                             ...step,
                             action,
                             inputValue: step.inputValue || "1000",
@@ -6678,30 +11582,47 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                               locatorType: step.target.locatorType || "css",
                             },
                           };
+                          const commandPhrase = commandPhraseForStep(nextStep, definition);
+                          return {
+                            ...nextStep,
+                            commandText: commandPhrase,
+                            description: commandPhrase,
+                          };
                         }
-                        return {
+                        const nextStep = {
                           ...step,
                           action,
+                          options: {
+                            ...step.options,
+                            outputVariableName:
+                              commandShowsOutputCapture(definition) && !phaseOutputVariable(step)
+                                ? commandOutputDefaultName(definition)
+                                : step.options?.outputVariableName,
+                          },
+                        };
+                        const commandPhrase = commandPhraseForStep(nextStep, definition);
+                        return {
+                          ...nextStep,
+                          commandText: commandPhrase,
+                          description: commandPhrase,
                         };
                       })
                     }
                     className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
                   >
-                    {commandActions.map((action) => (
-                      <option key={action} value={action}>
-                        {action}
+                    {commandActionOptions.map((option) => {
+                      const implemented = option.action === "action" || (option.executable && option.domain === "web");
+                      return (
+                      <option key={option.action} value={option.action} disabled={!implemented}>
+                        {option.label}{implemented ? "" : " (Coming soon)"}
                       </option>
-                    ))}
+                    )})}
                   </select>
                 </label>
-                {["navigate", "fill", "select"].includes(selectedStepAction) ? (
+                {commandShowsInputValue(selectedStepAction) ? (
                   <div className="min-w-0 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
                     <label>
-                      {selectedStepAction === "navigate"
-                        ? "URL"
-                        : selectedStepAction === "select"
-                          ? "Option"
-                          : "Text"}
+                      {commandInputLabel(selectedStepAction)}
                       <input
                         value={selectedStep.inputValue || ""}
                         onChange={(event) =>
@@ -6721,10 +11642,19 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                         className="mt-1 w-full min-w-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
                       />
                     </label>
-                    {["fill", "select"].includes(selectedStepAction) ? (
+                    {commandSupportsTestData(selectedStepAction) && selectedStep.inputValue ? (
+                      <button
+                        type="button"
+                        onClick={() => void convertStepValueToParameter(selectedStep)}
+                        className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100 dark:hover:bg-emerald-500/20"
+                      >
+                        Convert typed value to scenario parameter
+                      </button>
+                    ) : null}
+                    {commandSupportsTestData(selectedStepAction) ? (
                       <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950">
                         <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
-                          Test data parameter
+                          Data-driven value
                           <select
                             value={selectedStepParameterName}
                             onChange={(event) => {
@@ -6740,7 +11670,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                             }}
                             className="mt-1 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
                           >
-                            <option value="">Manual value</option>
+                            <option value="">Use typed value</option>
                             {scenarioParameters.map((parameter) => (
                               <option key={parameter.id} value={parameter.name}>
                                 {parameter.name}
@@ -6755,11 +11685,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                           </p>
                         ) : scenarioParameters.length ? (
                           <p className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                            Pick a parameter to replace this value during run.
+                            Bind this value to a reusable test data column for multiple rows/runs.
                           </p>
                         ) : (
                           <p className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                            Add parameters in Test Data, then bind this command.
+                            Add test data columns when the same script should run with different values.
                           </p>
                         )}
                       </div>
@@ -6837,6 +11767,115 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                   </>
                 ) : null}
                 </div>
+                {selectedCommandSchemaParameters.length ? (
+                  <div className="grid gap-3 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+                        {commandEditorParameterSectionTitle(selectedCommandEditorUxKind)}
+                      </h4>
+                      <p className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                        {commandEditorParameterSectionHint(selectedCommandEditorUxKind)}
+                      </p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {selectedCommandSchemaParameters.map((parameter) => {
+                        const value = commandParameterDisplayValue(selectedStep, parameter);
+                        const parameterId = `${selectedStep.id || "step"}-${parameter.name}`;
+                        const label = parameter.label || parameterLabel(parameter.name);
+                        const sharedClassName =
+                          "mt-1 w-full min-w-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50";
+                        if (parameter.type === "boolean") {
+                          return (
+                            <label
+                              key={parameter.name}
+                              className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200"
+                            >
+                              <input
+                                id={parameterId}
+                                type="checkbox"
+                                checked={Boolean(value)}
+                                onChange={(event) =>
+                                  updateCommandSchemaParameter(selectedStep.id || "", parameter, event.target.checked)
+                                }
+                                className="h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+                              />
+                              <span className="min-w-0">{label}</span>
+                            </label>
+                          );
+                        }
+                        if (parameter.type === "select" && parameter.options?.length) {
+                          return (
+                            <label key={parameter.name} className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                              {label}
+                              <select
+                                id={parameterId}
+                                value={String(value)}
+                                onChange={(event) =>
+                                  updateCommandSchemaParameter(selectedStep.id || "", parameter, event.target.value)
+                                }
+                                className={sharedClassName}
+                              >
+                                <option value="">Select...</option>
+                                {parameter.options.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          );
+                        }
+                        if (parameter.type === "json" || parameter.type === "query" || parameter.type === "expression") {
+                          return (
+                            <label
+                              key={parameter.name}
+                              className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 sm:col-span-2"
+                            >
+                              {label}
+                              <textarea
+                                id={parameterId}
+                                value={String(value)}
+                                onChange={(event) =>
+                                  updateCommandSchemaParameter(selectedStep.id || "", parameter, event.target.value)
+                                }
+                                className={`${sharedClassName} min-h-24 resize-y font-mono text-xs`}
+                              />
+                            </label>
+                          );
+                        }
+                        return (
+                          <label key={parameter.name} className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                            {label}
+                            <input
+                              id={parameterId}
+                              type={
+                                parameter.type === "number"
+                                  ? "number"
+                                  : parameter.type === "secret" || parameter.type === "secureString"
+                                    ? "password"
+                                    : "text"
+                              }
+                              value={String(value)}
+                              onChange={(event) =>
+                                updateCommandSchemaParameter(
+                                  selectedStep.id || "",
+                                  parameter,
+                                  parameter.type === "number" ? Number(event.target.value || 0) : event.target.value,
+                                )
+                              }
+                              className={sharedClassName}
+                            />
+                            {parameter.description ? (
+                              <span className="mt-1 block text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                                {parameter.description}
+                              </span>
+                            ) : null}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
                 {selectedStepAction === "wait" &&
                 (textValue(selectedStep.options?.waitType) || (selectedStep.target?.value ? "soft" : "hard")) === "soft" ? (
                   <div className="grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-[150px_minmax(0,1fr)]">
@@ -6986,6 +12025,321 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                     ) : null}
                   </div>
                 ) : null}
+                {selectedCommandCanSaveOutput ? (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+                    <label className="text-xs font-semibold text-emerald-900 dark:text-emerald-100">
+                      Save {selectedCommandOutputTypeLabel} as variable
+                      <input
+                        value={selectedStepOutputVariable}
+                        placeholder={selectedCommandOutputDefaultName}
+                        onChange={(event) =>
+                          updateStep(selectedStep.id, (step) => {
+                            const definition =
+                              displayAction(step.action) === "action"
+                                ? actionCommandDefinition
+                                : commandDefinitionForAction(displayAction(step.action));
+                            const nextStep = {
+                              ...step,
+                              options: {
+                                ...step.options,
+                                outputVariableName: event.target.value || undefined,
+                              },
+                            };
+                            const commandPhrase = commandPhraseForStep(nextStep, definition);
+                            return {
+                              ...nextStep,
+                              commandText: commandPhrase,
+                              description: commandPhrase,
+                            };
+                          })
+                        }
+                        className="mt-1 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                      />
+                    </label>
+                    <p className="mt-2 text-[11px] font-medium text-emerald-800/80 dark:text-emerald-100/75">
+                      The value returned by this command will be available to later steps using this variable name.
+                    </p>
+                  </div>
+                ) : null}
+                <details className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+                  <summary className="cursor-pointer list-none rounded-lg px-1 py-0.5 text-xs font-semibold text-zinc-700 outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-emerald-500/30 dark:text-zinc-200 dark:hover:bg-zinc-900 [&::-webkit-details-marker]:hidden">
+                    Advanced runtime options
+                  </summary>
+                  <div className="mt-3 grid gap-3">
+                    {selectedCommandHasAdvancedRuntimeInput || selectedStepHasAdvancedRuntimeConfig ? (
+                      <div className="grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-2">
+                        <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                          Value source
+                          <select
+                            value={selectedStepValueSource}
+                            onChange={(event) => {
+                              const valueSource = event.target.value as StepParameterValueType;
+                              updateStep(selectedStep.id, (step) => {
+                                const currentReference = phaseValueReference(step);
+                                const nextInputValue =
+                                  valueSource === "testData" && currentReference
+                                    ? parameterToken(currentReference)
+                                    : valueSource === "static"
+                                      ? step.inputValue || ""
+                                      : step.inputValue || "";
+                                return {
+                                  ...step,
+                                  inputValue: nextInputValue,
+                                  options: {
+                                    ...step.options,
+                                    isResolvedAtRuntime: valueSource !== "static",
+                                    isSecret: valueSource === "secret",
+                                    parameterName:
+                                      valueSource === "testData" ? currentReference || undefined : undefined,
+                                    valueReference:
+                                      valueSource === "static" ? undefined : currentReference || undefined,
+                                    valueSource,
+                                    valueType: valueSource,
+                                  },
+                                };
+                              });
+                            }}
+                            className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+                          >
+                            {valueSourceOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {selectedStepValueSource === "testData" ? (
+                          <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                            Parameter
+                            <select
+                              value={selectedStepValueReference}
+                              onChange={(event) => {
+                                const reference = event.target.value;
+                                updateStep(selectedStep.id, (step) => ({
+                                  ...step,
+                                  inputValue: reference ? parameterToken(reference) : "",
+                                  options: {
+                                    ...step.options,
+                                    isResolvedAtRuntime: true,
+                                    isSecret: false,
+                                    parameterName: reference || undefined,
+                                    valueReference: reference || undefined,
+                                    valueSource: "testData",
+                                    valueType: "testData",
+                                  },
+                                }));
+                              }}
+                              className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+                            >
+                              <option value="">Choose parameter</option>
+                              {scenarioParameters.map((parameter) => (
+                                <option key={parameter.id} value={parameter.name}>
+                                  {parameter.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : selectedStepValueSource === "expression" ? (
+                          <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 sm:col-span-2">
+                            Expression
+                            <textarea
+                              value={selectedStepExpression}
+                              onChange={(event) =>
+                                updateStep(selectedStep.id, (step) => ({
+                                  ...step,
+                                  options: {
+                                    ...step.options,
+                                    expression: event.target.value,
+                                    isResolvedAtRuntime: true,
+                                    isSecret: false,
+                                    valueSource: "expression",
+                                    valueType: "expression",
+                                  },
+                                }))
+                              }
+                              className="mt-1 min-h-16 w-full resize-y rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm leading-5 text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+                            />
+                          </label>
+                        ) : (
+                          <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                            Reference
+                            <input
+                              value={selectedStepValueReference}
+                              onChange={(event) => {
+                                const reference = event.target.value;
+                                updateStep(selectedStep.id, (step) => ({
+                                  ...step,
+                                  inputValue:
+                                    selectedStepValueSource === "static" ? reference : step.inputValue || "",
+                                  options: {
+                                    ...step.options,
+                                    isResolvedAtRuntime: selectedStepValueSource !== "static",
+                                    isSecret: selectedStepValueSource === "secret",
+                                    valueReference:
+                                      selectedStepValueSource === "static" ? undefined : reference || undefined,
+                                    valueSource: selectedStepValueSource,
+                                    valueType: selectedStepValueSource,
+                                  },
+                                }));
+                              }}
+                              className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+                            />
+                          </label>
+                        )}
+                        <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 sm:col-span-2">
+                          {selectedStep ? phaseParameterPreview(selectedStep) : ""}
+                        </p>
+                      </div>
+                    ) : null}
+                    <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                      Run only if
+                      <input
+                        value={textValue(selectedStep.options?.conditionExpression)}
+                        placeholder="Optional condition expression"
+                        onChange={(event) =>
+                          updateStep(selectedStep.id, (step) => ({
+                            ...step,
+                            options: {
+                              ...step.options,
+                              conditionExpression: event.target.value || undefined,
+                            },
+                          }))
+                        }
+                        className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+                      />
+                    </label>
+                  </div>
+                </details>
+                <details className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+                  <summary className="cursor-pointer list-none rounded-lg px-1 py-0.5 text-xs font-semibold text-zinc-700 outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-emerald-500/30 dark:text-zinc-200 dark:hover:bg-zinc-900 [&::-webkit-details-marker]:hidden">
+                    Failure behavior
+                  </summary>
+                  <div className="mt-3 grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-2">
+                    <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                      On failure
+                      <select
+                        value={selectedStepFailureBehavior.continueOnFailure ? "continue" : "stop"}
+                        onChange={(event) =>
+                          updateStep(selectedStep.id, (step) => {
+                            const continueOnFailure = event.target.value === "continue";
+                            const current = phaseFailureBehavior(step);
+                            return {
+                              ...step,
+                              options: {
+                                ...step.options,
+                                failureBehavior: {
+                                  ...current,
+                                  continueOnFailure,
+                                  stopOnFailure: !continueOnFailure,
+                                },
+                              },
+                            };
+                          })
+                        }
+                        className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+                      >
+                        <option value="stop">Stop run</option>
+                        <option value="continue">Continue run</option>
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                      Timeout (ms)
+                      <input
+                        type="number"
+                        min="1000"
+                        step="1000"
+                        value={selectedStepFailureBehavior.timeoutMs}
+                        onChange={(event) =>
+                          updateStep(selectedStep.id, (step) => {
+                            const current = phaseFailureBehavior(step);
+                            return {
+                              ...step,
+                              options: {
+                                ...step.options,
+                                timeoutMs: Number(event.target.value || 0),
+                                failureBehavior: {
+                                  ...current,
+                                  timeoutMs: Number(event.target.value || 0),
+                                },
+                              },
+                            };
+                          })
+                        }
+                        className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                      Retry count
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={selectedStepFailureBehavior.retryCount}
+                        onChange={(event) =>
+                          updateStep(selectedStep.id, (step) => {
+                            const current = phaseFailureBehavior(step);
+                            return {
+                              ...step,
+                              options: {
+                                ...step.options,
+                                failureBehavior: {
+                                  ...current,
+                                  retryCount: Number(event.target.value || 0),
+                                },
+                              },
+                            };
+                          })
+                        }
+                        className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                      Recovery action
+                      <input
+                        value={selectedStepFailureBehavior.recoveryActionId}
+                        onChange={(event) =>
+                          updateStep(selectedStep.id, (step) => {
+                            const current = phaseFailureBehavior(step);
+                            return {
+                              ...step,
+                              options: {
+                                ...step.options,
+                                failureBehavior: {
+                                  ...current,
+                                  recoveryActionId: event.target.value || undefined,
+                                },
+                              },
+                            };
+                          })
+                        }
+                        className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-zinc-600 dark:text-zinc-300 sm:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedStepFailureBehavior.screenshotOnFailure}
+                        onChange={(event) =>
+                          updateStep(selectedStep.id, (step) => {
+                            const current = phaseFailureBehavior(step);
+                            return {
+                              ...step,
+                              options: {
+                                ...step.options,
+                                failureBehavior: {
+                                  ...current,
+                                  screenshotOnFailure: event.target.checked,
+                                },
+                              },
+                            };
+                          })
+                        }
+                        className="h-4 w-4 rounded border border-zinc-300 accent-emerald-600"
+                      />
+                      Screenshot on failure
+                    </label>
+                  </div>
+                </details>
                 <details
                   open={locatorDiagnosticsOpen}
                   onToggle={(event) => setLocatorDiagnosticsOpen(event.currentTarget.open)}
@@ -7396,6 +12750,22 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           >
             Insert Wait After
           </button>
+          <button
+            type="button"
+            onClick={() => openCommandInsertLibrary("before")}
+            disabled={!menuStep}
+            className="block w-full px-3 py-2 text-left text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            Add Command Before
+          </button>
+          <button
+            type="button"
+            onClick={() => openCommandInsertLibrary("after")}
+            disabled={!menuStep}
+            className="block w-full px-3 py-2 text-left text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            Add Command After
+          </button>
           {isActionMenu ? (
             <>
               <button
@@ -7479,6 +12849,495 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         </div>
         );
       })() : null}
+
+      {commandInsertMenu ? (() => {
+        const anchorStep = commandInsertMenu.actionStepId
+          ? actionStepCommands[commandInsertMenu.actionStepId]?.find(
+              (step) => step.id === commandInsertMenu.anchorStepId,
+            ) ?? null
+          : visibleSteps.find((step) => step.id === commandInsertMenu.anchorStepId) ?? null;
+        return (
+          <div
+            className="fixed z-50 w-[min(440px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+            style={{ left: commandInsertMenu.x, top: commandInsertMenu.y }}
+            onClick={(event) => event.stopPropagation()}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          >
+            <div className="border-b border-zinc-200 p-3 dark:border-zinc-800">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-200">
+                    Command Library
+                  </p>
+                  <p className="mt-1 truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                    {commandInsertMenu.position === "before" ? "Before" : "After"}{" "}
+                    {anchorStep?.commandText || (anchorStep ? readableStepLabel(anchorStep) : "selected command")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCommandInsertMenu(null)}
+                  className="rounded-md px-2 py-1 text-xs font-semibold text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                >
+                  Close
+                </button>
+              </div>
+              <input
+                autoFocus
+                value={commandInsertMenu.query}
+                onChange={(event) =>
+                  setCommandInsertMenu((current) =>
+                    current ? { ...current, query: event.target.value } : current,
+                  )
+                }
+                placeholder="Search commands by keyword, alias, or domain"
+                className="mt-3 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-sky-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+              />
+            </div>
+            <div className="max-h-[430px] overflow-y-auto p-2">
+              {Object.keys(commandInsertResultsByDomain).length ? (
+                Object.entries(commandInsertResultsByDomain).map(([domain, commands]) => (
+                  <div key={domain} className="mb-2 last:mb-0">
+                    <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      {domain}
+                    </p>
+                    <div className="grid gap-1">
+                      {commands.map((command) => (
+                        <button
+                          key={`${domain}-${command.action}`}
+                          type="button"
+                          onClick={() => void insertCommandFromLibrary(command)}
+                          className="flex min-w-0 items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-left text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-900"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate">{command.label}</span>
+                            <span className="mt-0.5 block truncate text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                              {[command.action, ...command.aliases].slice(0, 4).join(", ")}
+                            </span>
+                          </span>
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] ${
+                              command.executable && command.domain === "web"
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
+                                : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200"
+                            }`}
+                          >
+                            {commandExecutionBadgeLabel(command)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="px-3 py-8 text-center text-sm font-semibold text-zinc-500">
+                  No commands match this search.
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })() : null}
+
+      {playbackConfigOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 px-4 py-6">
+          <div className="w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+              <div>
+                <h3 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+                  Playback Configuration
+                </h3>
+                <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                  Authoring playback stays local and separate from formal Run results.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPlaybackConfigOpen(false)}
+                className="rounded-lg px-2 py-1 text-sm font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              >
+                Close
+              </button>
+            </div>
+            <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+              <label className="flex items-center gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                <input
+                  type="checkbox"
+                  checked={playbackConfig.autoPlaybackEnabled}
+                  onChange={(event) =>
+                    setPlaybackConfig((current) => ({
+                      ...current,
+                      autoPlaybackEnabled: event.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-zinc-300 accent-sky-600"
+                />
+                Enable Auto Playback
+              </label>
+              <label className="flex items-center gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                <input
+                  type="checkbox"
+                  checked={playbackConfig.pauseOnElementErrors}
+                  onChange={(event) =>
+                    setPlaybackConfig((current) => ({
+                      ...current,
+                      pauseOnElementErrors: event.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-zinc-300 accent-sky-600"
+                />
+                Pause on Element Errors
+              </label>
+              <label className="flex items-center gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                <input
+                  type="checkbox"
+                  checked={playbackConfig.selfHealingEnabled}
+                  onChange={(event) =>
+                    setPlaybackConfig((current) => ({
+                      ...current,
+                      selfHealingEnabled: event.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-zinc-300 accent-sky-600"
+                />
+                Enable Self-Healing
+              </label>
+              <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                Environment
+                <select
+                  value={playbackConfig.environmentId ?? ""}
+                  onChange={(event) =>
+                    setPlaybackConfig((current) => ({
+                      ...current,
+                      environmentId: event.target.value || null,
+                    }))
+                  }
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+                >
+                  <option value="">Use run default</option>
+                  {runConfig.environments.map((environment) => (
+                    <option key={environment.id} value={environment.id}>
+                      {environment.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                Auto playback timeout (sec)
+                <input
+                  type="number"
+                  min="1"
+                  value={Math.round(playbackConfig.autoElementTimeoutMs / 1000)}
+                  onChange={(event) =>
+                    setPlaybackConfig((current) => ({
+                      ...current,
+                      autoElementTimeoutMs: Number(event.target.value || 5) * 1000,
+                    }))
+                  }
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+                />
+              </label>
+              <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                Manual element timeout (sec)
+                <input
+                  type="number"
+                  min="1"
+                  value={Math.round(playbackConfig.manualElementTimeoutMs / 1000)}
+                  onChange={(event) =>
+                    setPlaybackConfig((current) => ({
+                      ...current,
+                      manualElementTimeoutMs: Number(event.target.value || 30) * 1000,
+                    }))
+                  }
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+                />
+              </label>
+              <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                Manual page timeout (sec)
+                <input
+                  type="number"
+                  min="1"
+                  value={Math.round(playbackConfig.manualPageTimeoutMs / 1000)}
+                  onChange={(event) =>
+                    setPlaybackConfig((current) => ({
+                      ...current,
+                      manualPageTimeoutMs: Number(event.target.value || 60) * 1000,
+                    }))
+                  }
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+                />
+              </label>
+              <label className="sm:col-span-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                Execution parameters
+                <textarea
+                  value={JSON.stringify(playbackConfig.executionParameters ?? {}, null, 2)}
+                  onChange={(event) => {
+                    try {
+                      const parsed = JSON.parse(event.target.value || "{}");
+                      setPlaybackConfig((current) => ({
+                        ...current,
+                        executionParameters:
+                          parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {},
+                      }));
+                    } catch {
+                      appendLog("Execution parameters must be valid JSON.");
+                    }
+                  }}
+                  rows={4}
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 font-mono text-xs text-zinc-950 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setPlaybackConfigOpen(false)}
+                className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  void savePlaybackConfig(playbackConfig)
+                    .then(() => {
+                      appendLog("Playback configuration saved.");
+                      setPlaybackConfigOpen(false);
+                    })
+                    .catch((error) => appendLog(error instanceof Error ? error.message : "Could not save playback configuration."))
+                }
+                className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+              >
+                Save Playback Config
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {liveCommandMenu ? (
+        <div
+          className="fixed z-50 w-[min(420px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+          style={{ left: liveCommandMenu.x, top: liveCommandMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
+          <div className="border-b border-zinc-200 p-3 dark:border-zinc-800">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-200">
+              Live Command Library
+            </p>
+            <p className="mt-1 truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+              {liveInspectorSnapshot(liveCommandMenu.result).label}
+            </p>
+            <input
+              autoFocus
+              value={liveCommandMenu.query}
+              onChange={(event) =>
+                setLiveCommandMenu((current) =>
+                  current ? { ...current, query: event.target.value } : current,
+                )
+              }
+              placeholder="Search commands by keyword, alias, or domain"
+              className="mt-3 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-sky-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+          </div>
+          <div className="max-h-[420px] overflow-y-auto p-2">
+            {Object.keys(liveCommandResultsByDomain).length ? (
+              Object.entries(liveCommandResultsByDomain).map(([domain, commands]) => (
+                <div key={domain} className="mb-2 last:mb-0">
+                  <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    {domain}
+                  </p>
+                  <div className="grid gap-1">
+                    {commands.map((command) => (
+                      <button
+                        key={`${domain}-${command.action}`}
+                        type="button"
+                        onClick={() => void insertLivePreviewCommand(command)}
+                        className="flex min-w-0 items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-left text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-900"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate">{command.label}</span>
+                          {command.aliases.length ? (
+                            <span className="mt-0.5 block truncate text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                              {command.aliases.slice(0, 3).join(", ")}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] ${
+                            command.executable && command.domain === "web"
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
+                              : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200"
+                          }`}
+                        >
+                          {commandExecutionBadgeLabel(command)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="px-3 py-8 text-center text-sm font-semibold text-zinc-500">
+                No commands match this search.
+              </p>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {canvasInsertPreview ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+          <div className="w-full max-w-md rounded-[16px] border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-200">
+                Command Insertion Preview
+              </p>
+              <h3 className="mt-1 text-base font-semibold text-zinc-950 dark:text-zinc-50">
+                Confirm Canvas Command
+              </h3>
+            </div>
+            <div className="space-y-3 px-5 py-4 text-sm">
+              <div>
+                <p className="text-xs font-semibold text-zinc-500">Command</p>
+                <p className="font-semibold text-zinc-950 dark:text-zinc-50">
+                  {commandDefinitionForAction(canvasInsertPreview.action)?.label || canvasInsertPreview.action}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-zinc-500">Element</p>
+                <p className="font-semibold text-zinc-950 dark:text-zinc-50">
+                  {String(canvasInsertPreview.snapshot.label ?? canvasInsertPreview.snapshot.text ?? "Canvas Element")}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-zinc-500">Locator</p>
+                <p className="break-all font-mono text-xs text-zinc-800 dark:text-zinc-200">
+                  {String(canvasInsertPreview.locator.strategy ?? canvasInsertPreview.locator.type ?? "locator")}=
+                  {String(canvasInsertPreview.locator.value ?? "")}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-zinc-500">Insert position</p>
+                <p className="text-zinc-800 dark:text-zinc-200">
+                  {canvasInsertPreview.insertAfterStepId
+                    ? `after ${visibleSteps.findIndex((step) => step.id === canvasInsertPreview.insertAfterStepId) + 1 || "selected step"}`
+                    : "at the bottom"}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setCanvasInsertPreview(null)}
+                className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void insertCanvasCommand(canvasInsertPreview.snapshot, canvasInsertPreview.action)}
+                className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+              >
+                Insert Command
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {playbackStateGuard ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+          <div className="w-full max-w-lg rounded-[16px] border border-amber-200 bg-white shadow-xl dark:border-amber-500/30 dark:bg-zinc-950">
+            <div className="border-b border-amber-100 px-5 py-4 dark:border-amber-500/20">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700 dark:text-amber-200">
+                Playback State Guard
+              </p>
+              <h3 className="mt-1 text-base font-semibold text-zinc-950 dark:text-zinc-50">
+                Browser May Be On The Wrong Page
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+                Playback operates on the current Recorder Browser. The browser must already be in the correct state for
+                selected commands to execute correctly.
+              </p>
+            </div>
+            <div className="space-y-3 px-5 py-4 text-sm">
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <p className="text-xs font-semibold text-zinc-500">Current browser URL</p>
+                <p className="mt-1 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">
+                  {playbackStateGuard.currentUrl}
+                </p>
+              </div>
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <p className="text-xs font-semibold text-zinc-500">Selected command expected page</p>
+                <p className="mt-1 break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">
+                  {playbackStateGuard.expectedUrl}
+                </p>
+              </div>
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                {playbackStateGuard.message}
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setPlaybackStateGuard(null)}
+                className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const guard = playbackStateGuard;
+                  const anchor = guard.anchorStepId
+                    ? visibleSteps.find((step) => step.id === guard.anchorStepId) ?? null
+                    : null;
+                  setPlaybackStateGuard(null);
+                  void startPlayback(guard.scope, anchor, { skipStateGuard: true });
+                }}
+                className="rounded-xl border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50 dark:border-amber-500/30 dark:text-amber-100 dark:hover:bg-amber-500/10"
+              >
+                Continue Anyway
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const guard = playbackStateGuard;
+                  const anchor = guard.anchorStepId
+                    ? visibleSteps.find((step) => step.id === guard.anchorStepId) ?? null
+                    : null;
+                  setPlaybackStateGuard(null);
+                  void startPlayback(guard.scope, anchor, {
+                    navigateToExpected: true,
+                    skipStateGuard: true,
+                  });
+                }}
+                className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+              >
+                Navigate to Starting URL
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPlaybackStateGuard(null);
+                  void startPlayback("fullScenario", null, { skipStateGuard: true });
+                }}
+                className="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
+              >
+                Playback from Beginning
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {runModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
@@ -7722,6 +13581,91 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                   </div>
                 </div>
               </section>
+              {runModalMode === "run" ? (
+                <section className="grid gap-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900 md:grid-cols-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                      Execution Mode
+                    </h4>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {(["sequential", "parallel"] as RunExecutionMode[]).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setRunConfig((current) => ({ ...current, executionMode: mode }))}
+                          className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold capitalize transition ${
+                            runConfig.executionMode === mode
+                              ? "border-emerald-300 bg-emerald-50 text-emerald-950 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-100"
+                              : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                          }`}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                      Parallel is honored when configured agent capacity supports it; otherwise runs fall back to sequential execution.
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                      Run Scope
+                    </h4>
+                    <select
+                      value={runConfig.runScope}
+                      onChange={(event) =>
+                        setRunConfig((current) => ({
+                          ...current,
+                          runScope: event.target.value as RunScope,
+                        }))
+                      }
+                      className="mt-3 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+                    >
+                      <option value="allActive">All active cases</option>
+                      <option value="failedOnly">Failed cases</option>
+                      <option value="tag">Tag</option>
+                      <option value="priority">Priority</option>
+                    </select>
+                    {runConfig.runScope === "tag" ? (
+                      <input
+                        value={runConfig.scopeTag}
+                        onChange={(event) =>
+                          setRunConfig((current) => ({ ...current, scopeTag: event.target.value }))
+                        }
+                        className="mt-2 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+                        placeholder="smoke"
+                      />
+                    ) : null}
+                    {runConfig.runScope === "priority" ? (
+                      <select
+                        value={runConfig.scopePriority}
+                        onChange={(event) =>
+                          setRunConfig((current) => ({
+                            ...current,
+                            scopePriority: event.target.value as RunConfig["scopePriority"],
+                          }))
+                        }
+                        className="mt-2 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+                      >
+                        <option value="all">All priorities</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                      </select>
+                    ) : null}
+                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                      {scenarioTestCases.filter((testCase) => testCaseMatchesRunScope(testCase, runConfig)).length ||
+                        "No"}{" "}
+                      matching scenario test case
+                      {scenarioTestCases.filter((testCase) => testCaseMatchesRunScope(testCase, runConfig)).length === 1
+                        ? ""
+                        : "s"}
+                      . Optional overrides can still be added later without changing saved cases.
+                    </p>
+                  </div>
+                </section>
+              ) : null}
             </div>
             <div className="flex justify-end gap-2 border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
               <button
@@ -7735,7 +13679,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 type="button"
                 onClick={() =>
                   void (runModalMode === "record"
-                    ? startRecordingFromConfig(runConfig)
+                    ? startRecording(runConfig)
                     : runScenario(runConfig))
                 }
                 disabled={busy}
@@ -7760,10 +13704,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
               <div>
                 <h3 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
-                  Test Data
+                  Scenario Test Cases
                 </h3>
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  Use parameters like {"{{email}}"} in commands, then run this scenario once per enabled row.
+                  Detected parameters become columns. Every active row runs automatically when the scenario runs.
                 </p>
               </div>
               <button
@@ -7907,7 +13851,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                       Test Cases
                     </h4>
                     <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      Each enabled row becomes one scenario run.
+                      Test Case Name | detected params | Expected Result | Tags | Priority | Active
                     </p>
                   </div>
                   <button
@@ -7918,8 +13862,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                         {
                           data: defaultParameterData(parameterDrafts),
                           enabled: true,
+                          expectedResult: "",
                           id: makeTestCaseId(),
                           name: `Test Case ${current.length + 1}`,
+                          priority: "medium",
+                          tags: [],
                         },
                       ])
                     }
@@ -7933,14 +13880,17 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                     <thead>
                       <tr className="text-zinc-500 dark:text-zinc-400">
                         <th className="sticky left-0 z-10 min-w-48 bg-white px-2 py-2 font-semibold dark:bg-zinc-950">
-                          Test Case
+                          Test Case Name
                         </th>
-                        <th className="min-w-24 px-2 py-2 font-semibold">Run</th>
                         {parameterDrafts.map((parameter) => (
                           <th key={parameter.id} className="min-w-44 px-2 py-2 font-semibold">
                             {parameter.name}
                           </th>
                         ))}
+                        <th className="min-w-52 px-2 py-2 font-semibold">Expected Result</th>
+                        <th className="min-w-44 px-2 py-2 font-semibold">Tags</th>
+                        <th className="min-w-32 px-2 py-2 font-semibold">Priority</th>
+                        <th className="min-w-24 px-2 py-2 font-semibold">Active</th>
                         <th className="min-w-20 px-2 py-2 font-semibold" />
                       </tr>
                     </thead>
@@ -7959,24 +13909,6 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                               }
                               className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
                             />
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <label className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-2 py-1.5 text-xs font-semibold text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
-                              <input
-                                type="checkbox"
-                                checked={testCase.enabled}
-                                onChange={(event) =>
-                                  setTestCaseDrafts((current) =>
-                                    current.map((item) =>
-                                      item.id === testCase.id
-                                        ? { ...item, enabled: event.target.checked }
-                                        : item,
-                                    ),
-                                  )
-                                }
-                              />
-                              Enabled
-                            </label>
                           </td>
                           {parameterDrafts.map((parameter) => (
                             <td key={`${testCase.id}-${parameter.id}`} className="px-2 py-1.5">
@@ -8003,6 +13935,85 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                               />
                             </td>
                           ))}
+                          <td className="px-2 py-1.5">
+                            <input
+                              value={testCase.expectedResult || ""}
+                              onChange={(event) =>
+                                setTestCaseDrafts((current) =>
+                                  current.map((item) =>
+                                    item.id === testCase.id
+                                      ? { ...item, expectedResult: event.target.value }
+                                      : item,
+                                  ),
+                                )
+                              }
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+                              placeholder="Expected outcome"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              value={(testCase.tags ?? []).join(", ")}
+                              onChange={(event) =>
+                                setTestCaseDrafts((current) =>
+                                  current.map((item) =>
+                                    item.id === testCase.id
+                                      ? {
+                                          ...item,
+                                          tags: event.target.value
+                                            .split(",")
+                                            .map((tag) => tag.trim())
+                                            .filter(Boolean),
+                                        }
+                                      : item,
+                                  ),
+                                )
+                              }
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+                              placeholder="smoke, regression"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <select
+                              value={testCase.priority || "medium"}
+                              onChange={(event) =>
+                                setTestCaseDrafts((current) =>
+                                  current.map((item) =>
+                                    item.id === testCase.id
+                                      ? {
+                                          ...item,
+                                          priority: event.target.value as ScenarioTestCase["priority"],
+                                        }
+                                      : item,
+                                  ),
+                                )
+                              }
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+                            >
+                              <option value="low">Low</option>
+                              <option value="medium">Medium</option>
+                              <option value="high">High</option>
+                              <option value="critical">Critical</option>
+                            </select>
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <label className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-2 py-1.5 text-xs font-semibold text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
+                              <input
+                                type="checkbox"
+                                checked={testCase.enabled}
+                                onChange={(event) =>
+                                  setTestCaseDrafts((current) =>
+                                    current.map((item) =>
+                                      item.id === testCase.id
+                                        ? { ...item, enabled: event.target.checked }
+                                        : item,
+                                    ),
+                                  )
+                                }
+                              />
+                              Active
+                            </label>
+                          </td>
                           <td className="px-2 py-1.5">
                             <button
                               type="button"
@@ -8040,7 +14051,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 disabled={testDataSaving}
                 className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
               >
-                {testDataSaving ? "Saving..." : "Save Test Data"}
+                {testDataSaving ? "Saving..." : "Save Test Cases"}
               </button>
             </div>
           </div>

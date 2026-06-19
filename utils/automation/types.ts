@@ -184,3 +184,135 @@ export type AutomationArtifact = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type AutomationView = {
+  id: string;
+  projectId: string;
+  scenarioId?: string | null;
+  actionId?: string | null;
+  name: string;
+  url: string;
+  title: string;
+  screenshotArtifactId?: string | null;
+  screenshotUri?: string;
+  viewport: Record<string, unknown>;
+  domSnapshot: Record<string, unknown>;
+  accessibilityTree: Record<string, unknown>;
+  elementSnapshots: Array<Record<string, unknown>>;
+  metadata: Record<string, unknown>;
+  capturedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AutomationElementStatus = "active" | "draft" | "deprecated" | "needs_repair";
+
+export type AutomationElement = {
+  id: string;
+  projectId: string;
+  viewId?: string | null;
+  name: string;
+  businessName: string;
+  technicalName: string;
+  aliases: string[];
+  description: string;
+  elementType: string;
+  status: AutomationElementStatus | string;
+  canonicalLocator: Record<string, unknown>;
+  locatorCandidates: AutomationLocatorCandidate[];
+  fallbackLocators: AutomationLocatorCandidate[];
+  boundingBox: Record<string, unknown>;
+  elementSnapshot: Record<string, unknown>;
+  lastVerifiedAt?: string | null;
+  stabilityScore: number;
+  preferredLocatorStrategy?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AutomationElementUsage = {
+  id: string;
+  projectId: string;
+  elementId: string;
+  scenarioId?: string | null;
+  actionId?: string | null;
+  stepId?: string | null;
+  usageType: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AutomationPlaybackScope =
+  | "selected"
+  | "selectedToEnd"
+  | "startToSelected"
+  | "fullScenario"
+  | "singleCommand"
+  | "actionCommand";
+
+export type AutomationPlaybackStatus =
+  | "queued"
+  | "running"
+  | "passed"
+  | "failed"
+  | "blocked"
+  | "canceled";
+
+export type AutomationPlaybackItemStatus =
+  | "pending"
+  | "running"
+  | "passed"
+  | "failed"
+  | "blocked"
+  | "canceled";
+
+export type AutomationPlaybackItem = {
+  id: string;
+  jobId: string;
+  stepId?: string | null;
+  orderIndex: number;
+  status: AutomationPlaybackItemStatus | string;
+  command: Record<string, unknown>;
+  result: Record<string, unknown>;
+  logs: string[];
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AutomationPlaybackJob = {
+  id: string;
+  projectId: string;
+  scenarioId?: string | null;
+  actionId?: string | null;
+  sessionId?: string | null;
+  status: AutomationPlaybackStatus | string;
+  scope: AutomationPlaybackScope | string;
+  configSnapshot: Record<string, unknown>;
+  logs: string[];
+  items: AutomationPlaybackItem[];
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AutomationPlaybackConfig = {
+  id: string;
+  projectId: string;
+  scenarioId?: string | null;
+  autoPlaybackEnabled: boolean;
+  pauseOnElementErrors: boolean;
+  selfHealingEnabled: boolean;
+  environmentId?: string | null;
+  autoElementTimeoutMs: number;
+  manualElementTimeoutMs: number;
+  manualPageTimeoutMs: number;
+  executionParameters: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};

@@ -1,6 +1,6 @@
 {
   "name": "@caseforge/desktop-agent",
-  "version": "0.1.6",
+  "version": "0.1.25",
   "private": true,
   "description": "Legacy CaseForge desktop bridge for optional local automation compatibility.",
   "type": "module",
@@ -12,6 +12,7 @@
     "dist:win": "electron-builder --win nsis"
   },
   "dependencies": {
+    "exceljs": "^3.4.0",
     "playwright": "^1.55.0"
   },
   "devDependencies": {
@@ -33,6 +34,10 @@
       {
         "from": "../scripts/caseforge-local-agent.mjs",
         "to": "app.asar.unpacked/scripts/caseforge-local-agent.mjs"
+      },
+      {
+        "from": "../glowcart-demo-dist",
+        "to": "app.asar.unpacked/glowcart-demo-dist"
       }
     ],
     "asarUnpack": [

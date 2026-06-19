@@ -1,5 +1,6 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
 const defaultHost = process.env.AUTOMATION_WORKER_HOST || "0.0.0.0";
 const defaultPort = Number(process.env.AUTOMATION_WORKER_PORT || 4890);
@@ -28,6 +29,34 @@ function html(response, status, body) {
     "Content-Type": "text/html; charset=utf-8",
   });
   response.end(body);
+}
+
+function binary(response, status, body, contentType) {
+  response.writeHead(status, {
+    "Access-Control-Allow-Origin": "*",
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Content-Type": contentType,
+  });
+  response.end(body);
+}
+
+function svgImage(response, status, message) {
+  const escaped = String(message || "Live preview unavailable")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  binary(
+    response,
+    status,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+      <rect width="1280" height="720" fill="#050816"/>
+      <rect x="360" y="286" width="560" height="148" rx="24" fill="#111827" stroke="#334155"/>
+      <text x="640" y="344" text-anchor="middle" fill="#e5e7eb" font-family="system-ui,Segoe UI,sans-serif" font-size="28" font-weight="700">Live preview reconnecting</text>
+      <text x="640" y="386" text-anchor="middle" fill="#94a3b8" font-family="system-ui,Segoe UI,sans-serif" font-size="18">${escaped}</text>
+    </svg>`,
+    "image/svg+xml",
+  );
 }
 
 async function readJson(request) {
@@ -798,16 +827,18 @@ export function recorderScript() {
     };
   }
 
-  function emit(action, element, value) {
+  function emit(action, element, value, extras = {}) {
     const candidates = locatorCandidates(element);
     const ambiguity = highlightAmbiguity(candidates);
     window.__caseforgeRecord?.({
       action,
+      domValue: extras.domValue == null ? (value == null ? "" : String(value)) : String(extras.domValue),
       element: elementSnapshot(element),
       frameUrl: window.location.href,
       ambiguity,
       locatorCandidates: candidates,
       pageUrl: window.location.href,
+      rawValue: extras.rawValue == null ? (value == null ? "" : String(value)) : String(extras.rawValue),
       value: value == null ? "" : String(value),
     });
   }
@@ -857,6 +888,7 @@ export function recorderScript() {
   const pendingSelectTimers = new Map();
   const pendingSelectTimerIds = new Set();
   const lastEmittedSelect = new WeakMap();
+  const rawInputBuffers = new WeakMap();
 
   function elementRoleName(element) {
     return String(element?.getAttribute?.("role") || "").trim().toLowerCase();
@@ -912,7 +944,7 @@ export function recorderScript() {
     window.clearTimeout(pending.timerId);
     pendingFillTimerIds.delete(pending.timerId);
     pendingFillTimers.delete(element);
-    emitFill(element, pending.value);
+    emitFill(element, pending.value, pending.rawValue);
     return true;
   }
 
@@ -922,7 +954,7 @@ export function recorderScript() {
     window.clearTimeout(pending.timerId);
     pendingSelectTimerIds.delete(pending.timerId);
     pendingSelectTimers.delete(element);
-    emitSelect(element, pending.value);
+    emitSelect(element, pending.value, pending.rawValue);
     return true;
   }
 
@@ -931,7 +963,7 @@ export function recorderScript() {
       window.clearTimeout(pending.timerId);
       pendingFillTimerIds.delete(pending.timerId);
       pendingFillTimers.delete(element);
-      emitFill(element, pending.value);
+      emitFill(element, pending.value, pending.rawValue);
     }
   }
 
@@ -940,7 +972,7 @@ export function recorderScript() {
       window.clearTimeout(pending.timerId);
       pendingSelectTimerIds.delete(pending.timerId);
       pendingSelectTimers.delete(element);
-      emitSelect(element, pending.value);
+      emitSelect(element, pending.value, pending.rawValue);
     }
   }
 
@@ -956,21 +988,21 @@ export function recorderScript() {
     return emitted.value === String(value == null ? "" : value) && Date.now() - emitted.timestamp < 1200;
   }
 
-  function emitFill(element, value) {
+  function emitFill(element, value, rawValue = value) {
     const normalizedValue = value == null ? "" : String(value);
     lastEmittedFill.set(element, { value: normalizedValue, timestamp: Date.now() });
-    emit("fill", element, normalizedValue);
+    emit("fill", element, normalizedValue, { domValue: normalizedValue, rawValue });
   }
 
-  function emitSelect(element, value) {
+  function emitSelect(element, value, rawValue = value) {
     const normalizedValue = value == null ? "" : String(value);
     lastEmittedSelect.set(element, { value: normalizedValue, timestamp: Date.now() });
-    emit("select", element, normalizedValue);
+    emit("select", element, normalizedValue, { domValue: normalizedValue, rawValue });
   }
 
   function scheduleFill(element, value) {
     if (!isTextEntryElement(element)) {
-      emitFill(element, value);
+      emitFill(element, value, value);
       return;
     }
     const pending = pendingFillTimers.get(element);
@@ -982,10 +1014,10 @@ export function recorderScript() {
     const timerId = window.setTimeout(() => {
       pendingFillTimers.delete(element);
       pendingFillTimerIds.delete(timerId);
-      emitFill(element, normalizedValue);
+      emitFill(element, normalizedValue, rawInputBuffers.get(element) ?? normalizedValue);
     }, 550);
     pendingFillTimerIds.add(timerId);
-    pendingFillTimers.set(element, { timerId, value: normalizedValue });
+    pendingFillTimers.set(element, { timerId, value: normalizedValue, rawValue: rawInputBuffers.get(element) ?? normalizedValue });
   }
 
   function scheduleSelect(element, value) {
@@ -998,10 +1030,23 @@ export function recorderScript() {
     const timerId = window.setTimeout(() => {
       pendingSelectTimers.delete(element);
       pendingSelectTimerIds.delete(timerId);
-      emitSelect(element, normalizedValue);
+      emitSelect(element, normalizedValue, normalizedValue);
     }, 250);
     pendingSelectTimerIds.add(timerId);
-    pendingSelectTimers.set(element, { timerId, value: normalizedValue });
+    pendingSelectTimers.set(element, { timerId, value: normalizedValue, rawValue: normalizedValue });
+  }
+
+  function updateRawInputBuffer(element, event) {
+    if (!isTextEntryElement(element)) return;
+    const current = rawInputBuffers.get(element) ?? String(element?.value || "");
+    const inputType = String(event.inputType || "");
+    if (inputType.startsWith("delete")) {
+      rawInputBuffers.set(element, current.slice(0, Math.max(0, current.length - 1)));
+      return;
+    }
+    if (typeof event.data === "string") {
+      rawInputBuffers.set(element, current + event.data);
+    }
   }
 
   function emitVerify(element) {
@@ -1130,6 +1175,12 @@ export function recorderScript() {
       emitSelect(event.target, optionValue(event.target));
       return;
     }
+    if (
+      event.target instanceof HTMLInputElement &&
+      ["checkbox", "radio"].includes(String(event.target.type || "").toLowerCase())
+    ) {
+      return;
+    }
     if (isFormValueElement(event.target)) return;
     emit("click", event.target, "");
   }, true);
@@ -1140,6 +1191,11 @@ export function recorderScript() {
       event.stopImmediatePropagation();
       if (recorderMode === "verify") captureVerifySelection(event);
     }
+  }, true);
+
+  listen(document, "beforeinput", (event) => {
+    if (recorderMode !== "record") return;
+    updateRawInputBuffer(event.target, event);
   }, true);
 
   listen(document, "input", (event) => {
@@ -1154,6 +1210,24 @@ export function recorderScript() {
 
   listen(document, "change", (event) => {
     if (recorderMode !== "record") return;
+    if (event.target instanceof HTMLInputElement) {
+      const inputType = String(event.target.type || "").toLowerCase();
+      if (inputType === "checkbox") {
+        emit(event.target.checked ? "check" : "uncheck", event.target, event.target.checked ? "on" : "off", {
+          domValue: String(event.target.checked),
+          rawValue: String(event.target.checked),
+        });
+        return;
+      }
+      if (inputType === "radio") {
+        if (!event.target.checked) return;
+        emit("check", event.target, event.target.value || "on", {
+          domValue: event.target.value || "on",
+          rawValue: event.target.value || "on",
+        });
+        return;
+      }
+    }
     if (isDropdownElement(event.target)) {
       if (flushPendingSelect(event.target)) return;
       if (recentlyEmittedSelect(event.target, event.target?.value || textOf(event.target))) return;
@@ -1169,11 +1243,6 @@ export function recorderScript() {
   listen(document, "invalid", (event) => {
     if (recorderMode !== "record") return;
     flushPendingFill(event.target);
-    const message =
-      typeof event.target?.validationMessage === "string"
-        ? event.target.validationMessage
-        : "";
-    emitValidationMessage(event.target, message, "native_validation");
   }, true);
 
   listen(window, "blur", () => {
@@ -1420,38 +1489,6 @@ async function activateSessionPage(session, page, reason = "page") {
     });
     page.on?.("dialog", (dialog) => {
       if (session.page !== page) activatePageReference(session, page);
-      if (!session.suppressRecording && session.recorderMode === "record") {
-        const message = typeof dialog.message === "function" ? dialog.message() : "";
-        const type = typeof dialog.type === "function" ? dialog.type() : "alert";
-        const pageId = pageIdForSessionPage(session, page);
-        const pageUrl = typeof page.url === "function" ? page.url() : "";
-        pushEvent(session, "record:command", {
-          action: "assert",
-          assertionType: "text_contains",
-          commandLabel: `Capture ${type || "alert"} popup: ${message || "message"}`,
-          element: {
-            elementKind: "browser dialog",
-            pageId,
-            pageUrl,
-            tag: "browser",
-            text: message || "",
-          },
-          expectedValue: message || "",
-          frameUrl: pageUrl,
-          locatorCandidates: [],
-          pageId,
-          pageUrl,
-          value: message || "",
-          verify: {
-            assertionType: "text_contains",
-            expectedValue: message || "",
-            kind: "browser_dialog",
-            source: type || "alert",
-            summary: message || `${type || "Alert"} popup`,
-            suggestedAssertions: ["text_contains", "visible"],
-          },
-        });
-      }
       void dialog.accept?.().catch(() => undefined);
     });
     page.on?.("popup", (popup) => {
@@ -1515,9 +1552,11 @@ async function applyRecorderModeToActivePage(session, reason = "mode_change") {
 }
 
 function makeSessionUrls(baseUrl, sessionId) {
+  const encodedSessionId = encodeURIComponent(sessionId);
   return {
-    eventStreamUrl: `${baseUrl}/sessions/${encodeURIComponent(sessionId)}/events`,
-    liveViewUrl: `${baseUrl}/sessions/${encodeURIComponent(sessionId)}/live`,
+    eventStreamUrl: `${baseUrl}/sessions/${encodedSessionId}/events`,
+    liveFrameUrl: `${baseUrl}/sessions/${encodedSessionId}/live-frame`,
+    liveViewUrl: `${baseUrl}/sessions/${encodedSessionId}/live`,
   };
 }
 
@@ -1563,6 +1602,7 @@ function publicSession(session, baseUrl) {
     metadata: {
       ...session.metadata,
       currentUrl,
+      liveFrameUrl: urls.liveFrameUrl,
       executionMode: session.executionMode,
       idleExpiresAt: session.idleExpiresAt,
       lastActivityAt: session.lastActivityAt,
@@ -1657,23 +1697,31 @@ async function activatePageForStep(session, step, reason = "step") {
 }
 
 function locatorForValue(page, locatorType, value) {
-  if (locatorType === "role") {
+  const normalizedType = String(locatorType || "css").toLowerCase();
+  if (normalizedType === "role") {
     const separator = value.indexOf(":");
     const role = separator >= 0 ? value.slice(0, separator) : value;
     const name = separator >= 0 ? value.slice(separator + 1) : "";
     return page.getByRole(role, name ? { name } : undefined);
   }
-  if (locatorType === "label" || locatorType === "aria-label") {
+  if (normalizedType === "label" || normalizedType === "aria-label") {
     return page.getByLabel(value);
   }
-  if (locatorType === "placeholder") return page.getByPlaceholder(value);
-  if (locatorType === "text") return page.getByText(value);
-  if (locatorType === "alt") return page.getByAltText(value);
-  if (locatorType === "title") return page.getByTitle(value);
-  if (locatorType === "testid" || locatorType === "data-testid") {
-    return page.getByTestId(value);
+  if (normalizedType === "placeholder") return page.getByPlaceholder(value);
+  if (normalizedType === "text") return page.getByText(value);
+  if (normalizedType === "alt") return page.getByAltText(value);
+  if (normalizedType === "title") return page.getByTitle(value);
+  if (
+    normalizedType === "testid" ||
+    normalizedType === "data-testid" ||
+    normalizedType === "data-test" ||
+    normalizedType === "data-qa" ||
+    normalizedType === "data-cy"
+  ) {
+    const escaped = String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return page.locator(`[data-testid="${escaped}"],[data-test="${escaped}"],[data-qa="${escaped}"],[data-cy="${escaped}"]`);
   }
-  if (locatorType === "xpath") return page.locator(`xpath=${value}`);
+  if (normalizedType === "xpath") return page.locator(`xpath=${value}`);
   return page.locator(value);
 }
 
@@ -2624,6 +2672,322 @@ async function fillLocatorWithTypingFallback(locator, value, timeout) {
   }
 }
 
+const tableActionNames = new Set([
+  "compareWebTableWithExpectedData",
+  "compareWebTableWithExternalData",
+  "getWebTableData",
+  "validateWebTable",
+  "verifyWebTableCellValue",
+  "verifyWebTableColumnCount",
+  "verifyWebTableColumnExists",
+  "verifyWebTableHeaders",
+  "verifyWebTableRowCount",
+  "verifyWebTableRowExists",
+  "verifyWebTableSortOrder",
+]);
+
+function tableNumber(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function tableBoolean(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value === "boolean") return value;
+  const text = String(value).trim().toLowerCase();
+  if (["false", "0", "no", "off"].includes(text)) return false;
+  if (["true", "1", "yes", "on"].includes(text)) return true;
+  return fallback;
+}
+
+function tableStructured(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (Array.isArray(value) || (typeof value === "object" && value !== null)) return value;
+  const text = String(value).trim();
+  if (!text) return fallback;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text.includes(",") ? text.split(",").map((item) => item.trim()).filter(Boolean) : fallback;
+  }
+}
+
+function tableNormalize(value, options = {}) {
+  let text = value === undefined || value === null ? "" : String(value);
+  if (tableBoolean(options.trimWhitespace, true)) text = text.replace(/\s+/g, " ").trim();
+  if (!tableBoolean(options.caseSensitive, false)) text = text.toLowerCase();
+  return text;
+}
+
+function tableCsvRows(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  const source = String(text || "");
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell);
+      if (row.some((value) => String(value).trim())) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell);
+  if (row.some((value) => String(value).trim())) rows.push(row);
+  return rows;
+}
+
+function tableRowsToObjects(rows, headers = []) {
+  if (!Array.isArray(rows) || !rows.length) return [];
+  if (typeof rows[0] === "object" && !Array.isArray(rows[0])) return rows;
+  const effectiveHeaders = headers.length
+    ? headers
+    : rows[0].map((header, index) => String(header || `Column ${index + 1}`).trim() || `Column ${index + 1}`);
+  return rows.slice(headers.length ? 0 : 1).map((row) =>
+    Object.fromEntries(effectiveHeaders.map((header, index) => [header, row[index] ?? ""]))
+  );
+}
+
+async function workerExpectedTableRows(options) {
+  const source = String(options.expectedDataSource || "manual");
+  const filePath = String(options.filePath || "").trim();
+  if ((source === "csv" || filePath.toLowerCase().endsWith(".csv")) && filePath) {
+    return tableRowsToObjects(tableCsvRows(await readFile(filePath, "utf8")));
+  }
+  if ((source === "excel" || /\.(xlsx|xlsm|xls)$/i.test(filePath)) && filePath) {
+    const ExcelModule = await import("exceljs");
+    const ExcelJS = ExcelModule.default || ExcelModule;
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const worksheet = options.sheetName ? workbook.getWorksheet(String(options.sheetName)) : workbook.worksheets[0];
+    if (!worksheet) throw new Error(`Excel sheet "${options.sheetName || "first sheet"}" was not found.`);
+    const rows = [];
+    worksheet.eachRow((row) => rows.push(row.values.slice(1).map((value) => value == null ? "" : String(value))));
+    return tableRowsToObjects(rows);
+  }
+  const raw = source === "variable" && options.variableName ? options.variableName : options.expectedData;
+  const parsed = tableStructured(raw, raw);
+  if (typeof parsed === "string") {
+    const text = parsed.trim();
+    if (text.includes("\n") && text.includes(",")) return tableRowsToObjects(tableCsvRows(text));
+    return tableRowsToObjects(tableStructured(text, []));
+  }
+  if (Array.isArray(parsed)) return tableRowsToObjects(parsed);
+  if (parsed && typeof parsed === "object") {
+    if (Array.isArray(parsed.tableData)) return tableRowsToObjects(parsed.tableData, parsed.headers || []);
+    if (Array.isArray(parsed.rows)) return tableRowsToObjects(parsed.rows, parsed.headers || []);
+    if (Array.isArray(parsed.data)) return tableRowsToObjects(parsed.data, parsed.headers || []);
+  }
+  return [];
+}
+
+async function workerExtractTable(page, options, timeout) {
+  const tableLocator = String(options.tableLocator || "").trim();
+  if (!tableLocator) throw new Error("Table locator is required.");
+  await page.locator(tableLocator).first().waitFor({ state: "visible", timeout });
+  const table = await page.evaluate((config) => {
+    const query = (root, selector) => {
+      if (!selector) return [];
+      try { return Array.from(root.querySelectorAll(selector)); } catch { return []; }
+    };
+    const visible = (element, includeHidden = false) => {
+      if (includeHidden) return Boolean(element);
+      if (!element || !element.isConnected || element.closest("[hidden],[aria-hidden='true']")) return false;
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const text = (element, includeHidden = false) => {
+      if (!element || (!includeHidden && !visible(element))) return "";
+      return String(element.innerText || element.textContent || "").replace(/\s+/g, " ").trim();
+    };
+    const directCells = (row) => {
+      const children = Array.from(row.children || []).filter((child) =>
+        child.matches?.("th,td,[role='cell'],[role='gridcell'],[role='columnheader'],[role='rowheader']")
+      );
+      return children.length ? children : query(row, "th,td,[role='cell'],[role='gridcell'],[role='columnheader'],[role='rowheader']");
+    };
+    const table = document.querySelector(config.tableLocator);
+    if (!table) return { error: `Table not found for locator: ${config.tableLocator}` };
+    const headers = (config.headerLocator
+      ? query(table, config.headerLocator)
+      : [...query(table, "thead th,thead [role='columnheader'],[role='columnheader']"), ...query(table, "tr:first-child th")])
+      .filter((item) => visible(item, config.includeHiddenColumns))
+      .map((item) => text(item, config.includeHiddenColumns));
+    let rowElements = config.rowLocator
+      ? query(table, config.rowLocator)
+      : [...query(table, "tbody tr"), ...query(table, "[role='rowgroup'] [role='row'],[role='table'] [role='row'],[role='grid'] [role='row']")];
+    if (!rowElements.length) rowElements = query(table, "tr,[role='row']");
+    rowElements = Array.from(new Set(rowElements)).filter((row) => {
+      if (!visible(row, config.includeHiddenRows) || row.closest("thead")) return false;
+      const cells = (config.cellLocator ? query(row, config.cellLocator) : directCells(row));
+      return cells.length && !cells.every((cell) => cell.matches?.("th,[role='columnheader']"));
+    });
+    const rows = rowElements.map((row) =>
+      (config.cellLocator ? query(row, config.cellLocator) : directCells(row))
+        .filter((cell) => visible(cell, config.includeHiddenColumns))
+        .map((cell) => text(cell, config.includeHiddenColumns))
+    );
+    const maxColumns = Math.max(headers.length, ...rows.map((row) => row.length), 0);
+    const finalHeaders = headers.length
+      ? [...headers, ...Array.from({ length: Math.max(0, maxColumns - headers.length) }, (_item, index) => `Column ${headers.length + index + 1}`)]
+      : Array.from({ length: maxColumns }, (_item, index) => `Column ${index + 1}`);
+    const tableData = rows.map((row) => Object.fromEntries(finalHeaders.map((header, index) => [header, row[index] ?? ""])));
+    const warnings = [];
+    const ariaRowCount = Number(table.getAttribute("aria-rowcount") || 0);
+    if (ariaRowCount && ariaRowCount > rows.length) warnings.push("Table appears virtualized. Only visible rows were validated.");
+    return { columnCount: finalHeaders.length, headers: finalHeaders, rowCount: tableData.length, rows, tableData, warnings };
+  }, {
+    cellLocator: String(options.cellLocator || "").trim(),
+    headerLocator: String(options.headerLocator || "").trim(),
+    includeHiddenColumns: tableBoolean(options.includeHiddenColumns, false),
+    includeHiddenRows: tableBoolean(options.includeHiddenRows, false),
+    rowLocator: String(options.rowLocator || "").trim(),
+    tableLocator,
+  });
+  if (table?.error) throw new Error(table.error);
+  return table;
+}
+
+function workerHeaderIndex(headers, name, options) {
+  const wanted = tableNormalize(name, options);
+  return headers.findIndex((header) => tableNormalize(header, options) === wanted);
+}
+
+function workerMatch(actual, expected, matchType, options) {
+  const left = tableNormalize(actual, options);
+  const right = tableNormalize(expected, options);
+  if (matchType === "contains") return left.includes(right);
+  if (matchType === "startsWith") return left.startsWith(right);
+  if (matchType === "endsWith") return left.endsWith(right);
+  if (matchType === "regex") return new RegExp(String(expected), tableBoolean(options.caseSensitive, false) ? "" : "i").test(String(actual ?? ""));
+  return left === right;
+}
+
+function workerValidateTable(table, options) {
+  const failedRows = [];
+  const failedCells = [];
+  const failedColumns = [];
+  const requiredColumns = [...tableStructured(options.expectedHeaders, []), ...tableStructured(options.requiredColumns, [])];
+  for (const column of requiredColumns) {
+    if (workerHeaderIndex(table.headers, column, options) < 0) failedColumns.push({ column, reason: "Column is missing." });
+  }
+  const expectedRowCount = tableNumber(options.expectedRowCount);
+  if (expectedRowCount !== null && table.rowCount !== expectedRowCount) failedRows.push({ reason: `Expected ${expectedRowCount} rows, found ${table.rowCount}.` });
+  const expectedColumnCount = tableNumber(options.expectedColumnCount);
+  if (expectedColumnCount !== null && table.columnCount !== expectedColumnCount) failedColumns.push({ reason: `Expected ${expectedColumnCount} columns, found ${table.columnCount}.` });
+  for (const column of tableStructured(options.notEmptyColumns, [])) {
+    const index = workerHeaderIndex(table.headers, column, options);
+    table.rows.forEach((row, rowIndex) => {
+      if (index < 0 || !tableNormalize(row[index], options)) failedCells.push({ column, rowIndex: rowIndex + 1, reason: "Cell is empty." });
+    });
+  }
+  if (tableBoolean(options.validateNoBlankRows, true)) {
+    table.rows.forEach((row, rowIndex) => {
+      if (!row.some((cell) => tableNormalize(cell, options))) failedRows.push({ rowIndex: rowIndex + 1, reason: "Row is blank." });
+    });
+  }
+  const failed = failedRows.length + failedCells.length + failedColumns.length;
+  return { ...table, failed, failedCells, failedColumns, failedRows, passed: failed === 0 };
+}
+
+async function workerExecuteTableCommand(page, step, timeout) {
+  const action = step.action;
+  const options = step.options || {};
+  const table = await workerExtractTable(page, options, timeout);
+  if (action === "getWebTableData") return table;
+  if (action === "validateWebTable" || action === "verifyWebTableHeaders") {
+    const output = workerValidateTable(table, options);
+    if (!output.passed) {
+      const error = new Error(`Table validation failed with ${output.failed} issue(s).`);
+      error.output = output;
+      throw error;
+    }
+    return output;
+  }
+  if (action === "verifyWebTableRowCount") {
+    const expected = tableNumber(options.expectedRowCount);
+    if (table.rowCount !== expected) throw new Error(`Expected ${expected} table rows, found ${table.rowCount}.`);
+    return { rowCount: table.rowCount, ...table };
+  }
+  if (action === "verifyWebTableColumnCount") {
+    const expected = tableNumber(options.expectedColumnCount);
+    if (table.columnCount !== expected) throw new Error(`Expected ${expected} table columns, found ${table.columnCount}.`);
+    return { columnCount: table.columnCount, ...table };
+  }
+  if (action === "verifyWebTableColumnExists") {
+    const index = workerHeaderIndex(table.headers, options.columnName, options);
+    if (index < 0) throw new Error(`Column "${options.columnName}" was not found.`);
+    return { columnIndex: index + 1, columnName: table.headers[index] };
+  }
+  if (action === "verifyWebTableRowExists") {
+    const criteria = tableStructured(options.matchCriteria, {});
+    const entries = Object.entries(criteria);
+    const rowIndex = table.tableData.findIndex((row) => entries.every(([column, expected]) => workerMatch(row[column], expected, options.matchMode === "contains" ? "contains" : "equals", options)));
+    if (rowIndex < 0) throw new Error("No table row matched the provided criteria.");
+    return { matchedRowData: table.tableData[rowIndex], matchedRowIndex: rowIndex + 1 };
+  }
+  if (action === "verifyWebTableCellValue") {
+    const rowIndex = String(options.rowSelectorType || "rowIndex") === "keyColumn"
+      ? table.tableData.findIndex((row) => workerMatch(row[options.keyColumn], options.keyValue, "equals", options))
+      : Math.max(0, (tableNumber(options.rowIndex) ?? 1) - 1);
+    const columnIndex = String(options.columnSelectorType || "columnName") === "columnIndex"
+      ? Math.max(0, (tableNumber(options.columnIndex) ?? 1) - 1)
+      : workerHeaderIndex(table.headers, options.columnName, options);
+    const actual = table.rows[rowIndex]?.[columnIndex] ?? "";
+    if (rowIndex < 0 || columnIndex < 0 || !workerMatch(actual, options.expectedValue, options.matchType || "equals", options)) {
+      throw new Error(`Expected table cell to match "${options.expectedValue}", got "${actual}".`);
+    }
+    return { actual, columnIndex: columnIndex + 1, columnName: table.headers[columnIndex], expected: options.expectedValue, rowIndex: rowIndex + 1 };
+  }
+  if (action === "verifyWebTableSortOrder") {
+    const columnIndex = workerHeaderIndex(table.headers, options.columnName, options);
+    if (columnIndex < 0) throw new Error(`Column "${options.columnName}" was not found.`);
+    const values = table.rows.map((row, index) => ({ rowIndex: index + 1, value: row[columnIndex] ?? "" })).filter((item) => !tableBoolean(options.ignoreBlankValues, true) || tableNormalize(item.value, options));
+    const convert = (value) => options.dataType === "number" ? Number(String(value).replace(/[^0-9.-]/g, "")) : options.dataType === "date" ? Date.parse(String(value)) : tableNormalize(value, options);
+    for (let index = 1; index < values.length; index += 1) {
+      const ok = options.sortOrder === "desc" ? convert(values[index - 1].value) >= convert(values[index].value) : convert(values[index - 1].value) <= convert(values[index].value);
+      if (!ok) throw new Error(`Table column "${options.columnName}" is not sorted ${options.sortOrder || "asc"}.`);
+    }
+    return { columnName: options.columnName, passed: true, sortOrder: options.sortOrder || "asc", values };
+  }
+  if (action === "compareWebTableWithExpectedData" || action === "compareWebTableWithExternalData") {
+    const expected = await workerExpectedTableRows(options);
+    const mismatchedCells = [];
+    expected.forEach((row, rowIndex) => {
+      const actual = table.tableData[rowIndex] || {};
+      for (const [column, expectedValue] of Object.entries(row)) {
+        if (!workerMatch(actual[column], expectedValue, "equals", options)) {
+          mismatchedCells.push({ actual: actual[column] ?? "", column, expected: expectedValue, rowIndex: rowIndex + 1 });
+        }
+      }
+    });
+    const output = { actual: table, failedCount: mismatchedCells.length, mismatchedCells, passed: mismatchedCells.length === 0, passedCount: Math.max(0, expected.length - mismatchedCells.length), warnings: table.warnings };
+    if (!output.passed) {
+      const error = new Error(`Table comparison failed with ${output.failedCount} mismatch(es).`);
+      error.output = output;
+      throw error;
+    }
+    return output;
+  }
+  throw new Error(`Unsupported table action: ${action}`);
+}
+
 async function executeStep(session, step, index, context = {}) {
   const startedAt = now();
   const startedMs = Date.now();
@@ -2635,6 +2999,7 @@ async function executeStep(session, step, index, context = {}) {
   const inputValue = step.inputValue ?? "";
   const expectedValue = step.expectedValue ?? "";
   let healingDetails = null;
+  let stepOutput;
 
   pushEvent(session, "step:start", {
     action,
@@ -2691,6 +3056,8 @@ async function executeStep(session, step, index, context = {}) {
     await page.mouse.click(Number(options.x || 0), Number(options.y || 0));
   } else if (action === "scroll") {
     await page.mouse.wheel(0, Number(inputValue || options.deltaY || 600));
+  } else if (tableActionNames.has(action)) {
+    stepOutput = await workerExecuteTableCommand(page, step, timeout);
   } else {
     if (action === "click") {
       try {
@@ -2882,6 +3249,9 @@ async function executeStep(session, step, index, context = {}) {
     stepId: step.id || null,
     suggestion: "",
   };
+  if (stepOutput !== undefined) {
+    result.output = stepOutput;
+  }
   pushEvent(session, "step:success", {
     action,
     actionId: context.actionId || null,
@@ -2920,9 +3290,222 @@ async function captureFailureScreenshot(session, runId, step) {
   }
 }
 
+async function captureLiveFrame(session) {
+  const page = session.page;
+  if (!page || page.isClosed?.() || typeof page.screenshot !== "function") {
+    return null;
+  }
+  try {
+    return await page.screenshot({
+      fullPage: false,
+      timeout: 2500,
+      type: "png",
+    });
+  } catch (error) {
+    pushEvent(session, "live_view:frame_failed", {
+      error: error instanceof Error ? error.message : "Could not capture live frame.",
+    });
+    return null;
+  }
+}
+
+async function inspectPagePoint(session, input) {
+  const page = session.page;
+  if (!page || page.isClosed?.() || typeof page.evaluate !== "function") return null;
+  const x = Number(input?.x);
+  const y = Number(input?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new Error("Inspector x and y coordinates are required.");
+  }
+
+  return page.evaluate(({ x, y }) => {
+    const clean = (value, max = 160) =>
+      String(value || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, max);
+    const cssEscape = (value) =>
+      window.CSS?.escape ? window.CSS.escape(String(value)) : String(value).replace(/"/g, '\\"');
+    const textOf = (element) => clean(element?.innerText || element?.textContent || "");
+    const roleOf = (element) => clean(element?.getAttribute?.("role") || "");
+    const attr = (element, name) => clean(element?.getAttribute?.(name) || "");
+    const labelFor = (element) => {
+      const id = attr(element, "id");
+      if (id) {
+        const label = document.querySelector(`label[for="${cssEscape(id)}"]`);
+        if (label) return textOf(label);
+      }
+      const wrapper = element?.closest?.("label");
+      return wrapper ? textOf(wrapper) : "";
+    };
+    const accessibleName = (element) =>
+      clean(
+        attr(element, "aria-label") ||
+          attr(element, "title") ||
+          attr(element, "alt") ||
+          labelFor(element) ||
+          attr(element, "placeholder") ||
+          textOf(element),
+      );
+    const matchCount = (selector) => {
+      try {
+        return document.querySelectorAll(selector).length;
+      } catch {
+        return 0;
+      }
+    };
+    const cssPath = (element) => {
+      if (!element || element.nodeType !== 1) return "";
+      const parts = [];
+      let current = element;
+      while (current && current.nodeType === 1 && parts.length < 5) {
+        const tag = current.tagName.toLowerCase();
+        const id = attr(current, "id");
+        if (id) {
+          parts.unshift(`${tag}#${cssEscape(id)}`);
+          break;
+        }
+        const parent = current.parentElement;
+        if (!parent) {
+          parts.unshift(tag);
+          break;
+        }
+        const siblings = Array.from(parent.children).filter((child) => child.tagName === current.tagName);
+        const index = siblings.indexOf(current) + 1;
+        parts.unshift(siblings.length > 1 ? `${tag}:nth-of-type(${index})` : tag);
+        current = parent;
+      }
+      return parts.join(" > ");
+    };
+    const xpathPath = (element) => {
+      if (!element || element.nodeType !== 1) return "";
+      const parts = [];
+      let current = element;
+      while (current && current.nodeType === 1 && parts.length < 6) {
+        const tag = current.tagName.toLowerCase();
+        const siblings = current.parentElement
+          ? Array.from(current.parentElement.children).filter((child) => child.tagName === current.tagName)
+          : [];
+        const index = siblings.indexOf(current) + 1;
+        parts.unshift(`${tag}${siblings.length > 1 ? `[${index}]` : ""}`);
+        current = current.parentElement;
+      }
+      return parts.length ? `/${parts.join("/")}` : "";
+    };
+    const natureFor = (element) => {
+      const tag = element.tagName?.toLowerCase() || "element";
+      const role = roleOf(element).toLowerCase();
+      const type = attr(element, "type").toLowerCase();
+      if (tag === "select" || ["combobox", "listbox"].includes(role)) return "dropdown";
+      if (tag === "textarea") return "textarea";
+      if (tag === "input" && ["checkbox", "radio"].includes(type)) return type;
+      if (tag === "input") return "input";
+      if (tag === "button" || role === "button") return "button";
+      if (tag === "a" || role === "link") return "link";
+      if (tag === "img" || role === "img" || tag === "image") return "image";
+      if (["table", "tbody", "thead", "tr", "td", "th"].includes(tag) || role.includes("gridcell")) return "table";
+      if (/^(h[1-6])$/.test(tag) || role === "heading") return "heading";
+      return role || tag;
+    };
+    const suggestedActionsFor = (nature) => {
+      if (nature === "button" || nature === "link") return ["click", "doubleClick", "rightClick", "assert"];
+      if (nature === "input" || nature === "textarea") return ["fill", "clear", "assert"];
+      if (nature === "dropdown") return ["select", "assert"];
+      if (nature === "checkbox" || nature === "radio") return ["check", "uncheck", "assert"];
+      if (nature === "table") return ["assert", "click"];
+      return ["click", "assert"];
+    };
+    const candidate = (strategy, value, score) => {
+      if (!value) return null;
+      const selector =
+        strategy === "testid"
+          ? `[data-testid="${cssEscape(value)}"],[data-test="${cssEscape(value)}"],[data-qa="${cssEscape(value)}"],[data-cy="${cssEscape(value)}"]`
+          : strategy === "css"
+            ? value
+            : "";
+      const count = selector ? matchCount(selector) : 1;
+      return {
+        strategy,
+        type: strategy,
+        value,
+        score,
+        unique: count === 1,
+        isUnique: count === 1,
+        metadata: { matchCount: count },
+      };
+    };
+
+    const rawElement = document.elementFromPoint(x, y);
+    const element = rawElement?.closest?.("button,a,input,textarea,select,label,[role],td,th,tr,table,img,[data-testid],[data-test],[data-qa],[data-cy]") || rawElement;
+    if (!element || element === document.documentElement || element === document.body) {
+      return {
+        element: null,
+        inspectorPoint: { x, y },
+        page: { title: document.title, url: window.location.href },
+        status: "empty",
+      };
+    }
+
+    const rect = element.getBoundingClientRect();
+    const role = roleOf(element);
+    const name = accessibleName(element);
+    const testId =
+      attr(element, "data-testid") ||
+      attr(element, "data-test") ||
+      attr(element, "data-qa") ||
+      attr(element, "data-cy");
+    const tag = element.tagName?.toLowerCase() || "element";
+    const nature = natureFor(element);
+    const candidates = [
+      candidate("testid", testId, 98),
+      candidate("role", role && name ? `${role}:${name}` : "", 88),
+      candidate("label", labelFor(element), 84),
+      candidate("placeholder", attr(element, "placeholder"), 82),
+      candidate("alt", attr(element, "alt"), 80),
+      candidate("title", attr(element, "title"), 76),
+      candidate("text", textOf(element), 62),
+      candidate("css", cssPath(element), 44),
+      candidate("xpath", xpathPath(element), 36),
+    ].filter(Boolean);
+
+    return {
+      bounds: {
+        height: rect.height,
+        width: rect.width,
+        x: rect.left,
+        y: rect.top,
+      },
+      element: {
+        ariaLabel: attr(element, "aria-label"),
+        elementKind: nature,
+        labelText: labelFor(element),
+        placeholder: attr(element, "placeholder"),
+        role,
+        tag,
+        text: textOf(element),
+        title: attr(element, "title"),
+        type: attr(element, "type"),
+      },
+      inspectorPoint: { x, y },
+      locatorCandidates: candidates,
+      page: {
+        title: document.title,
+        url: window.location.href,
+        viewport: {
+          height: window.innerHeight,
+          width: window.innerWidth,
+        },
+      },
+      recommendedLocator: candidates[0] || null,
+      status: "ok",
+      suggestedActions: suggestedActionsFor(nature),
+    };
+  }, { x, y });
+}
+
 function failedStepResult(step, startedAt, startedMs, error, screenshotPath = null) {
   const errorType = error?.errorType || error?.code || (isLocatorTimeoutError(error) ? "ELEMENT_NOT_READY" : "COMMAND_FAILED");
-  return {
+  const result = {
     durationMs: Date.now() - startedMs,
     endedAt: now(),
     errorMessage: error instanceof Error ? error.message : "Step failed.",
@@ -2937,6 +3520,10 @@ function failedStepResult(step, startedAt, startedMs, error, screenshotPath = nu
         ? missingPrerequisiteSuggestion(step?.action || "")
         : "Review the failed command details and retry after the page is in the expected state."),
   };
+  if (error && typeof error === "object" && "output" in error) {
+    result.output = error.output;
+  }
+  return result;
 }
 
 function normalizeParameterData(value) {
@@ -3022,7 +3609,8 @@ export function createPlaywrightWorkerServer({
       browser: null,
       capabilities: {
         eventStream: true,
-        liveView: "placeholder",
+        liveFrame: true,
+        liveView: "screenshot",
         networkCapture: true,
         playwright: true,
         trace: true,
@@ -3069,7 +3657,9 @@ export function createPlaywrightWorkerServer({
     pushEvent(session, "session:starting");
 
     try {
+      const maximizeWindow = Boolean(payload.viewport?.maximize);
       session.browser = await browserLauncher.launch({
+        args: !effectiveHeadless && maximizeWindow ? ["--start-maximized"] : undefined,
         channel: process.env.AUTOMATION_WORKER_BROWSER_CHANNEL || undefined,
         headless: effectiveHeadless,
       });
@@ -3102,7 +3692,7 @@ export function createPlaywrightWorkerServer({
         hasTouch: Boolean(payload.viewport?.isMobile),
         httpCredentials,
         isMobile: Boolean(payload.viewport?.isMobile),
-        viewport: requestedViewport,
+        viewport: !effectiveHeadless && maximizeWindow ? null : requestedViewport,
       });
       const authorizationHeader = basicAuthHeader(httpCredentials);
       if (authorizationHeader) {
@@ -3461,8 +4051,51 @@ export function createPlaywrightWorkerServer({
         html(
           response,
           200,
-          `<!doctype html><title>CaseForge Live View</title><body style="font-family:system-ui;margin:24px"><h1>Live view placeholder</h1><p>Session ${session.id} is ${session.status}.</p><p>Attach a streaming/VNC/CDP viewer here when the worker is deployed with live browser viewing.</p></body>`,
+          `<!doctype html><title>CaseForge Live View</title><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#050816;color:#e5e7eb;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><main style="min-height:100vh;display:grid;grid-template-rows:auto 1fr;background:#050816"><header style="display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(148,163,184,.22);padding:12px 14px"><div><p style="margin:0;color:#93c5fd;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase">CaseForge Live View</p><p style="margin:4px 0 0;color:#cbd5e1;font-size:13px">Session ${session.id} is ${session.status}.</p></div><span id="status" style="border:1px solid rgba(34,197,94,.35);border-radius:999px;padding:5px 9px;color:#bbf7d0;background:rgba(34,197,94,.1);font-size:12px;font-weight:700">Streaming</span></header><section style="display:grid;place-items:center;min-height:0;padding:12px"><img id="frame" alt="Live browser frame" style="max-width:100%;max-height:calc(100vh - 86px);object-fit:contain;border:1px solid rgba(148,163,184,.25);border-radius:14px;background:white;box-shadow:0 24px 80px rgba(0,0,0,.35)"></section></main><script>(()=>{const frame=document.getElementById('frame');const status=document.getElementById('status');let tick=0;function refresh(){const image=new Image();image.onload=()=>{frame.src=image.src;status.textContent='Streaming';status.style.color='#bbf7d0';status.style.borderColor='rgba(34,197,94,.35)';status.style.background='rgba(34,197,94,.1)';};image.onerror=()=>{status.textContent='Waiting for frame';status.style.color='#fde68a';status.style.borderColor='rgba(245,158,11,.35)';status.style.background='rgba(245,158,11,.1)';};image.src='./live-frame?t='+(++tick)+'&at='+Date.now();}refresh();setInterval(refresh,1000);})();</script></body>`,
         );
+        return;
+      }
+
+      const liveFrameMatch = path.match(/^\/sessions\/([^/]+)\/live-frame$/);
+      if (liveFrameMatch && request.method === "GET") {
+        const session = sessions.get(decodeURIComponent(liveFrameMatch[1]));
+        if (!session) {
+          svgImage(response, 404, "Session not found.");
+          return;
+        }
+        if (!isSessionUsable(session)) {
+          svgImage(response, 409, "Browser session is not available.");
+          return;
+        }
+        const frame = await captureLiveFrame(session);
+        if (!frame) {
+          svgImage(response, 503, "Waiting for next browser frame.");
+          return;
+        }
+        binary(response, 200, frame, "image/png");
+        return;
+      }
+
+      const inspectMatch = path.match(/^\/sessions\/([^/]+)\/inspect$/);
+      if (inspectMatch && request.method === "POST") {
+        const session = sessions.get(decodeURIComponent(inspectMatch[1]));
+        if (!session) {
+          json(response, 404, { error: "Session not found." });
+          return;
+        }
+        if (!isSessionUsable(session)) {
+          json(response, 409, { error: "Browser session is not available for inspection." });
+          return;
+        }
+        try {
+          const result = await inspectPagePoint(session, await readJson(request));
+          json(response, 200, { result, sessionId: session.id });
+        } catch (error) {
+          json(response, 400, {
+            error: error instanceof Error ? error.message : "Could not inspect live browser point.",
+            sessionId: session.id,
+          });
+        }
         return;
       }
 

@@ -457,7 +457,12 @@ test("self-hosted Playwright worker exposes session lifecycle endpoints", async 
 
     const live = await fetch(`${baseUrl}/sessions/${session.sessionId}/live`);
     assert.equal(live.status, 200);
-    assert.match(await live.text(), /Live view placeholder/);
+    assert.match(await live.text(), /CaseForge Live View/);
+
+    const liveFrame = await fetch(`${baseUrl}/sessions/${session.sessionId}/live-frame`);
+    assert.equal(liveFrame.status, 200);
+    assert.match(liveFrame.headers.get("content-type") || "", /image\/png/);
+    assert.equal(await liveFrame.text(), "fake screenshot");
 
     const run = await fetch(`${baseUrl}/sessions/${session.sessionId}/run`, {
       body: JSON.stringify({

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>glowcart-demo</title>
+    <!-- Dummy GTM tag for automation testing only. No external GTM script is loaded. -->
+    <script
+      data-testid="dummy-gtm-tag"
+      data-gtm-container-id="GTM-GLOWCART"
+    >
+      (function (window) {
+        window.dataLayer = window.dataLayer || [];
+        window.__glowcartAnalyticsEvents =
+          window.__glowcartAnalyticsEvents || [];
+
+        var gtmEvent = {
+          event: "gtm.js",
+          gtm_container_id: "GTM-GLOWCART",
+          ga4_measurement_id: "G-GLOWCART",
+          source: "dummy-gtm-source-tag",
+          timestamp: new Date().toISOString(),
+        };
+
+        window.dataLayer.push(gtmEvent);
+        window.__glowcartAnalyticsEvents.push(gtmEvent);
+        window.__glowcartAnalyticsInitialized = true;
+      })(window);
+    </script>
+    <!-- Dummy GA4 tag for automation testing only. No external GA4 script is loaded. -->
+    <script
+      data-testid="dummy-ga4-tag"
+      data-ga4-measurement-id="G-GLOWCART"
+    >
+      window.dataLayer = window.dataLayer || [];
+      window.gtag =
+        window.gtag ||
+        function () {
+          window.dataLayer.push(arguments);
+        };
+      window.gtag("js", new Date());
+      window.gtag("config", "G-GLOWCART", {
+        send_page_view: false,
+        gtm_container_id: "GTM-GLOWCART",
+        dummy_analytics: true,
+      });
+    </script>
+    <script type="module" crossorigin src="/assets/index-D4535IX6.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CQa7dfA2.css">
+  </head>
+  <body>
+    <noscript data-testid="dummy-gtm-noscript" data-gtm-container-id="GTM-GLOWCART">
+      Dummy GTM noscript placeholder for automation testing.
+    </noscript>
+    <div id="root"></div>
+  </body>
+</html>

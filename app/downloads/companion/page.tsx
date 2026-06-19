@@ -1,4 +1,4 @@
-const windowsInstallerUrl = "/downloads/CaseForge-Companion-Setup-0.1.6.exe?v=0.1.6";
+const windowsInstallerUrl = "/downloads/CaseForge-Companion-Setup-0.1.25.exe?v=0.1.25";
 
 const osCards = [
   {
@@ -63,7 +63,7 @@ export default function CompanionDownloadPage() {
               {card.enabled ? (
                 <a
                   href={card.href}
-                  className="rounded-lg bg-white px-4 py-2 text-center text-sm font-semibold text-zinc-950 transition hover:bg-emerald-200"
+                  className="rounded-lg border border-white bg-white px-4 py-2 text-center text-sm font-semibold !text-zinc-950 transition hover:border-emerald-400 hover:bg-zinc-950 hover:!text-white"
                 >
                   {card.action}
                 </a>

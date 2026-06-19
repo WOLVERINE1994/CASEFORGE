@@ -93,7 +93,7 @@ export default function ResponsiveShell({
             <p className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
               Navigation
             </p>
-            <CaseForgeBrand size="sm" className="mt-2 w-full max-w-[190px]" priority />
+            <CaseForgeBrand size="sm" tone="onDark" className="mt-2 w-full max-w-[190px]" priority />
             <p className="truncate text-base font-semibold text-slate-50">
               {mobileTitle}
             </p>
@@ -140,7 +140,7 @@ export default function ResponsiveShell({
                     <p className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                       Navigation
                     </p>
-                    <CaseForgeBrand size="sm" className="mt-2 w-full max-w-[190px]" />
+                    <CaseForgeBrand size="sm" tone="onDark" className="mt-2 w-full max-w-[190px]" />
                     <p className="mt-1 truncate text-base font-semibold text-slate-50">
                       {mobileTitle}
                     </p>
