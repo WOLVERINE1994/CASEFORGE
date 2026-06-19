@@ -2355,12 +2355,39 @@ function stringifyRuntimeValue(value) {
   }
 }
 
+function parseRuntimePath(path) {
+  return String(path || "")
+    .replace(/\[(\d+)\]/g, ".$1")
+    .split(".")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function getRuntimePathValue(source, path) {
+  const parts = parseRuntimePath(path);
+  if (!parts.length) return source;
+  let current = source;
+  for (const part of parts) {
+    if (current === undefined || current === null) return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+function runtimeVariableValue(variables, name) {
+  const key = String(name || "").trim();
+  if (!key) return undefined;
+  if (Object.prototype.hasOwnProperty.call(variables, key)) return variables[key];
+  return getRuntimePathValue(variables, key);
+}
+
 function interpolateRuntimeVariables(value, variables) {
   if (typeof value !== "string") return value;
   return value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, name) => {
     const key = String(name || "").trim();
-    if (!key || !Object.prototype.hasOwnProperty.call(variables, key)) return match;
-    return stringifyRuntimeValue(variables[key]);
+    const variableValue = runtimeVariableValue(variables, key);
+    if (!key || variableValue === undefined) return match;
+    return stringifyRuntimeValue(variableValue);
   });
 }
 
@@ -2377,8 +2404,9 @@ function interpolateJavaScriptRuntimeVariables(value, variables) {
   if (typeof value !== "string") return value;
   return value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, name) => {
     const key = String(name || "").trim();
-    if (!key || !Object.prototype.hasOwnProperty.call(variables, key)) return match;
-    return stringifyJavaScriptRuntimeValue(variables[key]);
+    const variableValue = runtimeVariableValue(variables, key);
+    if (!key || variableValue === undefined) return match;
+    return stringifyJavaScriptRuntimeValue(variableValue);
   });
 }
 
@@ -2440,6 +2468,313 @@ function optionBoolean(value, fallback) {
   if (["false", "0", "no", "off"].includes(normalized)) return false;
   if (["true", "1", "yes", "on"].includes(normalized)) return true;
   return fallback;
+}
+
+function parseStructuredRuntimeValue(value, fallback = null) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (Array.isArray(value) || typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value === "object") return value;
+  const text = String(value).trim();
+  if (!text) return fallback;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text.includes(",") ? text.split(",").map((item) => item.trim()).filter(Boolean) : value;
+  }
+}
+
+function normalizeRuntimeSteps(value) {
+  const parsed = parseStructuredRuntimeValue(value, []);
+  return Array.isArray(parsed) ? parsed.filter((step) => step && typeof step === "object") : [];
+}
+
+function comparableRuntimeValue(value, caseSensitive = false) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") {
+    const text = value.replace(/\s+/g, " ").trim();
+    return caseSensitive ? text : text.toLowerCase();
+  }
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  const text = stringifyRuntimeValue(value);
+  return caseSensitive ? text : text.toLowerCase();
+}
+
+function evaluateRuntimeComparison(actual, expected, operator = "equals", options = {}) {
+  const normalizedOperator = String(operator || "equals");
+  const caseSensitive = optionBoolean(options.caseSensitive, false);
+  const left = comparableRuntimeValue(actual, caseSensitive);
+  const right = comparableRuntimeValue(expected, caseSensitive);
+  if (normalizedOperator === "isEmpty") {
+    return actual === undefined || actual === null || (typeof actual === "string" && actual.trim() === "") || (Array.isArray(actual) && !actual.length) || (typeof actual === "object" && actual && !Object.keys(actual).length);
+  }
+  if (normalizedOperator === "isNotEmpty") return !evaluateRuntimeComparison(actual, expected, "isEmpty", options);
+  if (normalizedOperator === "notEquals") return left !== right;
+  if (normalizedOperator === "contains") return String(left).includes(String(right));
+  if (normalizedOperator === "notContains") return !String(left).includes(String(right));
+  if (normalizedOperator === "greaterThan") return Number(actual) > Number(expected);
+  if (normalizedOperator === "lessThan") return Number(actual) < Number(expected);
+  if (normalizedOperator === "greaterOrEqual") return Number(actual) >= Number(expected);
+  if (normalizedOperator === "lessOrEqual") return Number(actual) <= Number(expected);
+  if (normalizedOperator === "regex") {
+    try {
+      return new RegExp(String(expected), caseSensitive ? "" : "i").test(String(actual ?? ""));
+    } catch {
+      return false;
+    }
+  }
+  return left === right;
+}
+
+async function runtimeContextSnapshot(page, runtimeVariables = {}) {
+  const viewport = page.viewportSize?.() || { height: 0, width: 0 };
+  let title = "";
+  try {
+    title = await page.title();
+  } catch {
+    title = "";
+  }
+  const width = Number(viewport?.width || 0);
+  const device = width <= 767 ? "phone" : width <= 1023 ? "tablet" : "desktop";
+  return {
+    baseUrl: (() => {
+      try {
+        const parsed = new URL(page.url());
+        return `${parsed.protocol}//${parsed.host}`;
+      } catch {
+        return "";
+      }
+    })(),
+    browser: "chromium",
+    currentUrl: page.url(),
+    device,
+    env: runtimeVariables.env || runtimeVariables.environment || runtimeVariables.environmentName || "",
+    platform: process.platform,
+    title,
+    variables: runtimeVariables,
+    viewport: {
+      height: Number(viewport?.height || 0),
+      width,
+    },
+  };
+}
+
+async function evaluateRuntimeExpression(page, expression, runtimeVariables, extraContext = {}) {
+  const source = String(expression || "").trim();
+  if (!source) return false;
+  const context = { ...(await runtimeContextSnapshot(page, runtimeVariables)), ...extraContext };
+  return await page.evaluate(async ({ context, source }) => {
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+    const runAsBody = async () => new AsyncFunction("context", "variables", "viewport", "currentUrl", "title", "env", source)(
+      context,
+      context.variables || {},
+      context.viewport || {},
+      context.currentUrl || "",
+      context.title || "",
+      context.env || "",
+    );
+    const runAsExpression = async () => new AsyncFunction("context", "variables", "viewport", "currentUrl", "title", "env", `return (${source});`)(
+      context,
+      context.variables || {},
+      context.viewport || {},
+      context.currentUrl || "",
+      context.title || "",
+      context.env || "",
+    );
+    try {
+      const bodyValue = await runAsBody();
+      if (bodyValue !== undefined || /\breturn\b/.test(source)) return bodyValue;
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+    }
+    return await runAsExpression();
+  }, { context, source });
+}
+
+async function evaluateAutomationCondition(page, options = {}, runtimeVariables = {}) {
+  const source = String(options.conditionSource || options.source || "variable");
+  const operator = String(options.operator || "equals");
+  const expected = resolveRuntimeValue(options.expectedValue ?? options.rightValue ?? options.value ?? "", runtimeVariables);
+  if (source === "javascript" || source === "expression") {
+    return Boolean(await evaluateRuntimeExpression(page, options.expression || options.condition || "", runtimeVariables));
+  }
+  if (source === "element") {
+    const locator = String(options.locator || options.elementLocator || options.target?.value || "").trim();
+    if (!locator) return false;
+    const visible = await page.locator(locator).first().isVisible({ timeout: optionalNumber(options.timeoutMs || options.timeout) ?? 2000 }).catch(() => false);
+    if (operator === "notExists" || operator === "notEquals") return !visible;
+    return visible;
+  }
+
+  const context = await runtimeContextSnapshot(page, runtimeVariables);
+  let actual;
+  if (source === "viewport") actual = context.device;
+  else if (source === "resolutionWidth") actual = context.viewport.width;
+  else if (source === "resolutionHeight") actual = context.viewport.height;
+  else if (source === "environment") actual = options.environmentName || context.env;
+  else if (source === "baseUrl") actual = context.baseUrl;
+  else if (source === "currentUrl") actual = context.currentUrl;
+  else if (source === "pageTitle") actual = context.title;
+  else if (source === "browser") actual = context.browser;
+  else if (source === "platform") actual = context.platform;
+  else actual = runtimeVariableValue(runtimeVariables, options.variableName || options.leftValue || options.name);
+  return evaluateRuntimeComparison(actual, expected, operator, options);
+}
+
+function setLoopVariables(runtimeVariables, loopState, itemVariableName = "item", keyVariableName = "key", valueVariableName = "value") {
+  runtimeVariables.loop = loopState;
+  runtimeVariables["loop.index"] = loopState.index;
+  runtimeVariables["loop.number"] = loopState.number;
+  runtimeVariables["loop.count"] = loopState.count;
+  runtimeVariables["loop.first"] = loopState.first;
+  runtimeVariables["loop.last"] = loopState.last;
+  if ("item" in loopState) runtimeVariables[itemVariableName || "item"] = loopState.item;
+  if ("key" in loopState) runtimeVariables[keyVariableName || "key"] = loopState.key;
+  if ("value" in loopState) runtimeVariables[valueVariableName || "value"] = loopState.value;
+  if ("row" in loopState) runtimeVariables.row = loopState.row;
+}
+
+function runtimeCollectionSource(options = {}, runtimeVariables = {}) {
+  const sourceName = String(options.source || options.actual || options.variableName || "").trim().replace(/^\{\{\s*|\s*\}\}$/g, "");
+  const value = sourceName ? runtimeVariableValue(runtimeVariables, sourceName) : options.items ?? options.entries ?? options.value;
+  return parseStructuredRuntimeValue(value, value);
+}
+
+function normalizeList(value) {
+  const parsed = parseStructuredRuntimeValue(value, []);
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && typeof parsed === "object") return Object.entries(parsed).map(([key, item]) => ({ key, value: item }));
+  return parsed === undefined || parsed === null || parsed === "" ? [] : [parsed];
+}
+
+function collectionItemValue(item, field) {
+  const key = String(field || "").trim();
+  return key ? getRuntimePathValue(item, key) : item;
+}
+
+async function executeCollectionCommand(page, step, runtimeVariables = {}) {
+  const action = step.action;
+  const options = step.options || {};
+  const source = runtimeCollectionSource(options, runtimeVariables);
+  const list = normalizeList(source);
+  const sourceType = Array.isArray(source) ? "list" : source && typeof source === "object" ? "map" : typeof source;
+  const expression = String(options.expression || "").trim();
+  const itemMatches = async (item, index) => {
+    if (expression) {
+      return Boolean(await evaluateRuntimeExpression(page, expression, runtimeVariables, { index, item }));
+    }
+    return evaluateRuntimeComparison(
+      collectionItemValue(item, options.field),
+      options.expectedValue ?? options.matchValue ?? options.value ?? "",
+      options.operator || "equals",
+      options,
+    );
+  };
+  const mapItem = async (item, index) => {
+    if (expression) return await evaluateRuntimeExpression(page, expression, runtimeVariables, { index, item });
+    return options.field ? collectionItemValue(item, options.field) : item;
+  };
+
+  if (action === "createList") return normalizeList(options.items);
+  if (action === "addItemToList") return [...list, parseStructuredRuntimeValue(options.item, options.item)];
+  if (action === "removeItemFromList") {
+    const index = optionalNumber(options.index);
+    if (index !== null) return list.filter((_item, itemIndex) => itemIndex !== index);
+    return list.filter((item) => !evaluateRuntimeComparison(collectionItemValue(item, options.matchField), options.matchValue, options.operator || "equals", options));
+  }
+  if (action === "countListItems") return list.length;
+  if (action === "filterList") return Promise.all(list.map(itemMatches)).then((matches) => list.filter((_item, index) => matches[index]));
+  if (action === "mapList") return Promise.all(list.map(mapItem));
+  if (action === "findItemInList") {
+    for (const [index, item] of list.entries()) {
+      if (await itemMatches(item, index)) return item;
+    }
+    return null;
+  }
+  if (action === "listContains") {
+    for (const [index, item] of list.entries()) {
+      if (await itemMatches(item, index)) return true;
+    }
+    return false;
+  }
+  if (action === "sortList") {
+    const order = String(options.sortOrder || "asc") === "desc" ? -1 : 1;
+    const type = String(options.dataType || "string");
+    const convert = (value) => type === "number" ? Number(String(value).replace(/[^0-9.-]/g, "")) : type === "date" ? Date.parse(String(value)) : String(value ?? "").toLowerCase();
+    return [...list].sort((a, b) => (convert(collectionItemValue(a, options.field)) > convert(collectionItemValue(b, options.field)) ? order : -order));
+  }
+  if (action === "getListItem") {
+    const index = optionalNumber(options.index) ?? 0;
+    return index < 0 ? list[list.length + index] : list[index];
+  }
+  if (action === "joinList") return list.map((item) => stringifyRuntimeValue(item)).join(String(options.separator ?? ","));
+  if (action === "splitTextToList") return String(options.text || "").split(String(options.separator ?? ",")).map((item) => item.trim());
+  if (action === "uniqueList") {
+    const seen = new Set();
+    return list.filter((item) => {
+      const key = stringifyRuntimeValue(collectionItemValue(item, options.field));
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  if (action === "compareLists") {
+    const expected = normalizeList(options.expected);
+    const actualText = list.map((item) => stringifyRuntimeValue(item));
+    const expectedText = expected.map((item) => stringifyRuntimeValue(item));
+    const mode = String(options.compareMode || "exact");
+    const passed = mode === "containsExpected"
+      ? expectedText.every((item) => actualText.includes(item))
+      : mode === "ignoreOrder"
+        ? actualText.length === expectedText.length && expectedText.every((item) => actualText.includes(item))
+        : stringifyRuntimeValue(list) === stringifyRuntimeValue(expected);
+    const output = { actual: list, expected, missingItems: expected.filter((item) => !actualText.includes(stringifyRuntimeValue(item))), passed };
+    if (!passed) {
+      const error = new Error("List comparison failed.");
+      error.output = output;
+      throw error;
+    }
+    return output;
+  }
+  if (action === "createMap") return parseStructuredRuntimeValue(options.entries, {});
+  if (action === "setMapValue") return { ...(source && typeof source === "object" && !Array.isArray(source) ? source : {}), [options.key]: parseStructuredRuntimeValue(options.value, options.value) };
+  if (action === "getMapValue") return getRuntimePathValue(source, options.key);
+  if (action === "mapKeys") return source && typeof source === "object" ? Object.keys(source) : [];
+  if (action === "mapValues") return source && typeof source === "object" ? Object.values(source) : [];
+  if (action === "mergeMaps") return {
+    ...(source && typeof source === "object" && !Array.isArray(source) ? source : {}),
+    ...(parseStructuredRuntimeValue(options.other, {}) || {}),
+  };
+  throw new Error(`Unsupported collection action: ${action}`);
+}
+
+const collectionActionNames = new Set([
+  "addItemToList",
+  "compareLists",
+  "countListItems",
+  "createList",
+  "createMap",
+  "filterList",
+  "findItemInList",
+  "getListItem",
+  "getMapValue",
+  "joinList",
+  "listContains",
+  "mapKeys",
+  "mapList",
+  "mapValues",
+  "mergeMaps",
+  "removeItemFromList",
+  "setMapValue",
+  "sortList",
+  "splitTextToList",
+  "uniqueList",
+]);
+
+class LoopControlSignal extends Error {
+  constructor(type) {
+    super(type === "break" ? "Break loop" : "Continue loop");
+    this.type = type;
+  }
 }
 
 function isEmptySnippetOutput(value) {
@@ -3633,6 +3968,15 @@ async function executePlaybackStep(page, step) {
     }
     return logLine;
   }
+  if (action === "breakLoop") {
+    throw new LoopControlSignal("break");
+  }
+  if (action === "continueLoop") {
+    throw new LoopControlSignal("continue");
+  }
+  if (collectionActionNames.has(action)) {
+    return await executeCollectionCommand(page, step, options.runtimeVariables || {});
+  }
   if (action === "validateAccordionSections") {
     return await validateAccordionSections(page, step);
   }
@@ -3729,6 +4073,249 @@ async function executePlaybackStep(page, step) {
   }
 }
 
+async function executeStepWithRuntimeVariables(page, step, runtimeVariables, context = {}) {
+  const action = step.action === "goto" ? "navigate" : step.action;
+  if (action === "conditionalBlock") {
+    return await executeConditionalBlock(page, step, runtimeVariables, context);
+  }
+  if (action === "loopBlock") {
+    return await executeLoopBlock(page, step, runtimeVariables, context);
+  }
+  if (collectionActionNames.has(action)) {
+    const executableStep = {
+      ...resolveRuntimeValue(step, runtimeVariables),
+      options: {
+        ...resolveRuntimeValue(step.options || {}, runtimeVariables),
+        actual: step.options?.actual,
+        source: step.options?.source,
+      },
+    };
+    const output = await executeCollectionCommand(page, executableStep, runtimeVariables);
+    const outputVariableName = outputVariableNameForStep(step);
+    if (outputVariableName) {
+      runtimeVariables[outputVariableName] = output;
+      if (state.session) state.session.runtimeVariables = runtimeVariables;
+    }
+    return output;
+  }
+  const executableStep = resolveRuntimeValue(step, runtimeVariables);
+  executableStep.options = { ...(executableStep.options || {}), runtimeVariables };
+  const output = await executePlaybackStep(page, executableStep);
+  const outputVariableName = outputVariableNameForStep(step);
+  if (outputVariableName) {
+    runtimeVariables[outputVariableName] = output;
+    if (state.session) state.session.runtimeVariables = runtimeVariables;
+  }
+  return output;
+}
+
+async function executeRuntimeStepSequence(page, steps, runtimeVariables, context = {}) {
+  const results = [];
+  for (const [index, step] of steps.entries()) {
+    const activePage = state.page || page;
+    try {
+      const output = await executeStepWithRuntimeVariables(activePage, step, runtimeVariables, {
+        ...context,
+        nestedIndex: index,
+      });
+      results.push({ index, output, status: "passed", stepId: step.id || null });
+    } catch (error) {
+      if (error instanceof LoopControlSignal) throw error;
+      const message = error instanceof Error ? error.message : "Nested command failed.";
+      const failedOutput = error && typeof error === "object" && "output" in error ? error.output : undefined;
+      const outputVariableName = outputVariableNameForStep(step);
+      if (outputVariableName && failedOutput !== undefined) {
+        runtimeVariables[outputVariableName] = failedOutput;
+        if (state.session) state.session.runtimeVariables = runtimeVariables;
+      }
+      results.push({
+        error: message,
+        index,
+        output: failedOutput,
+        status: "failed",
+        stepId: step.id || null,
+      });
+      const errorToThrow = new Error(message);
+      errorToThrow.output = { results };
+      throw errorToThrow;
+    }
+  }
+  return results;
+}
+
+async function executeConditionalBlock(page, step, runtimeVariables, context = {}) {
+  const options = step.options || {};
+  const thenSteps = normalizeRuntimeSteps(step.thenSteps || options.thenSteps);
+  const elseSteps = normalizeRuntimeSteps(step.elseSteps || options.elseSteps);
+  const elseIfBranches = normalizeRuntimeSteps(step.elseIfBranches || options.elseIfBranches);
+  const skippedBranches = [];
+  const branches = [
+    { label: "if", options, steps: thenSteps },
+    ...elseIfBranches.map((branch, index) => ({
+      label: branch.label || `else if ${index + 1}`,
+      options: branch,
+      steps: normalizeRuntimeSteps(branch.steps || branch.thenSteps),
+    })),
+  ];
+
+  for (const branch of branches) {
+    const passed = await evaluateAutomationCondition(page, branch.options, runtimeVariables);
+    if (!passed) {
+      skippedBranches.push({ branch: branch.label, reason: "condition_false" });
+      continue;
+    }
+    const results = await executeRuntimeStepSequence(page, branch.steps, runtimeVariables, context);
+    const output = {
+      branch: branch.label,
+      conditionPassed: true,
+      executedSteps: branch.steps.length,
+      results,
+      skippedBranches,
+      status: "passed",
+    };
+    if (state.session) {
+      state.session.logs = [`Conditional block ran ${branch.label} branch.`, ...state.session.logs].slice(0, 80);
+    }
+    return output;
+  }
+
+  if (elseSteps.length) {
+    const results = await executeRuntimeStepSequence(page, elseSteps, runtimeVariables, context);
+    return {
+      branch: "else",
+      conditionPassed: true,
+      executedSteps: elseSteps.length,
+      results,
+      skippedBranches,
+      status: "passed",
+    };
+  }
+
+  const output = {
+    branch: "",
+    conditionPassed: false,
+    executedSteps: 0,
+    results: [],
+    skippedBranches,
+    status: "skipped",
+  };
+  if (optionBoolean(options.failIfNoBranchMatched, false)) {
+    const error = new Error("Conditional block did not match any branch.");
+    error.output = output;
+    throw error;
+  }
+  return output;
+}
+
+async function loopItemsForBlock(page, options, runtimeVariables) {
+  const loopType = String(options.loopType || "repeatCount");
+  if (loopType === "repeatCount") {
+    const countValue = options.count || options.repeatCount || options.source || 1;
+    const count = Math.max(0, Math.floor(Number(parseStructuredRuntimeValue(resolveRuntimeValue(countValue, runtimeVariables), countValue) || 0)));
+    return Array.from({ length: count }, (_item, index) => ({ item: index, type: "count" }));
+  }
+  if (loopType === "forEachMapEntry") {
+    const source = runtimeCollectionSource(options, runtimeVariables);
+    return Object.entries(source && typeof source === "object" && !Array.isArray(source) ? source : {}).map(([key, value]) => ({ key, value, item: value, type: "map" }));
+  }
+  if (loopType === "forEachTableRow") {
+    const table = await executeTableCommand(page, { action: "getWebTableData", options });
+    return (table.tableData || []).map((row) => ({ item: row, row, type: "row" }));
+  }
+  if (loopType === "forEachDataRow") {
+    const rows = normalizeList(runtimeCollectionSource(options, runtimeVariables));
+    return rows.map((row) => ({ item: row, row, type: "row" }));
+  }
+  const list = normalizeList(runtimeCollectionSource(options, runtimeVariables));
+  return list.map((item) => ({ item, type: "list" }));
+}
+
+async function executeLoopBlock(page, step, runtimeVariables, context = {}) {
+  const options = step.options || {};
+  const loopType = String(options.loopType || "repeatCount");
+  const steps = normalizeRuntimeSteps(step.steps || options.steps);
+  const maxIterations = Math.max(1, optionalNumber(options.maxIterations) ?? 100);
+  const continueOnFailure = optionBoolean(options.continueOnIterationFailure, false);
+  const results = [];
+  let items = [];
+  if (loopType === "whileCondition" || loopType === "untilCondition") {
+    items = Array.from({ length: maxIterations }, (_item, index) => ({ item: index, type: loopType }));
+  } else {
+    items = await loopItemsForBlock(page, options, runtimeVariables);
+    if (items.length > maxIterations) items = items.slice(0, maxIterations);
+  }
+
+  for (const [index, loopItem] of items.entries()) {
+    if (loopType === "whileCondition") {
+      const keepGoing = await evaluateAutomationCondition(page, options, runtimeVariables);
+      if (!keepGoing) break;
+    }
+    if (loopType === "untilCondition") {
+      const stopNow = await evaluateAutomationCondition(page, options, runtimeVariables);
+      if (stopNow) break;
+    }
+
+    const loopState = {
+      count: items.length,
+      first: index === 0,
+      index,
+      last: index === items.length - 1,
+      number: index + 1,
+      ...loopItem,
+    };
+    setLoopVariables(
+      runtimeVariables,
+      loopState,
+      String(options.itemVariableName || "item"),
+      String(options.keyVariableName || "key"),
+      String(options.valueVariableName || "value"),
+    );
+    try {
+      const stepResults = await executeRuntimeStepSequence(page, steps, runtimeVariables, context);
+      results.push({ index, item: loopItem.item, key: loopItem.key, results: stepResults, status: "passed" });
+    } catch (error) {
+      if (error instanceof LoopControlSignal && error.type === "break") {
+        results.push({ index, item: loopItem.item, key: loopItem.key, status: "broken" });
+        break;
+      }
+      if (error instanceof LoopControlSignal && error.type === "continue") {
+        results.push({ index, item: loopItem.item, key: loopItem.key, status: "continued" });
+        continue;
+      }
+      const failedOutput = error && typeof error === "object" && "output" in error ? error.output : undefined;
+      results.push({
+        error: error instanceof Error ? error.message : "Loop iteration failed.",
+        index,
+        item: loopItem.item,
+        key: loopItem.key,
+        output: failedOutput,
+        status: "failed",
+      });
+      if (!continueOnFailure) break;
+    }
+  }
+
+  const failed = results.filter((result) => result.status === "failed").length;
+  const output = {
+    failed,
+    iterations: results.length,
+    loopType,
+    passed: results.filter((result) => result.status === "passed" || result.status === "continued" || result.status === "broken").length,
+    results,
+    status: failed ? "failed" : "passed",
+  };
+  if (failed && !continueOnFailure) {
+    const firstFailure = results.find((result) => result.status === "failed");
+    const error = new Error(`Loop block failed in iteration ${firstFailure ? firstFailure.index + 1 : "?"}.`);
+    error.output = output;
+    throw error;
+  }
+  if (state.session) {
+    state.session.logs = [`Loop block completed ${output.iterations} iteration(s), ${failed} failed.`, ...state.session.logs].slice(0, 80);
+  }
+  return output;
+}
+
 async function runPlaybackInActiveBrowser(body) {
   const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
   const steps = Array.isArray(body?.steps) ? body.steps : [];
@@ -3763,13 +4350,10 @@ async function runPlaybackInActiveBrowser(body) {
       currentIndex = index;
       currentStep = step;
       const activePlaybackPage = state.page || page;
-      const executableStep = resolveRuntimeValue(step, runtimeVariables);
-      const output = await executePlaybackStep(activePlaybackPage, executableStep);
-      const outputVariableName = outputVariableNameForStep(step);
-      if (outputVariableName) {
-        runtimeVariables[outputVariableName] = output;
-        session.runtimeVariables = runtimeVariables;
-      }
+      const output = await executeStepWithRuntimeVariables(activePlaybackPage, step, runtimeVariables, {
+        index,
+        runId: body?.runId || null,
+      });
       results.push({ index, output, status: "passed", stepId: step.id || null });
     }
     session.currentUrl = state.page?.url() || session.currentUrl;

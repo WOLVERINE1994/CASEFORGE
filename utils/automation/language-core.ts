@@ -369,6 +369,50 @@ const tableComparisonOutput: AutomationOutputDefinition = {
   outputType: "object",
 };
 
+const flowControlOutput: AutomationOutputDefinition = {
+  canSaveAsVariable: true,
+  defaultOutputVariableName: "flowResult",
+  outputSchema: {
+    properties: {
+      branch: { type: "string" },
+      conditionPassed: { type: "boolean" },
+      executedSteps: { type: "number" },
+      skippedBranches: { type: "array" },
+    },
+    type: "object",
+  },
+  outputType: "object",
+};
+
+const loopControlOutput: AutomationOutputDefinition = {
+  canSaveAsVariable: true,
+  defaultOutputVariableName: "loopResult",
+  outputSchema: {
+    properties: {
+      failed: { type: "number" },
+      iterations: { type: "number" },
+      passed: { type: "number" },
+      results: { type: "array" },
+    },
+    type: "object",
+  },
+  outputType: "object",
+};
+
+const collectionOutput: AutomationOutputDefinition = {
+  canSaveAsVariable: true,
+  defaultOutputVariableName: "collectionResult",
+  outputSchema: {
+    properties: {
+      count: { type: "number" },
+      result: {},
+      sourceType: { type: "string" },
+    },
+    type: "object",
+  },
+  outputType: "object",
+};
+
 const voidOutput: AutomationOutputDefinition = {
   canSaveAsVariable: false,
   outputType: "void",
@@ -439,10 +483,15 @@ const operatorParam = param("operator", "select", {
   options: [
     { label: "Equals", value: "equals" },
     { label: "Not equals", value: "notEquals" },
+    { label: "Contains", value: "contains" },
+    { label: "Does not contain", value: "notContains" },
     { label: "Greater than", value: "greaterThan" },
     { label: "Less than", value: "lessThan" },
     { label: "Greater or equal", value: "greaterOrEqual" },
     { label: "Less or equal", value: "lessOrEqual" },
+    { label: "Regex", value: "regex" },
+    { label: "Is empty", value: "isEmpty" },
+    { label: "Is not empty", value: "isNotEmpty" },
   ],
 });
 
@@ -605,6 +654,353 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     category: "debug.console",
     description: "Prints text or resolved variables to the Command Console while debugging a run.",
     runtimeHandler: "web.logMessage",
+  }),
+  command("conditionalBlock", "If / Else If / Else condition block", [
+    param("conditionSource", "select", {
+      defaultValue: "variable",
+      options: [
+        { label: "Viewport/device", value: "viewport" },
+        { label: "Resolution width", value: "resolutionWidth" },
+        { label: "Resolution height", value: "resolutionHeight" },
+        { label: "Environment", value: "environment" },
+        { label: "Base URL", value: "baseUrl" },
+        { label: "Current URL", value: "currentUrl" },
+        { label: "Page title", value: "pageTitle" },
+        { label: "Browser", value: "browser" },
+        { label: "OS/platform", value: "platform" },
+        { label: "Variable", value: "variable" },
+        { label: "Element exists", value: "element" },
+        { label: "JavaScript expression", value: "javascript" },
+      ],
+    }),
+    param("variableName", "variableReference", {
+      description: "Variable path for variable conditions, for example user.role or activeCount.",
+    }),
+    param("operator", "select", operatorParam),
+    param("expectedValue", "string", {
+      description: "Expected value for the selected source/operator.",
+    }),
+    param("locator", "locator", {
+      description: "Locator used when the condition source is Element exists.",
+    }),
+    param("expression", "expression", {
+      description: "Advanced JavaScript condition. Return true or false. Receives context, variables, viewport, currentUrl, title, env.",
+    }),
+    param("thenSteps", "json", {
+      description: "Commands to run when the IF condition is true. Use an array of step objects.",
+    }),
+    param("elseIfBranches", "json", {
+      description: "Optional array of branches: [{ label, conditionSource, variableName, operator, expectedValue, steps }].",
+    }),
+    param("elseSteps", "json", {
+      description: "Commands to run when no IF/ELSE IF branch matches.",
+    }),
+    param("failIfNoBranchMatched", "boolean", { defaultValue: false }),
+    param("timeoutMs", "number", { defaultValue: 30000 }),
+  ], {
+    aliases: [
+      "If condition",
+      "Else if condition",
+      "Else condition",
+      "If viewport is desktop",
+      "If phone",
+      "If environment is staging",
+      "If production",
+      "Conditional statement",
+      "Branch by resolution",
+    ],
+    category: "logic.conditions",
+    description: "Runs one nested command branch based on viewport, resolution, environment, URL, variable, element, or an advanced expression.",
+    outputDefinition: flowControlOutput,
+    runtimeHandler: "web.logic.conditionalBlock",
+    stepKind: "ifElse",
+  }),
+  command("loopBlock", "Loop / For each block", [
+    param("loopType", "select", {
+      defaultValue: "repeatCount",
+      options: [
+        { label: "Repeat count", value: "repeatCount" },
+        { label: "For each list item", value: "forEachListItem" },
+        { label: "For each map key/value", value: "forEachMapEntry" },
+        { label: "For each test data row", value: "forEachDataRow" },
+        { label: "For each web table row", value: "forEachTableRow" },
+        { label: "While condition", value: "whileCondition" },
+        { label: "Until condition", value: "untilCondition" },
+      ],
+    }),
+    param("count", "string", {
+      description: "Fixed or variable repeat count, for example 5, {{retryCount}}, or {{products.length}}.",
+    }),
+    param("source", "variableReference", {
+      description: "List/map/table/test-data source for for-each loops.",
+    }),
+    param("itemVariableName", "variableName", { defaultValue: "item" }),
+    param("keyVariableName", "variableName", { defaultValue: "key" }),
+    param("valueVariableName", "variableName", { defaultValue: "value" }),
+    param("conditionSource", "select", {
+      defaultValue: "variable",
+      options: [
+        { label: "Variable", value: "variable" },
+        { label: "Element exists", value: "element" },
+        { label: "Current URL", value: "currentUrl" },
+        { label: "JavaScript expression", value: "javascript" },
+      ],
+    }),
+    param("variableName", "variableReference"),
+    param("operator", "select", operatorParam),
+    param("expectedValue", "string"),
+    param("locator", "locator"),
+    param("expression", "expression", {
+      description: "Advanced JavaScript condition for while/until loops.",
+    }),
+    param("steps", "json", {
+      description: "Commands to repeat. Use an array of step objects.",
+    }),
+    param("maxIterations", "number", { defaultValue: 100 }),
+    param("continueOnIterationFailure", "boolean", { defaultValue: false }),
+    param("timeoutMs", "number", { defaultValue: 30000 }),
+  ], {
+    aliases: [
+      "Repeat fixed count",
+      "Repeat variable count",
+      "For each item in list",
+      "For each key value in map",
+      "Loop through list",
+      "Loop through table rows",
+      "While condition",
+      "Until condition",
+    ],
+    category: "logic.loops",
+    description: "Repeats nested commands by count, variable count, list, map/object, test data rows, web table rows, while, or until logic.",
+    outputDefinition: loopControlOutput,
+    runtimeHandler: "web.logic.loopBlock",
+    stepKind: "loop",
+  }),
+  command("breakLoop", "Break loop", [], {
+    aliases: ["Exit loop", "Stop current loop"],
+    category: "logic.loops",
+    description: "Stops the nearest running CaseForge loop block.",
+    outputDefinition: { canSaveAsVariable: true, defaultOutputVariableName: "loopControl", outputType: "object" },
+    runtimeHandler: "web.logic.breakLoop",
+  }),
+  command("continueLoop", "Continue loop", [], {
+    aliases: ["Skip to next loop item", "Continue current loop"],
+    category: "logic.loops",
+    description: "Skips the remaining commands in the current iteration and continues the nearest running CaseForge loop block.",
+    outputDefinition: { canSaveAsVariable: true, defaultOutputVariableName: "loopControl", outputType: "object" },
+    runtimeHandler: "web.logic.continueLoop",
+  }),
+  command("createList", "Create list", [
+    param("items", "json", { description: "Initial list items." }),
+  ], {
+    aliases: ["New array", "Make list"],
+    category: "data.collections.list",
+    description: "Creates a list/array value that can be saved to a variable.",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.createList",
+  }),
+  command("addItemToList", "Add item to list", [
+    param("source", "variableReference", { required: true }),
+    param("item", "json", { required: true }),
+  ], {
+    aliases: ["Push item", "Append to list"],
+    category: "data.collections.list",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.addItemToList",
+  }),
+  command("removeItemFromList", "Remove item from list", [
+    param("source", "variableReference", { required: true }),
+    param("matchField", "string"),
+    param("matchValue", "string"),
+    param("index", "number"),
+  ], {
+    aliases: ["Delete from list", "Remove array item"],
+    category: "data.collections.list",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.removeItemFromList",
+  }),
+  command("countListItems", "Count list items", [param("source", "variableReference", { required: true })], {
+    aliases: ["List count", "Array length", "Count items"],
+    category: "data.collections.list",
+    outputDefinition: { canSaveAsVariable: true, defaultOutputVariableName: "listCount", outputType: "number" },
+    runtimeHandler: "web.data.countListItems",
+  }),
+  command("filterList", "Filter list", [
+    param("source", "variableReference", { required: true }),
+    param("field", "string"),
+    param("operator", "select", operatorParam),
+    param("expectedValue", "string"),
+    param("expression", "expression", {
+      description: "Advanced predicate. Return true to keep item. Receives item, index, variables.",
+    }),
+  ], {
+    aliases: ["Array filter", "Filter array", "Where list"],
+    category: "data.collections.list",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.filterList",
+  }),
+  command("mapList", "Map list", [
+    param("source", "variableReference", { required: true }),
+    param("field", "string", {
+      description: "Field to pick from each item, for example name or user.email.",
+    }),
+    param("expression", "expression", {
+      description: "Advanced mapper. Return the mapped value. Receives item, index, variables.",
+    }),
+  ], {
+    aliases: ["Array map", "Pick field from list", "Transform list"],
+    category: "data.collections.list",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.mapList",
+  }),
+  command("findItemInList", "Find item in list", [
+    param("source", "variableReference", { required: true }),
+    param("field", "string"),
+    param("operator", "select", operatorParam),
+    param("expectedValue", "string"),
+    param("expression", "expression"),
+  ], {
+    aliases: ["Array find", "Find row", "Find object in list"],
+    category: "data.collections.list",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.findItemInList",
+  }),
+  command("listContains", "Check list contains", [
+    param("source", "variableReference", { required: true }),
+    param("expectedValue", "string", { required: true }),
+    param("field", "string"),
+    param("operator", "select", operatorParam),
+  ], {
+    aliases: ["Array contains", "List includes"],
+    category: "data.collections.list",
+    outputDefinition: { canSaveAsVariable: true, defaultOutputVariableName: "listContains", outputType: "boolean" },
+    runtimeHandler: "web.data.listContains",
+  }),
+  command("sortList", "Sort list", [
+    param("source", "variableReference", { required: true }),
+    param("field", "string"),
+    param("sortOrder", "select", {
+      defaultValue: "asc",
+      options: [
+        { label: "Ascending", value: "asc" },
+        { label: "Descending", value: "desc" },
+      ],
+    }),
+    param("dataType", "select", {
+      defaultValue: "string",
+      options: [
+        { label: "String", value: "string" },
+        { label: "Number", value: "number" },
+        { label: "Date", value: "date" },
+      ],
+    }),
+  ], {
+    aliases: ["Array sort", "Sort array"],
+    category: "data.collections.list",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.sortList",
+  }),
+  command("getListItem", "Get list item by index", [
+    param("source", "variableReference", { required: true }),
+    param("index", "number", { required: true }),
+  ], {
+    aliases: ["Get array item", "Get first item", "Get last item"],
+    category: "data.collections.list",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.getListItem",
+  }),
+  command("joinList", "Join list as text", [
+    param("source", "variableReference", { required: true }),
+    param("separator", "string", { defaultValue: "," }),
+  ], {
+    aliases: ["Array join", "Join array"],
+    category: "data.collections.list",
+    outputDefinition: { canSaveAsVariable: true, defaultOutputVariableName: "joinedText", outputType: "string" },
+    runtimeHandler: "web.data.joinList",
+  }),
+  command("splitTextToList", "Split text to list", [
+    param("text", "string", { required: true }),
+    param("separator", "string", { defaultValue: "," }),
+  ], {
+    aliases: ["String split", "Convert text to list"],
+    category: "data.collections.list",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.splitTextToList",
+  }),
+  command("uniqueList", "Remove duplicate list items", [
+    param("source", "variableReference", { required: true }),
+    param("field", "string"),
+  ], {
+    aliases: ["Distinct list", "Array unique", "Remove duplicates"],
+    category: "data.collections.list",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.uniqueList",
+  }),
+  command("compareLists", "Compare lists", [
+    param("actual", "variableReference", { required: true }),
+    param("expected", "json", { required: true }),
+    param("compareMode", "select", {
+      defaultValue: "exact",
+      options: [
+        { label: "Exact", value: "exact" },
+        { label: "Actual contains expected", value: "containsExpected" },
+        { label: "Ignore order", value: "ignoreOrder" },
+      ],
+    }),
+  ], {
+    aliases: ["Compare arrays", "Verify list equals"],
+    category: "data.collections.list",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.compareLists",
+    stepKind: "assertion",
+  }),
+  command("createMap", "Create map/object", [
+    param("entries", "json", { description: "Initial object/map entries." }),
+  ], {
+    aliases: ["Create object", "New map"],
+    category: "data.collections.map",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.createMap",
+  }),
+  command("setMapValue", "Set map value", [
+    param("source", "variableReference", { required: true }),
+    param("key", "string", { required: true }),
+    param("value", "json", { required: true }),
+  ], {
+    aliases: ["Set object property", "Put map value"],
+    category: "data.collections.map",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.setMapValue",
+  }),
+  command("getMapValue", "Get map value", [
+    param("source", "variableReference", { required: true }),
+    param("key", "string", { required: true }),
+  ], {
+    aliases: ["Get object property", "Read map value"],
+    category: "data.collections.map",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.getMapValue",
+  }),
+  command("mapKeys", "Get map keys", [param("source", "variableReference", { required: true })], {
+    aliases: ["Object keys", "Get all keys"],
+    category: "data.collections.map",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.mapKeys",
+  }),
+  command("mapValues", "Get map values", [param("source", "variableReference", { required: true })], {
+    aliases: ["Object values", "Get all values"],
+    category: "data.collections.map",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.mapValues",
+  }),
+  command("mergeMaps", "Merge maps/objects", [
+    param("source", "variableReference", { required: true }),
+    param("other", "json", { required: true }),
+  ], {
+    aliases: ["Merge objects", "Object assign"],
+    category: "data.collections.map",
+    outputDefinition: collectionOutput,
+    runtimeHandler: "web.data.mergeMaps",
   }),
   command("validateAccordionSections", "Validate all accordion sections", [
     param("containerLocator", "locator", {
