@@ -1685,8 +1685,7 @@ function commandOutputSummary(output: unknown) {
 function javaScriptSnippetSummary(output: unknown) {
   if (output === undefined) return "undefined";
   if (output === null) return "null";
-  const summary = commandOutputSummary(output);
-  return summary.length > 500 ? `${summary.slice(0, 497)}...` : summary;
+  return commandOutputSummary(output);
 }
 
 function javaScriptSnippetDetailLines(output: unknown) {
@@ -1845,6 +1844,15 @@ function commandConsoleDetailLinesForStep(step: AutomationStep | undefined, outp
     return tableCommandDetailLines(output);
   }
   return [];
+}
+
+function consoleLogPreview(log: string, maxLength = 260) {
+  const normalized = String(log || "");
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized;
+}
+
+function consoleLogNeedsExpand(log: string) {
+  return String(log || "").length > 260;
 }
 
 function commandPhraseForStep(
@@ -3310,6 +3318,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [playbackJobs, setPlaybackJobs] = useState<PlaybackJob[]>([]);
   const [playbackConfig, setPlaybackConfig] = useState<PlaybackConfig>(defaultPlaybackConfig);
   const [playbackConsoleOpen, setPlaybackConsoleOpen] = useState(true);
+  const [expandedConsoleLog, setExpandedConsoleLog] = useState<{
+    body: string;
+    title: string;
+  } | null>(null);
   const [playbackConfigOpen, setPlaybackConfigOpen] = useState(false);
   const [playbackBusy, setPlaybackBusy] = useState(false);
   const [events, setEvents] = useState<RecorderEvent[]>([]);
@@ -10944,14 +10956,33 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 </div>
               </div>
               <div className="mt-3 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 p-2 font-mono text-[11px] leading-5 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
-                {logs.slice(-18).map((log, index) => (
-                  <div
-                    key={`${index}-${log}`}
-                    className="break-words rounded-md px-1.5 py-0.5 hover:bg-white dark:hover:bg-zinc-950"
-                  >
-                    {log}
-                  </div>
-                ))}
+                {logs.slice(-18).map((log, index) => {
+                  const expandable = consoleLogNeedsExpand(log);
+                  return (
+                    <div
+                      key={`${index}-${log}`}
+                      className="group flex min-w-0 items-start gap-2 rounded-md px-1.5 py-0.5 hover:bg-white dark:hover:bg-zinc-950"
+                    >
+                      <span className="min-w-0 flex-1 break-words">
+                        {expandable ? consoleLogPreview(log) : log}
+                      </span>
+                      {expandable ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedConsoleLog({
+                              body: log,
+                              title: `Command Console Output ${logs.length - logs.slice(-18).length + index + 1}`,
+                            })
+                          }
+                          className="shrink-0 rounded-md border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] font-sans font-semibold text-zinc-600 opacity-100 hover:border-emerald-300 hover:text-emerald-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:border-emerald-500 dark:hover:text-emerald-200"
+                        >
+                          Expand
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
                 {!logs.length ? (
                   <div className="rounded-md px-1.5 py-0.5 text-zinc-500 dark:text-zinc-400">
                     No command activity yet.
@@ -10968,6 +10999,42 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
               Show Command Console
             </button>
           )}
+
+          {expandedConsoleLog ? (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="console-output-title"
+              onClick={() => setExpandedConsoleLog(null)}
+            >
+              <section
+                className="grid max-h-[86vh] w-full max-w-4xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+                  <div className="min-w-0">
+                    <h3 id="console-output-title" className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                      {expandedConsoleLog.title}
+                    </h3>
+                    <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                      Full command console entry
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedConsoleLog(null)}
+                    className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                  >
+                    Close
+                  </button>
+                </div>
+                <pre className="min-h-0 overflow-auto whitespace-pre-wrap break-words bg-zinc-950 p-4 font-mono text-xs leading-5 text-zinc-100">
+                  {expandedConsoleLog.body}
+                </pre>
+              </section>
+            </div>
+          ) : null}
 
           {runStatus === "failed" && failedStepResult ? (
             <section className="min-w-0 rounded-[14px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-950 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
