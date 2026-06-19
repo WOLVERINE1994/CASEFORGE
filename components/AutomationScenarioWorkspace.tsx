@@ -5337,7 +5337,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   ) => {
     if (!session?.sessionId || !canControlLiveBrowser) {
       appendLog("Start a Companion Live Preview before using browser controls.");
-      return;
+      return false;
     }
 
     setBrowserNavBusy(true);
@@ -5356,7 +5356,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         setLivePreviewTick(Date.now());
         if (command === "newTab") setLivePreviewTabsExpanded(true);
         window.setTimeout(() => setBrowserNavBusy(false), 700);
-        return;
+        return true;
       }
 
       const response = await fetch(`${localAgentUrl}/automation/browser`, {
@@ -5391,8 +5391,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       setLivePreviewFailed(false);
       setLivePreviewTick(Date.now());
       if (command === "newTab") setLivePreviewTabsExpanded(true);
+      return true;
     } catch (error) {
       appendLog(error instanceof Error ? error.message : "Could not control Live Preview browser.");
+      return false;
     } finally {
       setBrowserNavBusy(false);
     }
@@ -9605,6 +9607,37 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         return;
       }
       const commandAction = displayAction(runnableStep.action);
+      if (commandAction === "navigate") {
+        const nextUrl = navigationUrlForStep(runnableStep);
+        if (!nextUrl) throw new Error("Navigate command is missing a URL.");
+        setCommandRunStates((current) => ({
+          ...current,
+          [runnableStep.id]: {
+            message: "Opening in Live Preview",
+            runId: null,
+            status: "running",
+            updatedAt: new Date().toISOString(),
+          },
+        }));
+        setPlaybackState("stepRunning");
+        setBrowserAddressDraft(nextUrl);
+        const openedInPreview = await requestLiveBrowserCommand("navigate", nextUrl);
+        if (!openedInPreview) {
+          throw new Error("Navigate command was not invoked. Start Live Preview to open this URL for authoring, or run the scenario to execute it.");
+        }
+        setCommandRunStates((current) => ({
+          ...current,
+          [runnableStep.id]: {
+            message: "Opened in Live Preview",
+            runId: null,
+            status: "passed",
+            updatedAt: new Date().toISOString(),
+          },
+        }));
+        setPlaybackState("completed");
+        appendLog(`Navigate opened in Live Preview only: ${nextUrl}. Scenario execution was not started.`);
+        return;
+      }
       if (!isRunnableWebCommand(commandAction)) {
         const message = commandAdapterPendingMessage(commandAction);
         setPlaybackState("failed");
