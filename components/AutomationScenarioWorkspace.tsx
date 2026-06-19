@@ -380,6 +380,12 @@ type ScenarioParameter = {
   required?: boolean;
 };
 
+type VariablePickerItem = {
+  detail: string;
+  name: string;
+  source: "commandOutput" | "scenarioParameter";
+};
+
 type ScenarioTestCase = {
   id: string;
   name: string;
@@ -3429,6 +3435,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const ignoredRecorderStepIdsRef = useRef<Set<string>>(new Set());
   const timelineStepRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const actionCommandRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const commandParameterTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const livePreviewImageRef = useRef<HTMLImageElement | null>(null);
   const livePreviewContainerRef = useRef<HTMLDivElement | null>(null);
   const livePreviewSocketRef = useRef<WebSocket | null>(null);
@@ -3824,6 +3831,34 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const selectedCommandOutputTypeLabel = commandOutputTypeLabel(selectedCommandDefinition);
   const selectedCommandEditorUxKind = commandEditorUxKind(selectedCommandDefinition);
   const selectedCommandHasAdvancedRuntimeInput = commandHasAdvancedRuntimeInput(selectedStepAction);
+  const variablePickerItems = useMemo<VariablePickerItem[]>(() => {
+    const byName = new Map<string, VariablePickerItem>();
+    for (const parameter of scenarioParameters) {
+      if (!parameter.name || byName.has(parameter.name)) continue;
+      byName.set(parameter.name, {
+        detail: `Scenario parameter${parameter.type ? ` (${parameter.type})` : ""}`,
+        name: parameter.name,
+        source: "scenarioParameter",
+      });
+    }
+    const commandSteps = [
+      ...visibleSteps,
+      ...Object.values(actionStepCommands).flat(),
+    ];
+    for (const step of commandSteps) {
+      const variableName = phaseOutputVariable(step);
+      if (!variableName || byName.has(variableName)) continue;
+      const definition = commandDefinitionForAction(displayAction(step.action));
+      byName.set(variableName, {
+        detail: `Command output${definition?.label ? ` from ${definition.label}` : ""}`,
+        name: variableName,
+        source: "commandOutput",
+      });
+    }
+    return Array.from(byName.values()).sort((left, right) =>
+      left.name.localeCompare(right.name),
+    );
+  }, [actionStepCommands, scenarioParameters, visibleSteps]);
   const selectedStepHasAdvancedRuntimeConfig =
     selectedStepValueSource !== "static" ||
     Boolean(selectedStepExpression || textValue(selectedStep?.options?.valueReference));
@@ -4923,6 +4958,40 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         options,
       };
     });
+  };
+
+  const insertVariableIntoCommandParameter = (
+    stepId: string,
+    parameter: AutomationCommandParameterDefinition,
+    currentValue: unknown,
+    variableName: string,
+    refKey: string,
+  ) => {
+    const token = parameterToken(variableName);
+    const source = String(currentValue ?? "");
+    const textarea = commandParameterTextareaRefs.current[refKey];
+    const start = textarea?.selectionStart ?? source.length;
+    const end = textarea?.selectionEnd ?? source.length;
+    const before = source.slice(0, start);
+    const after = source.slice(end);
+    const needsLeadingSpace =
+      before.length > 0 &&
+      !/\s$/.test(before) &&
+      !["`", "'", '"', "(", "{", "[", ":"].includes(before.slice(-1));
+    const needsTrailingSpace =
+      after.length > 0 &&
+      !/^\s/.test(after) &&
+      !["`", "'", '"', ")", "}", "]", ",", ";", "."].includes(after.slice(0, 1));
+    const inserted = `${needsLeadingSpace ? " " : ""}${token}${needsTrailingSpace ? " " : ""}`;
+    const nextValue = `${before}${inserted}${after}`;
+    updateCommandSchemaParameter(stepId, parameter, nextValue);
+    window.setTimeout(() => {
+      const node = commandParameterTextareaRefs.current[refKey];
+      if (!node) return;
+      const cursor = before.length + inserted.length;
+      node.focus();
+      node.setSelectionRange(cursor, cursor);
+    }, 0);
   };
 
   const convertStepValueToParameter = async (step: AutomationStep) => {
@@ -11974,21 +12043,61 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                           );
                         }
                         if (parameter.type === "json" || parameter.type === "query" || parameter.type === "expression") {
+                          const showVariablePicker =
+                            selectedStepAction === "runJavaScriptSnippet" &&
+                            parameter.name === "script" &&
+                            variablePickerItems.length > 0;
                           return (
-                            <label
+                            <div
                               key={parameter.name}
                               className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 sm:col-span-2"
                             >
-                              {label}
+                              <label htmlFor={parameterId}>{label}</label>
                               <textarea
                                 id={parameterId}
+                                ref={(node) => {
+                                  commandParameterTextareaRefs.current[parameterId] = node;
+                                }}
                                 value={String(value)}
                                 onChange={(event) =>
                                   updateCommandSchemaParameter(selectedStep.id || "", parameter, event.target.value)
                                 }
                                 className={`${sharedClassName} min-h-24 resize-y font-mono text-xs`}
                               />
-                            </label>
+                              {showVariablePicker ? (
+                                <div className="mt-2 flex flex-col gap-1.5 rounded-xl border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row sm:items-center">
+                                  <label
+                                    htmlFor={`${parameterId}-variable`}
+                                    className="shrink-0 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400"
+                                  >
+                                    Insert variable
+                                  </label>
+                                  <select
+                                    id={`${parameterId}-variable`}
+                                    value=""
+                                    onChange={(event) => {
+                                      const variableName = event.target.value;
+                                      if (!variableName) return;
+                                      insertVariableIntoCommandParameter(
+                                        selectedStep.id || "",
+                                        parameter,
+                                        value,
+                                        variableName,
+                                        parameterId,
+                                      );
+                                    }}
+                                    className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-950 outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                                  >
+                                    <option value="">Choose variable...</option>
+                                    {variablePickerItems.map((item) => (
+                                      <option key={`${item.source}-${item.name}`} value={item.name}>
+                                        {item.name} - {item.detail}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              ) : null}
+                            </div>
                           );
                         }
                         return (
