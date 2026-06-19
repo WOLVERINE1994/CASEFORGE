@@ -9620,10 +9620,36 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           },
         }));
         setPlaybackState("stepRunning");
+        setWorkspaceTab("browser");
+        setTargetUrl(nextUrl);
+        setAuthoringPreviewUrl(nextUrl);
         setBrowserAddressDraft(nextUrl);
-        const openedInPreview = await requestLiveBrowserCommand("navigate", nextUrl);
-        if (!openedInPreview) {
-          throw new Error("Navigate command was not invoked. Start Live Preview to open this URL for authoring, or run the scenario to execute it.");
+        if (
+          session?.sessionId &&
+          session.liveViewUrl &&
+          isCompanionPreviewSession(session)
+        ) {
+          const previewData = await companionBrowserRequest({
+            body: JSON.stringify({
+              action: "browserCommand",
+              command: "navigate",
+              sessionId: session.sessionId,
+              url: nextUrl,
+            }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+          });
+          setSession((current) =>
+            companionSessionMetadata(
+              previewData,
+              previewData.currentUrl || previewData.url || current?.currentUrl || nextUrl,
+            ) ?? current,
+          );
+          companionCursorRef.current = previewData.cursor ?? companionCursorRef.current;
+          setLivePreviewFailed(false);
+          setLivePreviewTick(Date.now());
+        } else {
+          await startHiddenLivePreview(nextUrl, livePreviewSize);
         }
         setCommandRunStates((current) => ({
           ...current,
