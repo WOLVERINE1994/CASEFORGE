@@ -1922,7 +1922,10 @@ function logicDslRunDetailLines(output: unknown) {
         if (command === "log") {
           lines.push(`${prefix}Log: ${commandOutputSummary(row.output) || "(empty)"}`);
         } else {
-          lines.push(`${prefix}Logic command ${command} passed.`);
+          const target = textValue(row.target);
+          const output = commandOutputSummary(row.output);
+          const storedOutput = target && output ? ` stored ${target} = ${output}` : output ? ` output: ${output}` : "";
+          lines.push(`${prefix}Logic command ${command}${storedOutput} passed.`);
         }
       }
       if (Array.isArray(row.results) && lines.length < 12) walk(row.results, depth + 1);
@@ -3272,10 +3275,9 @@ function buildLocatorLoopDsl(config: LocatorLoopBuilderState) {
   if (lines.length) lines.push("");
   lines.push(`for item in ${countToken} {`);
   const inlineLocatorValue = textValue(config.locatorValue);
-  const locatorExpression =
-    config.createLocatorVariable && inlineLocatorValue
-      ? logicLocatorExpression(config.locatorType, inlineLocatorValue)
-      : locatorToken;
+  const locatorExpression = inlineLocatorValue
+    ? logicLocatorExpression(config.locatorType, inlineLocatorValue)
+    : locatorToken;
   const indexedLocator = `${locatorExpression} at current index`;
   let valueVariable = "";
 
