@@ -387,6 +387,19 @@ type VariablePickerItem = {
   source: "commandOutput" | "scenarioParameter";
 };
 
+type CustomSnippetCommand = {
+  description?: string;
+  failIfEmpty?: boolean;
+  id: string;
+  label: string;
+  logOutputToConsole?: boolean;
+  outputFormat?: string;
+  outputVariableName?: string;
+  script: string;
+  timeoutMs?: number;
+  updatedAt: string;
+};
+
 type ScenarioTestCase = {
   id: string;
   name: string;
@@ -565,7 +578,7 @@ type LogicEditorSuggestion = {
   detail: string;
   insertText: string;
   label: string;
-  source: "variable" | "builtin" | "locator" | "snippet";
+  source: "commandOutput" | "scenarioParameter" | "builtin" | "locator" | "snippet";
 };
 
 type LogicEditorSuggestState = {
@@ -2010,6 +2023,92 @@ function makeStepId() {
   return `step-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function customSnippetStorageKey(projectKey: string) {
+  return `caseforge.customSnippetCommands.${projectKey}`;
+}
+
+function normalizeCustomSnippetCommands(value: unknown): CustomSnippetCommand[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): CustomSnippetCommand[] => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    const id = textValue(record.id);
+    const label = textValue(record.label);
+    const script = typeof record.script === "string" ? record.script.trim() : "";
+    if (!id || !label || !script) return [];
+    const timeoutMs = Number(record.timeoutMs);
+    return [
+      {
+        description: textValue(record.description),
+        failIfEmpty: Boolean(record.failIfEmpty),
+        id,
+        label,
+        logOutputToConsole: record.logOutputToConsole === undefined ? true : Boolean(record.logOutputToConsole),
+        outputFormat: textValue(record.outputFormat) || "auto",
+        outputVariableName: textValue(record.outputVariableName),
+        script,
+        timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 5000,
+        updatedAt: textValue(record.updatedAt) || new Date().toISOString(),
+      },
+    ];
+  });
+}
+
+function loadCustomSnippetCommands(projectKey: string) {
+  if (typeof window === "undefined") return [];
+  try {
+    return normalizeCustomSnippetCommands(JSON.parse(window.localStorage.getItem(customSnippetStorageKey(projectKey)) || "[]"));
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomSnippetCommands(projectKey: string, commands: CustomSnippetCommand[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(customSnippetStorageKey(projectKey), JSON.stringify(commands));
+}
+
+function customSnippetCommandDefinition(snippet: CustomSnippetCommand): AutomationCommandDefinition | null {
+  const base = commandDefinitionForAction("runJavaScriptSnippet");
+  if (!base) return null;
+  const outputDefinition = {
+    ...base.outputDefinition,
+    defaultOutputVariableName: snippet.outputVariableName || base.outputDefinition.defaultOutputVariableName,
+  };
+  const parameters = base.parameters.map((parameter) => {
+    const next = { ...parameter };
+    if (next.name === "script") next.defaultValue = snippet.script;
+    if (next.name === "outputFormat") next.defaultValue = snippet.outputFormat || "auto";
+    if (next.name === "logOutputToConsole") next.defaultValue = snippet.logOutputToConsole ?? true;
+    if (next.name === "failIfEmpty") next.defaultValue = snippet.failIfEmpty ?? false;
+    if (next.name === "timeoutMs") next.defaultValue = snippet.timeoutMs || 5000;
+    return next;
+  });
+  return {
+    ...base,
+    action: `customSnippet.${snippet.id}`,
+    aliases: ["Custom JavaScript command", snippet.label],
+    category: "custom.javascript",
+    description: snippet.description || `Runs saved JavaScript snippet "${snippet.label}".`,
+    id: `customSnippet.${snippet.id}`,
+    inputs: parameters,
+    label: snippet.label,
+    logging: {
+      onFailure: `${snippet.label} failed.`,
+      onStart: `${snippet.label} started.`,
+      onSuccess: `${snippet.label} completed.`,
+    },
+    normalizedAction: "runJavaScriptSnippet",
+    outputDefinition,
+    outputs: [{ ...outputDefinition }],
+    parameters,
+    runtimeAction: "runJavaScriptSnippet",
+    runtimeHandler: "web.runJavaScriptSnippet",
+    visibleInDropdown: false,
+    visibleInLibrary: true,
+  };
+}
+
 function makeNavigateStep(url: string, id = makeStepId()): AutomationStep {
   return {
     action: "navigate",
@@ -3089,6 +3188,22 @@ function logicSuggestionTrigger(value: string, cursor: number): LogicEditorSugge
   return null;
 }
 
+function logicSuggestionSourceLabel(source: LogicEditorSuggestion["source"]) {
+  if (source === "commandOutput") return "OUTPUT";
+  if (source === "scenarioParameter") return "PARAM";
+  if (source === "builtin") return "BUILTIN";
+  if (source === "locator") return "LOCATOR";
+  return "SNIP";
+}
+
+function logicSuggestionSourcePriority(source: LogicEditorSuggestion["source"]) {
+  if (source === "commandOutput") return 0;
+  if (source === "scenarioParameter") return 1;
+  if (source === "builtin") return 2;
+  if (source === "locator") return 3;
+  return 4;
+}
+
 function stripLogicDslStrings(value: string) {
   return value.replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, "\"\"");
 }
@@ -3703,6 +3818,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [playbackBusy, setPlaybackBusy] = useState(false);
   const [events, setEvents] = useState<RecorderEvent[]>([]);
   const [logs, setLogs] = useState<string[]>(["Studio ready"]);
+  const [customSnippetCommands, setCustomSnippetCommands] = useState<CustomSnippetCommand[]>(() =>
+    loadCustomSnippetCommands(projectKey),
+  );
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [selectedStepIds, setSelectedStepIds] = useState<Set<string>>(new Set());
   const [undoStack, setUndoStack] = useState<TimelineUndoSnapshot[]>([]);
@@ -4258,7 +4376,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       detail: item.detail,
       insertText: logicVariableToken(item.name),
       label: `$${item.name}`,
-      source: "variable",
+      source: item.source,
     }));
     const helpers: LogicEditorSuggestion[] = [
       { detail: "CSS locator", insertText: 'css("")', label: 'css("")', source: "locator" },
@@ -4292,7 +4410,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         source: "snippet",
       },
     ];
-    return [...builtIns, ...variables, ...helpers, ...snippets];
+    return [...variables, ...builtIns, ...helpers, ...snippets];
   }, [variablePickerItems]);
   const visibleLogicEditorSuggestions = useMemo(() => {
     if (!logicEditorSuggest) return [];
@@ -4308,7 +4426,20 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         if (!query) return item.source !== "snippet";
         return `${item.label} ${item.detail}`.toLowerCase().includes(query);
       })
-      .slice(0, 10);
+      .sort((left, right) => {
+        const leftLabel = left.label.toLowerCase().replace(/^\$/, "");
+        const rightLabel = right.label.toLowerCase().replace(/^\$/, "");
+        const leftExact = query && leftLabel === query ? 0 : 1;
+        const rightExact = query && rightLabel === query ? 0 : 1;
+        if (leftExact !== rightExact) return leftExact - rightExact;
+        const leftStarts = query && leftLabel.startsWith(query) ? 0 : 1;
+        const rightStarts = query && rightLabel.startsWith(query) ? 0 : 1;
+        if (leftStarts !== rightStarts) return leftStarts - rightStarts;
+        const sourceOrder = logicSuggestionSourcePriority(left.source) - logicSuggestionSourcePriority(right.source);
+        if (sourceOrder !== 0) return sourceOrder;
+        return left.label.localeCompare(right.label);
+      })
+      .slice(0, 12);
   }, [logicEditorSuggest, logicEditorSuggestions]);
   const selectedStepHasAdvancedRuntimeConfig =
     selectedStepValueSource !== "static" ||
@@ -4327,9 +4458,23 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const activeLiveInspectorLocator = rankedLocators(
     activeLiveInspectorResult?.locatorCandidates ?? [],
   )[0];
+  const customSnippetCommandDefinitions = useMemo(
+    () =>
+      customSnippetCommands
+        .map(customSnippetCommandDefinition)
+        .filter((command): command is AutomationCommandDefinition => Boolean(command)),
+    [customSnippetCommands],
+  );
+  const libraryCommandDefinitions = useMemo(
+    () => [
+      ...customSnippetCommandDefinitions,
+      ...AUTOMATION_COMMAND_CATALOG.filter((command) => command.visibleInLibrary !== false),
+    ],
+    [customSnippetCommandDefinitions],
+  );
   const liveCommandSearch = liveCommandMenu?.query.trim().toLowerCase() ?? "";
   const liveCommandResults = useMemo(() => {
-    const visibleCommands = AUTOMATION_COMMAND_CATALOG.filter((command) => command.visibleInLibrary !== false);
+    const visibleCommands = libraryCommandDefinitions;
     if (!liveCommandSearch) return visibleCommands;
     return visibleCommands.filter((command) => {
       const haystack = [
@@ -4346,7 +4491,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         .filter(Boolean)
         .every((token) => haystack.includes(token));
     });
-  }, [liveCommandSearch]);
+  }, [libraryCommandDefinitions, liveCommandSearch]);
   const liveCommandResultsByDomain = useMemo(
     () =>
       liveCommandResults.reduce<Record<string, AutomationCommandDefinition[]>>(
@@ -4361,7 +4506,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const commandInsertSearch = commandInsertMenu?.query.trim().toLowerCase() ?? "";
   const commandInsertResults = useMemo(() => {
     const visibleCommands = [
-      ...AUTOMATION_COMMAND_CATALOG.filter((command) => command.visibleInLibrary !== false),
+      ...libraryCommandDefinitions,
       actionCommandDefinition,
     ];
     if (!commandInsertSearch) return visibleCommands;
@@ -4382,7 +4527,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         .toLowerCase();
       return tokens.every((token) => haystack.includes(token));
     });
-  }, [commandInsertSearch]);
+  }, [commandInsertSearch, libraryCommandDefinitions]);
   const commandInsertResultsByDomain = useMemo(
     () =>
       commandInsertResults.reduce<Record<string, AutomationCommandDefinition[]>>(
@@ -4437,6 +4582,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const appendLog = useCallback((message: string) => {
     setLogs((current) => [...current.slice(-50), message]);
   }, []);
+
+  useEffect(() => {
+    setCustomSnippetCommands(loadCustomSnippetCommands(projectKey));
+  }, [projectKey]);
 
   const commandConsoleLabel = useCallback(
     (step: AutomationStep, fallbackIndex: number) =>
@@ -5413,6 +5562,60 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     });
   };
 
+  const saveSelectedJavaScriptSnippetAsCommand = () => {
+    if (!selectedStep || selectedStepAction !== "runJavaScriptSnippet") return;
+    const script =
+      typeof selectedStep.options?.script === "string"
+        ? selectedStep.options.script.trim()
+        : textValue(selectedStep.inputValue);
+    if (!script) {
+      setCommandPromptError("Add JavaScript before saving this snippet as a command.");
+      return;
+    }
+    const defaultName =
+      selectedStep.commandText && !/^Run JavaScript Snippet/i.test(selectedStep.commandText)
+        ? selectedStep.commandText.replace(/\s*->\s*.+$/, "").trim()
+        : "Custom JavaScript Command";
+    const enteredName =
+      typeof window !== "undefined"
+        ? window.prompt("Custom command name", defaultName)
+        : defaultName;
+    const label = textValue(enteredName);
+    if (!label) return;
+    const enteredDescription =
+      typeof window !== "undefined"
+        ? window.prompt("Description", selectedStep.description || `Runs ${label}.`)
+        : selectedStep.description || `Runs ${label}.`;
+    const description = textValue(enteredDescription);
+    const slug = label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || "custom-js";
+    const command: CustomSnippetCommand = {
+      description,
+      failIfEmpty: Boolean(selectedStep.options?.failIfEmpty),
+      id: `${slug}-${Date.now().toString(36)}`,
+      label,
+      logOutputToConsole: selectedStep.options?.logOutputToConsole === undefined
+        ? true
+        : Boolean(selectedStep.options.logOutputToConsole),
+      outputFormat: textValue(selectedStep.options?.outputFormat) || "auto",
+      outputVariableName: phaseOutputVariable(selectedStep),
+      script,
+      timeoutMs: Number(selectedStep.options?.timeoutMs) || 5000,
+      updatedAt: new Date().toISOString(),
+    };
+    setCustomSnippetCommands((current) => {
+      const next = [...current.filter((item) => item.label.toLowerCase() !== label.toLowerCase()), command]
+        .sort((left, right) => left.label.localeCompare(right.label));
+      saveCustomSnippetCommands(projectKey, next);
+      return next;
+    });
+    setCommandPromptError("");
+    appendLog(`${label} saved as a custom command for this project.`);
+  };
+
   const insertVariableIntoCommandParameter = (
     stepId: string,
     parameter: AutomationCommandParameterDefinition,
@@ -6333,6 +6536,24 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   ]);
 
   const insertLivePreviewCommand = async (command: AutomationCommandDefinition) => {
+    if (command.category === "custom.javascript") {
+      const nextCommand = makeCommandLibraryStep(command, targetUrl);
+      const timelineSteps = mergeStepsById([...finalizedSteps, ...liveSteps]);
+      const selectedIndex = selectedStepId ? timelineSteps.findIndex((step) => step.id === selectedStepId) : -1;
+      const insertAt = selectedIndex >= 0 ? selectedIndex + 1 : timelineSteps.length;
+      await persistSteps([
+        ...timelineSteps.slice(0, insertAt),
+        nextCommand,
+        ...timelineSteps.slice(insertAt),
+      ]);
+      setSelectedStepId(nextCommand.id);
+      setSelectedStepIds(new Set([nextCommand.id]));
+      setDrawerOpen(true);
+      setCommandPromptError("");
+      setLiveCommandMenu(null);
+      appendLog(`${command.label} added to the script from custom commands.`);
+      return;
+    }
     const result = liveCommandMenu?.result ?? activeLiveInspectorResult;
     if (!result?.element) return;
     const normalizedAction = normalizeAutomationAction(command.normalizedAction || command.action);
@@ -12598,7 +12819,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                                 </span>
                               </span>
                               <span className="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-500 dark:border-zinc-800">
-                                {suggestion.source}
+                                {logicSuggestionSourceLabel(suggestion.source)}
                               </span>
                             </button>
                           ))}
@@ -12967,6 +13188,32 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                     <p className="mt-2 text-[11px] font-medium text-emerald-800/80 dark:text-emerald-100/75">
                       The value returned by this command will be available to later steps using this variable name.
                     </p>
+                  </div>
+                ) : null}
+                {selectedStepAction === "runJavaScriptSnippet" ? (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 dark:border-sky-500/30 dark:bg-sky-500/10">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                          Reusable command
+                        </p>
+                        <p className="mt-1 text-[11px] font-medium text-sky-800/80 dark:text-sky-100/75">
+                          Save this JavaScript snippet into the command library for other scenarios in this project.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={saveSelectedJavaScriptSnippetAsCommand}
+                        className="rounded-lg border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-50 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-sky-200 dark:hover:bg-sky-500/10"
+                      >
+                        Save as Custom Command
+                      </button>
+                    </div>
+                    {customSnippetCommands.length ? (
+                      <p className="mt-2 text-[11px] font-medium text-sky-800/80 dark:text-sky-100/75">
+                        {customSnippetCommands.length} custom command{customSnippetCommands.length === 1 ? "" : "s"} saved for this project.
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
                 <details className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
