@@ -1894,7 +1894,12 @@ function logicDslRunDetailLines(output: unknown) {
       } else if (type === "for" || type === "repeat") {
         lines.push(`${prefix}Logic ${type}: ${Number(row.iterations ?? 0)} iteration(s).`);
       } else if (type === "command") {
-        lines.push(`${prefix}Logic command ${textValue(row.command) || "command"} passed.`);
+        const command = textValue(row.command) || "command";
+        if (command === "log") {
+          lines.push(`${prefix}Log: ${commandOutputSummary(row.output) || "(empty)"}`);
+        } else {
+          lines.push(`${prefix}Logic command ${command} passed.`);
+        }
       }
       if (Array.isArray(row.results) && lines.length < 12) walk(row.results, depth + 1);
     }
