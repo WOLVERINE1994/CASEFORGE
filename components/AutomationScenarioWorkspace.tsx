@@ -12971,88 +12971,107 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                             Build Loop
                           </button>
                         </div>
-                        <datalist id="logic-variable-options">
-                          {variablePickerItems.map((item) => (
-                            <option key={item.name} value={item.name}>
-                              {item.detail}
-                            </option>
-                          ))}
-                        </datalist>
                         <div className="grid gap-2 sm:grid-cols-3">
                           <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
                             Count variable
-                            <input
-                              list="logic-variable-options"
-                              value={locatorLoopBuilder.countVariable}
-                              onChange={(event) =>
+                            <select
+                              value={locatorLoopBuilder.createCountVariable ? "__create__" : locatorLoopBuilder.countVariable}
+                              onChange={(event) => {
+                                const value = event.target.value;
                                 setLocatorLoopBuilder((current) => ({
                                   ...current,
-                                  countVariable: event.target.value,
-                                }))
-                              }
+                                  countVariable: value === "__create__" ? current.countVariable || "count" : value,
+                                  createCountVariable: value === "__create__",
+                                }));
+                              }}
                               className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                            />
+                            >
+                              <option value="">Select variable...</option>
+                              {locatorLoopBuilder.countVariable && !variablePickerItems.some((item) => item.name === locatorLoopBuilder.countVariable) && !locatorLoopBuilder.createCountVariable ? (
+                                <option value={locatorLoopBuilder.countVariable}>{locatorLoopBuilder.countVariable}</option>
+                              ) : null}
+                              {variablePickerItems.map((item) => (
+                                <option key={item.name} value={item.name}>
+                                  {item.name} - {item.detail}
+                                </option>
+                              ))}
+                              <option value="__create__">+ Create count variable</option>
+                            </select>
                           </label>
                           <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
                             Locator variable
-                            <input
-                              list="logic-variable-options"
-                              value={locatorLoopBuilder.locatorVariable}
-                              onChange={(event) =>
+                            <select
+                              value={locatorLoopBuilder.createLocatorVariable ? "__create__" : locatorLoopBuilder.locatorVariable}
+                              onChange={(event) => {
+                                const value = event.target.value;
                                 setLocatorLoopBuilder((current) => ({
                                   ...current,
-                                  locatorVariable: event.target.value,
-                                }))
-                              }
+                                  locatorVariable: value === "__create__" ? current.locatorVariable || "locator" : value,
+                                  createLocatorVariable: value === "__create__",
+                                }));
+                              }}
                               className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                            />
-                          </label>
-                          <label className="flex items-center gap-2 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-sky-900 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-sky-100">
-                            <input
-                              type="checkbox"
-                              checked={locatorLoopBuilder.createCountVariable}
-                              onChange={(event) =>
-                                setLocatorLoopBuilder((current) => ({
-                                  ...current,
-                                  createCountVariable: event.target.checked,
-                                }))
-                              }
-                              className="h-4 w-4 rounded border-sky-300 text-sky-700 focus:ring-sky-500"
-                            />
-                            Create count here
+                            >
+                              <option value="">Select variable...</option>
+                              {locatorLoopBuilder.locatorVariable && !variablePickerItems.some((item) => item.name === locatorLoopBuilder.locatorVariable) && !locatorLoopBuilder.createLocatorVariable ? (
+                                <option value={locatorLoopBuilder.locatorVariable}>{locatorLoopBuilder.locatorVariable}</option>
+                              ) : null}
+                              {variablePickerItems.map((item) => (
+                                <option key={item.name} value={item.name}>
+                                  {item.name} - {item.detail}
+                                </option>
+                              ))}
+                              <option value="__create__">+ Create locator variable</option>
+                            </select>
                           </label>
                           {locatorLoopBuilder.createCountVariable ? (
-                            <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
-                              Count value
-                              <input
-                                value={locatorLoopBuilder.countValue}
-                                onChange={(event) =>
-                                  setLocatorLoopBuilder((current) => ({
-                                    ...current,
-                                    countValue: event.target.value,
-                                  }))
-                                }
-                                placeholder="5"
-                                className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                              />
-                            </label>
+                            <>
+                              <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                                Count variable name
+                                <input
+                                  value={locatorLoopBuilder.countVariable}
+                                  onChange={(event) =>
+                                    setLocatorLoopBuilder((current) => ({
+                                      ...current,
+                                      countVariable: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="count"
+                                  className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                                />
+                              </label>
+                              <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                                Count value
+                                <input
+                                  value={locatorLoopBuilder.countValue}
+                                  onChange={(event) =>
+                                    setLocatorLoopBuilder((current) => ({
+                                      ...current,
+                                      countValue: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="5"
+                                  className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                                />
+                              </label>
+                            </>
                           ) : null}
-                          <label className="flex items-center gap-2 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-sky-900 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-sky-100">
-                            <input
-                              type="checkbox"
-                              checked={locatorLoopBuilder.createLocatorVariable}
-                              onChange={(event) =>
-                                setLocatorLoopBuilder((current) => ({
-                                  ...current,
-                                  createLocatorVariable: event.target.checked,
-                                }))
-                              }
-                              className="h-4 w-4 rounded border-sky-300 text-sky-700 focus:ring-sky-500"
-                            />
-                            Create locator here
-                          </label>
                           {locatorLoopBuilder.createLocatorVariable ? (
                             <>
+                              <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                                Locator variable name
+                                <input
+                                  value={locatorLoopBuilder.locatorVariable}
+                                  onChange={(event) =>
+                                    setLocatorLoopBuilder((current) => ({
+                                      ...current,
+                                      locatorVariable: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="locator"
+                                  className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                                />
+                              </label>
                               <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
                                 Locator type
                                 <select
