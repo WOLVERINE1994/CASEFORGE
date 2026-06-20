@@ -297,6 +297,7 @@ type CompanionStepResult = {
 type CompanionBrowserResponse = {
   activeTabId?: string | null;
   error?: string;
+  result?: { count?: number; previews?: Array<Record<string, unknown>> };
   results?: CompanionStepResult[];
   runId?: string | null;
   started?: boolean;
@@ -8248,13 +8249,39 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       setLocatorTestResult("Locator value is empty.");
       return;
     }
+    const locatorType = inferLocatorTypeFromValue(value, selectedStep.target?.locatorType || "css");
+    const testViaCompanion = async () => {
+      const data = await companionBrowserRequest({
+        body: JSON.stringify({
+          command: "testLocator",
+          locatorType,
+          sessionId: session.sessionId,
+          value,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const count = Number(data.result?.count ?? 0);
+      setLocatorTestResult(`${count} match${count === 1 ? "" : "es"} in the active Live Preview browser.`);
+      if (data.sessionId) {
+        setSession((current) =>
+          current?.sessionId === session.sessionId
+            ? patchCompanionSession(current, data)
+            : current,
+        );
+      }
+    };
     try {
       setLocatorTestResult("Testing locator...");
+      if (isCompanionPreviewSession(session)) {
+        await testViaCompanion();
+        return;
+      }
       const response = await fetch(
         `/api/automation/sessions/${encodeURIComponent(session.sessionId)}/test-locator`,
         {
           body: JSON.stringify({
-            locatorType: selectedStep.target?.locatorType || "css",
+            locatorType,
             value,
           }),
           headers: { "Content-Type": "application/json" },
@@ -8265,7 +8292,13 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         error?: string;
         result?: { count?: number; previews?: Array<Record<string, unknown>> };
       }>(response, {});
-      if (!response.ok) throw new Error(data.error || "Could not test locator.");
+      if (!response.ok) {
+        if (response.status === 404 && /session not found/i.test(data.error || "")) {
+          await testViaCompanion();
+          return;
+        }
+        throw new Error(data.error || "Could not test locator.");
+      }
       const count = Number(data.result?.count ?? 0);
       setLocatorTestResult(`${count} match${count === 1 ? "" : "es"} in the active browser.`);
     } catch (error) {

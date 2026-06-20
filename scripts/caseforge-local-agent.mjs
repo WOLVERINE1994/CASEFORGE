@@ -1950,6 +1950,59 @@ async function runBrowserControlCommand(body) {
           waitUntil: "domcontentloaded",
         }).catch(() => undefined);
       }
+    } else if (command === "testLocator") {
+      const locatorType = String(body?.locatorType || body?.type || "css").toLowerCase();
+      const value = String(body?.value || body?.locator || "").trim();
+      if (!value) {
+        return { status: 400, payload: { error: "Locator value is required." } };
+      }
+      const locator = locatorForValue(page, locatorType, value);
+      const count = await locator.count();
+      const previews = [];
+      for (let index = 0; index < Math.min(count, 6); index += 1) {
+        previews.push(
+          await locator.nth(index).evaluate((element, previewIndex) => {
+            const rect = element.getBoundingClientRect();
+            const style = window.getComputedStyle(element);
+            const text = String(element.innerText || element.textContent || "").replace(/\s+/g, " ").trim();
+            return {
+              bounds: {
+                height: Math.round(rect.height),
+                width: Math.round(rect.width),
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+              },
+              index: previewIndex,
+              tag: element.tagName ? element.tagName.toLowerCase() : "",
+              text: text.slice(0, 180),
+              visibility:
+                style.display === "none"
+                  ? "display-none"
+                  : style.visibility === "hidden"
+                    ? "hidden"
+                    : rect.width > 0 && rect.height > 0
+                      ? "visible"
+                      : "zero-size",
+            };
+          }, index).catch((error) => ({
+            error: error instanceof Error ? error.message : "Could not preview element.",
+            index,
+          })),
+        );
+      }
+      return {
+        status: 200,
+        payload: {
+          ok: true,
+          result: {
+            count,
+            locatorType,
+            previews,
+            value,
+          },
+          ...getRecorderSnapshot(session, body?.cursor ?? session.commands.length),
+        },
+      };
     } else {
       return { status: 400, payload: { error: `Unsupported browser command: ${command || "empty"}.` } };
     }
@@ -2237,11 +2290,37 @@ function locatorIndexForStep(step) {
 }
 
 function applyLocatorIndex(locator, step) {
+  if (step?.action === "getElementCount") return locator;
   const index = locatorIndexForStep(step);
-  if (index === null && step?.action === "getElementCount") return locator;
   if (index === null) return typeof locator.first === "function" ? locator.first() : locator;
   if (typeof locator.nth !== "function") return locator;
   return locator.nth(index);
+}
+
+function locatorForValue(page, locatorType, value) {
+  const text = String(value || "").trim();
+  const normalizedType =
+    String(locatorType || "css").toLowerCase() === "css" && looksLikeXPathSelector(text)
+      ? "xpath"
+      : String(locatorType || "css").toLowerCase();
+  if (normalizedType === "text") return page.getByText(text);
+  if (normalizedType === "aria-label" || normalizedType === "label") return page.getByLabel(text);
+  if (normalizedType === "placeholder") return page.getByPlaceholder(text);
+  if (normalizedType === "alt") return page.getByAltText(text);
+  if (normalizedType === "title") return page.getByTitle(text);
+  if (normalizedType === "testid" || normalizedType === "data-testid" || normalizedType === "data-test" || normalizedType === "data-qa" || normalizedType === "data-cy") {
+    const escaped = cssAttributeValue(text);
+    return page.locator(`[data-testid="${escaped}"],[data-test="${escaped}"],[data-qa="${escaped}"],[data-cy="${escaped}"]`);
+  }
+  if (normalizedType === "role") {
+    const separator = text.indexOf(":");
+    const role = separator >= 0 ? text.slice(0, separator) : text;
+    const name = separator >= 0 ? text.slice(separator + 1) : "";
+    return page.getByRole(role, name ? { name } : undefined);
+  }
+  if (normalizedType === "id") return page.locator(`#${text}`);
+  if (normalizedType === "xpath") return page.locator(/^xpath=/i.test(text) ? text : `xpath=${text}`);
+  return page.locator(text);
 }
 
 function locatorFor(page, step) {
