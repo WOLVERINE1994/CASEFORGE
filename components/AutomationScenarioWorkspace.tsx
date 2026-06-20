@@ -6642,11 +6642,27 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     const containerRect = container.getBoundingClientRect();
     const mediaRect = media.getBoundingClientRect();
     const bounds = numericRect(result.bounds);
+    const rawWidth = (bounds.width / viewportWidth) * mediaRect.width;
+    const rawHeight = (bounds.height / viewportHeight) * mediaRect.height;
+    const width = Math.max(10, rawWidth);
+    const height = Math.max(10, rawHeight);
+    const left =
+      mediaRect.left -
+      containerRect.left +
+      container.scrollLeft +
+      (bounds.x / viewportWidth) * mediaRect.width -
+      Math.max(0, width - rawWidth) / 2;
+    const top =
+      mediaRect.top -
+      containerRect.top +
+      container.scrollTop +
+      (bounds.y / viewportHeight) * mediaRect.height -
+      Math.max(0, height - rawHeight) / 2;
     return {
-      height: `${Math.max(4, (bounds.height / viewportHeight) * mediaRect.height)}px`,
-      left: `${mediaRect.left - containerRect.left + container.scrollLeft + (bounds.x / viewportWidth) * mediaRect.width}px`,
-      top: `${mediaRect.top - containerRect.top + container.scrollTop + (bounds.y / viewportHeight) * mediaRect.height}px`,
-      width: `${Math.max(4, (bounds.width / viewportWidth) * mediaRect.width)}px`,
+      height: `${height}px`,
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${width}px`,
     };
   };
 
@@ -10980,7 +10996,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.29
+            Download Companion 0.1.30
           </a>
           <button
             type="button"

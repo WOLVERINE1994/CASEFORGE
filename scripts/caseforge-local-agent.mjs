@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.29";
+const AGENT_VERSION = "0.1.30";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -930,6 +930,17 @@ const recorderInitScript = () => {
     return "";
   };
 
+  const controlSelector =
+    "input,textarea,select,button,a,[role='button'],[role='switch'],[role='textbox'],[role='combobox'],[role='checkbox'],[role='radio'],[aria-checked],[aria-pressed],[aria-expanded]";
+
+  const resolveInteractiveTarget = (element) => {
+    if (!(element instanceof Element)) return element;
+    if (element instanceof HTMLLabelElement) return element.control || element.querySelector(controlSelector) || element;
+    const label = element.closest("label");
+    if (label instanceof HTMLLabelElement && label.control) return label.control;
+    return element.closest(controlSelector) || element;
+  };
+
   const buildSelector = (element) => {
     if (!element) return "body";
 
@@ -1094,8 +1105,9 @@ const recorderInitScript = () => {
   document.addEventListener(
     "pointermove",
     (event) => {
-      lastPointerTarget =
-        event.target instanceof Element ? event.target : lastPointerTarget;
+      lastPointerTarget = event.target instanceof Element
+        ? resolveInteractiveTarget(event.target)
+        : lastPointerTarget;
       if (lastPointerTarget && !isInternalRecorderElement(lastPointerTarget)) {
         updateHover(lastPointerTarget);
       }
@@ -1106,7 +1118,7 @@ const recorderInitScript = () => {
   document.addEventListener(
     "click",
     (event) => {
-      const target = event.target instanceof Element ? event.target : null;
+      const target = event.target instanceof Element ? resolveInteractiveTarget(event.target) : null;
       if (!target || isInternalRecorderElement(target)) return;
       if (
         target instanceof HTMLInputElement &&
@@ -1778,11 +1790,18 @@ async function inspectLivePoint(body, url) {
           ["button", "link", "textbox", "combobox", "checkbox", "radio", "switch", "menuitem"].includes(role)
         );
       };
+      const controlSelector = "input,textarea,select,button,a,[role='button'],[role='switch'],[role='textbox'],[role='combobox'],[role='checkbox'],[role='radio'],[aria-checked],[aria-pressed],[aria-expanded]";
       const controlFromLabel = (node) => {
         const label = node instanceof HTMLLabelElement ? node : node?.closest?.("label");
         if (!(label instanceof HTMLLabelElement)) return null;
         if (label.control && pointInside(label.control)) return label.control;
-        return label.control || label.querySelector("input,textarea,select,button,[role='button'],[role='textbox'],[role='combobox'],[role='checkbox'],[role='radio']");
+        return label.control || label.querySelector(controlSelector);
+      };
+      const controlAncestor = (node) => {
+        if (!(node instanceof Element)) return null;
+        const direct = node.closest(controlSelector);
+        if (direct instanceof HTMLElement && pointInside(direct)) return direct;
+        return controlFromLabel(node);
       };
       const scoreCandidate = (node) => {
         if (!(node instanceof HTMLElement) || !isVisible(node)) return -1000;
@@ -1804,10 +1823,12 @@ async function inspectLivePoint(body, url) {
       const candidateElements = [];
       for (const node of pointStack) {
         if (!(node instanceof HTMLElement)) continue;
+        const closestControl = controlAncestor(node);
+        if (closestControl) candidateElements.push(closestControl);
         const labeledControl = controlFromLabel(node);
         if (labeledControl) candidateElements.push(labeledControl);
         candidateElements.push(node);
-        const nestedControl = node.querySelector?.("input,textarea,select,button,a,[role='button'],[role='textbox'],[role='combobox'],[role='checkbox'],[role='radio']");
+        const nestedControl = node.querySelector?.(controlSelector);
         if (nestedControl && pointInside(nestedControl)) candidateElements.push(nestedControl);
       }
       const element = [...new Set(candidateElements)]
@@ -1835,10 +1856,12 @@ async function inspectLivePoint(body, url) {
       const suggestedActions =
         tag === "select"
           ? ["select", "assert"]
-          : inputType === "checkbox" || role === "checkbox"
-            ? ["check", "uncheck", "assert"]
+            : inputType === "checkbox" || role === "checkbox"
+              ? ["check", "uncheck", "assert"]
             : inputType === "radio" || role === "radio"
               ? ["check", "assert"]
+              : role === "switch"
+                ? ["click", "assert"]
               : tag === "input" || tag === "textarea" || role === "textbox"
                 ? ["fill", "clear", "assert"]
                 : role === "button" || role === "link" || tag === "button" || tag === "a"
