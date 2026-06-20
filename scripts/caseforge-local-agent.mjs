@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.28";
+const AGENT_VERSION = "0.1.29";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -2762,6 +2762,15 @@ function normalizeList(value) {
   return parsed === undefined || parsed === null || parsed === "" ? [] : [parsed];
 }
 
+function normalizeForLoopItems(value) {
+  const parsed = parseStructuredRuntimeValue(value, value);
+  if (typeof parsed === "number" || (typeof parsed === "string" && /^\d+$/.test(parsed.trim()))) {
+    const count = Math.max(0, Math.floor(Number(parsed)));
+    return Array.from({ length: count }, (_item, index) => index + 1);
+  }
+  return normalizeList(value);
+}
+
 function collectionItemValue(item, field) {
   const key = String(field || "").trim();
   return key ? getRuntimePathValue(item, key) : item;
@@ -3106,7 +3115,9 @@ function tokenizeDsl(source = "") {
   const tokens = [];
   let current = "";
   let quote = "";
-  for (const char of String(source || "")) {
+  const text = String(source || "");
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
     if (quote) {
       current += char;
       if (char === quote) quote = "";
@@ -3116,6 +3127,14 @@ function tokenizeDsl(source = "") {
       quote = char;
       current += char;
       continue;
+    }
+    if (char === "{" && text[index + 1] === "{") {
+      const end = text.indexOf("}}", index + 2);
+      if (end >= 0) {
+        current += text.slice(index, end + 2);
+        index = end + 1;
+        continue;
+      }
     }
     if (char === "{" || char === "}") {
       if (current.trim()) tokens.push(current.trim());
@@ -3219,7 +3238,7 @@ async function executeDslNodes(page, nodes, runtimeVariables, context = {}) {
     }
     if (node.type === "for") {
       const source = await evaluateDslExpression(page, node.source, runtimeVariables);
-      const items = normalizeList(source);
+      const items = normalizeForLoopItems(source);
       const loopResults = [];
       for (const [itemIndex, item] of items.entries()) {
         setLoopVariables(runtimeVariables, {

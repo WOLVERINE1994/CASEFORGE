@@ -3111,6 +3111,14 @@ function logicIdeTemplates(action: string) {
       ].join("\n"),
     },
     {
+      label: "For Count",
+      value: [
+        "for item in {{$count}} {",
+        '  log "Item: " + item',
+        "}",
+      ].join("\n"),
+    },
+    {
       label: "Loop Table Rows",
       value: [
         "for row in {{$tableData.tableData}} {",
@@ -3148,7 +3156,7 @@ function logicIdeTemplates(action: string) {
     },
   ];
   return action === "loopBlock"
-    ? templates.filter((template) => ["For List", "Loop Table Rows", "Count + Index", "Repeat Retry", "Nested If"].includes(template.label))
+    ? templates.filter((template) => ["For List", "For Count", "Loop Table Rows", "Count + Index", "Repeat Retry", "Nested If"].includes(template.label))
     : templates;
 }
 
@@ -3208,6 +3216,10 @@ function stripLogicDslStrings(value: string) {
   return value.replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, "\"\"");
 }
 
+function stripLogicDslVariables(value: string) {
+  return value.replace(/\{\{[^}]*\}\}/g, "__variable__");
+}
+
 function logicIssue(line: number, column: number, message: string) {
   return `Line ${line}, column ${Math.max(1, column)}: ${message}`;
 }
@@ -3226,7 +3238,7 @@ function validateLogicDsl(value: string): LogicDslValidation {
     const lineNumber = index + 1;
     const trimmed = rawLine.trim();
     if (!trimmed || trimmed.startsWith("//")) return;
-    const clean = stripLogicDslStrings(trimmed);
+    const clean = stripLogicDslVariables(stripLogicDslStrings(trimmed));
     const opens = (clean.match(/\{/g) || []).length;
     const closes = (clean.match(/\}/g) || []).length;
     if (closes > depth + opens) {
@@ -10968,7 +10980,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.28
+            Download Companion 0.1.29
           </a>
           <button
             type="button"
