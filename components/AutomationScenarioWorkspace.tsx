@@ -4081,6 +4081,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     propertyName: "innerText",
     waitMs: "",
   });
+  const [locatorLoopCreateModalOpen, setLocatorLoopCreateModalOpen] = useState(false);
   const [testDataOpen, setTestDataOpen] = useState(false);
   const [testDataSaving, setTestDataSaving] = useState(false);
   const [testDataError, setTestDataError] = useState("");
@@ -13004,10 +13005,19 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                               value={locatorLoopBuilder.createLocatorVariable ? "__create__" : locatorLoopBuilder.locatorVariable}
                               onChange={(event) => {
                                 const value = event.target.value;
+                                if (value === "__create__") {
+                                  setLocatorLoopBuilder((current) => ({
+                                    ...current,
+                                    createLocatorVariable: true,
+                                    locatorVariable: current.locatorVariable || "locator",
+                                  }));
+                                  setLocatorLoopCreateModalOpen(true);
+                                  return;
+                                }
                                 setLocatorLoopBuilder((current) => ({
                                   ...current,
-                                  locatorVariable: value === "__create__" ? current.locatorVariable || "locator" : value,
-                                  createLocatorVariable: value === "__create__",
+                                  createLocatorVariable: false,
+                                  locatorVariable: value,
                                 }));
                               }}
                               className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
@@ -13057,56 +13067,13 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                             </>
                           ) : null}
                           {locatorLoopBuilder.createLocatorVariable ? (
-                            <>
-                              <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
-                                Locator variable name
-                                <input
-                                  value={locatorLoopBuilder.locatorVariable}
-                                  onChange={(event) =>
-                                    setLocatorLoopBuilder((current) => ({
-                                      ...current,
-                                      locatorVariable: event.target.value,
-                                    }))
-                                  }
-                                  placeholder="locator"
-                                  className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                                />
-                              </label>
-                              <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
-                                Locator type
-                                <select
-                                  value={locatorLoopBuilder.locatorType}
-                                  onChange={(event) =>
-                                    setLocatorLoopBuilder((current) => ({
-                                      ...current,
-                                      locatorType: event.target.value as "css" | "xpath",
-                                    }))
-                                  }
-                                  className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                                >
-                                  <option value="xpath">XPath</option>
-                                  <option value="css">CSS</option>
-                                </select>
-                              </label>
-                              <label className="text-xs font-semibold text-sky-900 dark:text-sky-100 sm:col-span-2">
-                                Locator value
-                                <textarea
-                                  value={locatorLoopBuilder.locatorValue}
-                                  onChange={(event) =>
-                                    setLocatorLoopBuilder((current) => ({
-                                      ...current,
-                                      locatorValue: event.target.value,
-                                    }))
-                                  }
-                                  placeholder={
-                                    locatorLoopBuilder.locatorType === "xpath"
-                                      ? "//button[@type='button']/div/div[contains(@class,'ketch-inline-flex')]"
-                                      : "button .ketch-inline-flex"
-                                  }
-                                  className="mt-1 min-h-20 w-full resize-y rounded-lg border border-sky-200 bg-white px-2.5 py-2 font-mono text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                                />
-                              </label>
-                            </>
+                            <button
+                              type="button"
+                              onClick={() => setLocatorLoopCreateModalOpen(true)}
+                              className="rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-left text-xs font-semibold text-sky-900 transition hover:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-sky-100"
+                            >
+                              Edit locator variable: {locatorLoopBuilder.locatorVariable || "locator"}
+                            </button>
                           ) : null}
                           <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
                             Loop action
@@ -15919,6 +15886,124 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 </button>
               </div>
             </div>
+        </div>
+      ) : null}
+
+      {locatorLoopCreateModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+          <div className="w-full max-w-lg rounded-[16px] border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
+                  Create locator variable
+                </h3>
+                <p className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  Save a CSS or XPath locator, then the loop can use it at the current index.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setLocatorLoopCreateModalOpen(false);
+                  if (!textValue(locatorLoopBuilder.locatorValue)) {
+                    setLocatorLoopBuilder((current) => ({
+                      ...current,
+                      createLocatorVariable: false,
+                    }));
+                  }
+                }}
+                className="rounded-lg px-2 py-1 text-sm font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                Variable name
+                <input
+                  autoFocus
+                  value={locatorLoopBuilder.locatorVariable}
+                  onChange={(event) =>
+                    setLocatorLoopBuilder((current) => ({
+                      ...current,
+                      locatorVariable: event.target.value,
+                    }))
+                  }
+                  placeholder="productLocator"
+                  className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 outline-none placeholder:text-zinc-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                Locator type
+                <select
+                  value={locatorLoopBuilder.locatorType}
+                  onChange={(event) =>
+                    setLocatorLoopBuilder((current) => ({
+                      ...current,
+                      locatorType: event.target.value as "css" | "xpath",
+                    }))
+                  }
+                  className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                >
+                  <option value="xpath">XPath</option>
+                  <option value="css">CSS</option>
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                Locator value
+                <textarea
+                  value={locatorLoopBuilder.locatorValue}
+                  onChange={(event) =>
+                    setLocatorLoopBuilder((current) => ({
+                      ...current,
+                      locatorValue: event.target.value,
+                    }))
+                  }
+                  placeholder={locatorLoopBuilder.locatorType === "xpath" ? "//button[@type='button']/div/div" : "button[type='button'] > div > div"}
+                  className="min-h-24 rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 outline-none placeholder:text-zinc-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                />
+              </label>
+              <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
+                Preview: set {cleanLogicVariableName(locatorLoopBuilder.locatorVariable, "locator")} ={" "}
+                {logicStringLiteral(textValue(locatorLoopBuilder.locatorValue) || "locator")}
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLocatorLoopCreateModalOpen(false);
+                    if (!textValue(locatorLoopBuilder.locatorValue)) {
+                      setLocatorLoopBuilder((current) => ({
+                        ...current,
+                        createLocatorVariable: false,
+                      }));
+                    }
+                  }}
+                  className="rounded-xl border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-700 dark:border-zinc-800 dark:text-zinc-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLocatorLoopBuilder((current) => ({
+                      ...current,
+                      createLocatorVariable: true,
+                      locatorVariable: cleanLogicVariableName(current.locatorVariable, "locator"),
+                    }));
+                    setLocatorLoopCreateModalOpen(false);
+                  }}
+                  disabled={
+                    !cleanLogicVariableName(locatorLoopBuilder.locatorVariable, "") ||
+                    !textValue(locatorLoopBuilder.locatorValue)
+                  }
+                  className="rounded-xl bg-sky-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-sky-800 disabled:opacity-50"
+                >
+                  Use variable
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
 
