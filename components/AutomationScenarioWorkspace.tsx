@@ -398,7 +398,12 @@ type LocatorLoopAction =
 type LocatorLoopBuilderState = {
   action: LocatorLoopAction;
   attributeName: string;
+  countValue: string;
   countVariable: string;
+  createCountVariable: boolean;
+  createLocatorVariable: boolean;
+  locatorType: "css" | "xpath";
+  locatorValue: string;
   locatorVariable: string;
   logEach: boolean;
   outputVariable: string;
@@ -3235,6 +3240,10 @@ function locatorLoopDefaultOutput(action: LocatorLoopAction) {
   return "itemText";
 }
 
+function logicStringLiteral(value: string) {
+  return JSON.stringify(String(value || ""));
+}
+
 function buildLocatorLoopDsl(config: LocatorLoopBuilderState) {
   const countVariable = cleanLogicVariableName(config.countVariable, "count");
   const locatorVariable = cleanLogicVariableName(config.locatorVariable, "locator");
@@ -3247,7 +3256,17 @@ function buildLocatorLoopDsl(config: LocatorLoopBuilderState) {
   const attributeName = textValue(config.attributeName) || "class";
   const propertyName = textValue(config.propertyName) || "innerText";
   const waitMs = Math.max(0, Number(config.waitMs || 0));
-  const lines = [`for item in ${countToken} {`];
+  const lines: string[] = [];
+  if (config.createCountVariable) {
+    const countValue = textValue(config.countValue) || "0";
+    lines.push(`set ${countVariable} = ${Number.isFinite(Number(countValue)) ? String(Number(countValue)) : logicStringLiteral(countValue)}`);
+  }
+  if (config.createLocatorVariable) {
+    const locatorValue = textValue(config.locatorValue) || (config.locatorType === "xpath" ? "//button" : "button");
+    lines.push(`set ${locatorVariable} = ${logicStringLiteral(locatorValue)}`);
+  }
+  if (lines.length) lines.push("");
+  lines.push(`for item in ${countToken} {`);
   const indexedLocator = `${locatorToken} at current index`;
   let valueVariable = "";
 
@@ -4050,7 +4069,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [locatorLoopBuilder, setLocatorLoopBuilder] = useState<LocatorLoopBuilderState>({
     action: "getText",
     attributeName: "class",
+    countValue: "5",
     countVariable: "count",
+    createCountVariable: false,
+    createLocatorVariable: false,
+    locatorType: "xpath",
+    locatorValue: "",
     locatorVariable: "locator",
     logEach: true,
     outputVariable: "itemText",
@@ -12983,6 +13007,88 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                               className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
                             />
                           </label>
+                          <label className="flex items-center gap-2 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-sky-900 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-sky-100">
+                            <input
+                              type="checkbox"
+                              checked={locatorLoopBuilder.createCountVariable}
+                              onChange={(event) =>
+                                setLocatorLoopBuilder((current) => ({
+                                  ...current,
+                                  createCountVariable: event.target.checked,
+                                }))
+                              }
+                              className="h-4 w-4 rounded border-sky-300 text-sky-700 focus:ring-sky-500"
+                            />
+                            Create count here
+                          </label>
+                          {locatorLoopBuilder.createCountVariable ? (
+                            <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                              Count value
+                              <input
+                                value={locatorLoopBuilder.countValue}
+                                onChange={(event) =>
+                                  setLocatorLoopBuilder((current) => ({
+                                    ...current,
+                                    countValue: event.target.value,
+                                  }))
+                                }
+                                placeholder="5"
+                                className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                              />
+                            </label>
+                          ) : null}
+                          <label className="flex items-center gap-2 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-sky-900 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-sky-100">
+                            <input
+                              type="checkbox"
+                              checked={locatorLoopBuilder.createLocatorVariable}
+                              onChange={(event) =>
+                                setLocatorLoopBuilder((current) => ({
+                                  ...current,
+                                  createLocatorVariable: event.target.checked,
+                                }))
+                              }
+                              className="h-4 w-4 rounded border-sky-300 text-sky-700 focus:ring-sky-500"
+                            />
+                            Create locator here
+                          </label>
+                          {locatorLoopBuilder.createLocatorVariable ? (
+                            <>
+                              <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                                Locator type
+                                <select
+                                  value={locatorLoopBuilder.locatorType}
+                                  onChange={(event) =>
+                                    setLocatorLoopBuilder((current) => ({
+                                      ...current,
+                                      locatorType: event.target.value as "css" | "xpath",
+                                    }))
+                                  }
+                                  className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                                >
+                                  <option value="xpath">XPath</option>
+                                  <option value="css">CSS</option>
+                                </select>
+                              </label>
+                              <label className="text-xs font-semibold text-sky-900 dark:text-sky-100 sm:col-span-2">
+                                Locator value
+                                <textarea
+                                  value={locatorLoopBuilder.locatorValue}
+                                  onChange={(event) =>
+                                    setLocatorLoopBuilder((current) => ({
+                                      ...current,
+                                      locatorValue: event.target.value,
+                                    }))
+                                  }
+                                  placeholder={
+                                    locatorLoopBuilder.locatorType === "xpath"
+                                      ? "//button[@type='button']/div/div[contains(@class,'ketch-inline-flex')]"
+                                      : "button .ketch-inline-flex"
+                                  }
+                                  className="mt-1 min-h-20 w-full resize-y rounded-lg border border-sky-200 bg-white px-2.5 py-2 font-mono text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                                />
+                              </label>
+                            </>
+                          ) : null}
                           <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
                             Loop action
                             <select
