@@ -2777,6 +2777,296 @@ class LoopControlSignal extends Error {
   }
 }
 
+function dslVariableName(raw) {
+  return String(raw || "").trim().replace(/^\$/, "");
+}
+
+function dslExpressionSource(expression = "") {
+  return String(expression || "").replace(/\{\{\$([^}]+)\}\}/g, (_match, name) => `__get(${JSON.stringify(dslVariableName(name))})`);
+}
+
+async function evaluateDslExpression(page, expression, runtimeVariables = {}) {
+  const context = await runtimeContextSnapshot(page, runtimeVariables);
+  const vars = {
+    ...runtimeVariables,
+    browser: context.browser,
+    currentUrl: context.currentUrl,
+    env: context.env,
+    height: context.viewport.height,
+    platform: context.platform,
+    title: context.title,
+    viewport: context.device,
+    width: context.viewport.width,
+  };
+  const source = dslExpressionSource(expression);
+  const getValue = (name) => runtimeVariableValue(vars, name);
+  try {
+    return Function(
+      "__vars",
+      "__get",
+      `"use strict"; const { item, row, key, value, loop, env, viewport, width, height, currentUrl, title, browser, platform } = __vars; return (${source});`,
+    )(vars, getValue);
+  } catch (error) {
+    throw new Error(`Could not evaluate logic expression "${expression}": ${error instanceof Error ? error.message : "invalid expression"}`);
+  }
+}
+
+function dslStringValue(raw = "") {
+  const text = String(raw || "").trim();
+  if (
+    (text.startsWith('"') && text.endsWith('"')) ||
+    (text.startsWith("'") && text.endsWith("'"))
+  ) {
+    return text.slice(1, -1);
+  }
+  return text;
+}
+
+function parseDslLocator(raw = "") {
+  const source = String(raw || "").trim();
+  const match = source.match(/^(css|xpath|text|role|testid|label)\((.*)\)$/);
+  if (!match) return { type: "css", value: source };
+  const kind = match[1];
+  const args = [];
+  const argPattern = /"([^"]*)"|'([^']*)'|([^,\s][^,]*)/g;
+  let argMatch;
+  while ((argMatch = argPattern.exec(match[2]))) {
+    args.push((argMatch[1] ?? argMatch[2] ?? argMatch[3] ?? "").trim());
+  }
+  if (kind === "xpath") return { type: "xpath", value: args[0] || "" };
+  if (kind === "text") return { type: "text", value: args[0] || "" };
+  if (kind === "role") return { type: "role", value: args[1] || args[0] || "", role: args[0] || "button" };
+  if (kind === "testid") return { type: "testid", value: args[0] || "" };
+  if (kind === "label") return { type: "label", value: args[0] || "" };
+  return { type: "css", value: args[0] || "" };
+}
+
+function dslStepForLocatorCommand(command, rest, runtimeVariables) {
+  const locatorMatch = String(rest || "").trim().match(/^(css|xpath|text|role|testid|label)\((?:"[^"]*"|'[^']*'|[^)])*\)(?:\s+(.+))?$/);
+  const locatorSource = locatorMatch ? locatorMatch[0].slice(0, locatorMatch[0].length - String(locatorMatch[2] || "").length).trim() : rest;
+  const locator = parseDslLocator(locatorSource);
+  const value = locatorMatch?.[2] ? resolveRuntimeValue(dslStringValue(locatorMatch[2]), runtimeVariables) : "";
+  const target = {
+    displayName: locator.value || locator.type,
+    elementKind: "web element",
+    type: "manual",
+    value: locator.value,
+  };
+  const base = {
+    action: command,
+    description: `${command} ${locator.value || locator.type}`,
+    target,
+  };
+  if (locator.type === "role") {
+    return {
+      ...base,
+      options: { locatorRole: locator.role, locatorText: locator.value },
+      target: { ...target, type: "role", value: `${locator.role || "button"}:${locator.value || ""}` },
+    };
+  }
+  if (locator.type === "text") {
+    return { ...base, target: { ...target, type: "text" } };
+  }
+  if (locator.type === "label") {
+    return { ...base, target: { ...target, type: "label" } };
+  }
+  if (locator.type === "testid") {
+    return { ...base, target: { ...target, type: "testid" } };
+  }
+  if (command === "type" || command === "fill") return { ...base, action: "fill", inputValue: String(value ?? "") };
+  return base;
+}
+
+function tokenizeDsl(source = "") {
+  const tokens = [];
+  let current = "";
+  let quote = "";
+  for (const char of String(source || "")) {
+    if (quote) {
+      current += char;
+      if (char === quote) quote = "";
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === "{" || char === "}") {
+      if (current.trim()) tokens.push(current.trim());
+      tokens.push(char);
+      current = "";
+      continue;
+    }
+    if (char === "\n" || char === "\r") {
+      if (current.trim()) tokens.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  if (current.trim()) tokens.push(current.trim());
+  return tokens.filter((token) => token && !token.startsWith("//"));
+}
+
+function parseDslBlock(tokens, startIndex = 0, stopOnElse = false) {
+  const nodes = [];
+  let index = startIndex;
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (token === "}") return { index: index + 1, nodes };
+    if (stopOnElse && /^else\b/.test(token)) return { index, nodes };
+    if (/^if\b/.test(token)) {
+      const condition = token.replace(/^if\s+/, "").replace(/\s*\{$/, "").trim();
+      if (tokens[index + 1] !== "{") throw new Error(`Expected "{" after ${token}`);
+      const thenParsed = parseDslBlock(tokens, index + 2, true);
+      index = thenParsed.index;
+      const branches = [{ condition, nodes: thenParsed.nodes }];
+      let elseNodes = [];
+      while (index < tokens.length && /^else\b/.test(tokens[index])) {
+        const elseToken = tokens[index];
+        if (/^else\s+if\b/.test(elseToken)) {
+          const elseCondition = elseToken.replace(/^else\s+if\s+/, "").replace(/\s*\{$/, "").trim();
+          if (tokens[index + 1] !== "{") throw new Error(`Expected "{" after ${elseToken}`);
+          const elseIfParsed = parseDslBlock(tokens, index + 2, true);
+          branches.push({ condition: elseCondition, nodes: elseIfParsed.nodes });
+          index = elseIfParsed.index;
+        } else {
+          if (tokens[index + 1] !== "{") throw new Error('Expected "{" after else');
+          const elseParsed = parseDslBlock(tokens, index + 2, false);
+          elseNodes = elseParsed.nodes;
+          index = elseParsed.index;
+          break;
+        }
+      }
+      nodes.push({ branches, elseNodes, type: "if" });
+      continue;
+    }
+    if (/^for\b/.test(token)) {
+      const match = token.match(/^for\s+([a-zA-Z_][\w]*)\s+in\s+(.+?)(?:\s*\{)?$/);
+      if (!match) throw new Error(`Invalid for loop: ${token}`);
+      if (tokens[index + 1] !== "{") throw new Error(`Expected "{" after ${token}`);
+      const parsed = parseDslBlock(tokens, index + 2, false);
+      nodes.push({ itemName: match[1], source: match[2].trim(), nodes: parsed.nodes, type: "for" });
+      index = parsed.index;
+      continue;
+    }
+    if (/^repeat\b/.test(token)) {
+      const count = token.replace(/^repeat\s+/, "").replace(/\s*\{$/, "").trim();
+      if (tokens[index + 1] !== "{") throw new Error(`Expected "{" after ${token}`);
+      const parsed = parseDslBlock(tokens, index + 2, false);
+      nodes.push({ count, nodes: parsed.nodes, type: "repeat" });
+      index = parsed.index;
+      continue;
+    }
+    nodes.push({ source: token, type: "command" });
+    index += 1;
+  }
+  return { index, nodes };
+}
+
+function parseCaseForgeDsl(source = "") {
+  const tokens = tokenizeDsl(source);
+  return parseDslBlock(tokens, 0, false).nodes;
+}
+
+async function executeDslNodes(page, nodes, runtimeVariables, context = {}) {
+  const results = [];
+  for (const [index, node] of nodes.entries()) {
+    if (node.type === "if") {
+      let matched = false;
+      const skippedBranches = [];
+      for (const [branchIndex, branch] of node.branches.entries()) {
+        if (await evaluateDslExpression(page, branch.condition, runtimeVariables)) {
+          const branchResults = await executeDslNodes(page, branch.nodes, runtimeVariables, context);
+          results.push({ branch: branchIndex === 0 ? "if" : `else if ${branchIndex}`, condition: branch.condition, results: branchResults, status: "passed", type: "if" });
+          matched = true;
+          break;
+        }
+        skippedBranches.push(branch.condition);
+      }
+      if (!matched && node.elseNodes.length) {
+        results.push({ branch: "else", results: await executeDslNodes(page, node.elseNodes, runtimeVariables, context), skippedBranches, status: "passed", type: "if" });
+      } else if (!matched) {
+        results.push({ skippedBranches, status: "skipped", type: "if" });
+      }
+      continue;
+    }
+    if (node.type === "for") {
+      const source = await evaluateDslExpression(page, node.source, runtimeVariables);
+      const items = normalizeList(source);
+      const loopResults = [];
+      for (const [itemIndex, item] of items.entries()) {
+        setLoopVariables(runtimeVariables, {
+          count: items.length,
+          first: itemIndex === 0,
+          index: itemIndex,
+          item,
+          last: itemIndex === items.length - 1,
+          number: itemIndex + 1,
+        }, node.itemName);
+        loopResults.push({ index: itemIndex, item, results: await executeDslNodes(page, node.nodes, runtimeVariables, context), status: "passed" });
+      }
+      results.push({ iterations: loopResults.length, results: loopResults, status: "passed", type: "for" });
+      continue;
+    }
+    if (node.type === "repeat") {
+      const count = Math.max(0, Math.floor(Number(await evaluateDslExpression(page, node.count, runtimeVariables) || 0)));
+      const loopResults = [];
+      for (let itemIndex = 0; itemIndex < count; itemIndex += 1) {
+        setLoopVariables(runtimeVariables, {
+          count,
+          first: itemIndex === 0,
+          index: itemIndex,
+          item: itemIndex,
+          last: itemIndex === count - 1,
+          number: itemIndex + 1,
+        });
+        loopResults.push({ index: itemIndex, results: await executeDslNodes(page, node.nodes, runtimeVariables, context), status: "passed" });
+      }
+      results.push({ iterations: loopResults.length, results: loopResults, status: "passed", type: "repeat" });
+      continue;
+    }
+    const source = String(node.source || "");
+    const commandMatch = source.match(/^(\w+)\s*(.*)$/);
+    const command = commandMatch?.[1] || "";
+    const rest = commandMatch?.[2] || "";
+    if (command === "log") {
+      const value = await evaluateDslExpression(page, rest, runtimeVariables);
+      if (state.session) state.session.logs = [`Debug: ${stringifyRuntimeValue(value)}`, ...state.session.logs].slice(0, 80);
+      results.push({ command: "log", output: value, status: "passed", type: "command" });
+      continue;
+    }
+    if (command === "wait") {
+      const duration = Number(await evaluateDslExpression(page, rest, runtimeVariables) || 0);
+      await page.waitForTimeout(duration);
+      results.push({ command: "wait", duration, status: "passed", type: "command" });
+      continue;
+    }
+    if (["click", "type", "fill"].includes(command)) {
+      const step = dslStepForLocatorCommand(command, rest, runtimeVariables);
+      const output = await executeStepWithRuntimeVariables(page, step, runtimeVariables, context);
+      results.push({ command, output, status: "passed", type: "command" });
+      continue;
+    }
+    throw new Error(`Unsupported logic command: ${source}`);
+  }
+  return results;
+}
+
+async function executeLogicDsl(page, step, runtimeVariables, context = {}) {
+  const dsl = String(step.options?.dsl || step.inputValue || "").trim();
+  if (!dsl) throw new Error("Logic IDE command needs a script.");
+  const nodes = parseCaseForgeDsl(dsl);
+  const results = await executeDslNodes(page, nodes, runtimeVariables, context);
+  return {
+    dsl,
+    nodeCount: nodes.length,
+    results,
+    status: "passed",
+  };
+}
+
 function isEmptySnippetOutput(value) {
   if (value === undefined || value === null) return true;
   if (typeof value === "string") return value.trim() === "";
@@ -4145,6 +4435,9 @@ async function executeRuntimeStepSequence(page, steps, runtimeVariables, context
 
 async function executeConditionalBlock(page, step, runtimeVariables, context = {}) {
   const options = step.options || {};
+  if (String(options.dsl || step.inputValue || "").trim()) {
+    return await executeLogicDsl(page, step, runtimeVariables, context);
+  }
   const thenSteps = normalizeRuntimeSteps(step.thenSteps || options.thenSteps);
   const elseSteps = normalizeRuntimeSteps(step.elseSteps || options.elseSteps);
   const elseIfBranches = normalizeRuntimeSteps(step.elseIfBranches || options.elseIfBranches);
@@ -4232,6 +4525,9 @@ async function loopItemsForBlock(page, options, runtimeVariables) {
 
 async function executeLoopBlock(page, step, runtimeVariables, context = {}) {
   const options = step.options || {};
+  if (String(options.dsl || step.inputValue || "").trim()) {
+    return await executeLogicDsl(page, step, runtimeVariables, context);
+  }
   const loopType = String(options.loopType || "repeatCount");
   const steps = normalizeRuntimeSteps(step.steps || options.steps);
   const maxIterations = Math.max(1, optionalNumber(options.maxIterations) ?? 100);

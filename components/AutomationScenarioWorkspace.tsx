@@ -560,6 +560,20 @@ type CommandInsertMenu = {
   y: number;
 } | null;
 
+type LogicEditorSuggestion = {
+  detail: string;
+  insertText: string;
+  label: string;
+  source: "variable" | "builtin" | "locator" | "snippet";
+};
+
+type LogicEditorSuggestState = {
+  cursor: number;
+  end: number;
+  query: string;
+  start: number;
+} | null;
+
 const localAgentUrl =
   process.env.NEXT_PUBLIC_AUTOMATION_LOCAL_AGENT_URL || "http://127.0.0.1:4873";
 const companionDownloadUrl =
@@ -2162,6 +2176,9 @@ function makeCommandLibraryStep(
       runtimeHandler: command.runtimeHandler,
     },
   );
+  if (isLogicIdeCommand(action)) {
+    options.dsl = defaultLogicDsl(action);
+  }
   const targetName = commandTargetDisplayName(command);
   const stepBase: AutomationStep = {
     action,
@@ -2849,6 +2866,70 @@ function parameterToken(name: string) {
   return `{{${name}}}`;
 }
 
+function logicVariableToken(name: string) {
+  const clean = name.startsWith("$") ? name.slice(1) : name;
+  return `{{$${clean}}}`;
+}
+
+function isLogicIdeCommand(action: string) {
+  return action === "conditionalBlock" || action === "loopBlock";
+}
+
+function defaultLogicDsl(action: string) {
+  if (action === "loopBlock") {
+    return [
+      "for item in {{$items}} {",
+      "  log \"Item: \" + item",
+      "}",
+    ].join("\n");
+  }
+  return [
+    "if {{$viewport}} == \"desktop\" {",
+    "  log \"Running desktop flow\"",
+    "} else if {{$viewport}} == \"phone\" {",
+    "  log \"Running phone flow\"",
+    "} else {",
+    "  log \"Running fallback flow\"",
+    "}",
+  ].join("\n");
+}
+
+function logicDslValue(step?: AutomationStep | null) {
+  return textValue(step?.options?.dsl) || defaultLogicDsl(displayAction(step?.action || "conditionalBlock"));
+}
+
+function logicSuggestionTrigger(value: string, cursor: number): LogicEditorSuggestState {
+  const before = value.slice(0, cursor);
+  const variableMatch = before.match(/\{\{\$([a-zA-Z0-9_.-]*)$/);
+  if (variableMatch && variableMatch.index !== undefined) {
+    return {
+      cursor,
+      end: cursor,
+      query: variableMatch[1] || "",
+      start: variableMatch.index,
+    };
+  }
+  const helperMatch = before.match(/\b(css|xpath|text|role|testid|label)\(\"([^"]*)$/);
+  if (helperMatch && helperMatch.index !== undefined) {
+    return {
+      cursor,
+      end: cursor,
+      query: helperMatch[2] || "",
+      start: helperMatch.index,
+    };
+  }
+  const commandLocatorMatch = before.match(/\b(click|type|fill)\s+$/);
+  if (commandLocatorMatch && commandLocatorMatch.index !== undefined) {
+    return {
+      cursor,
+      end: cursor,
+      query: "",
+      start: cursor,
+    };
+  }
+  return null;
+}
+
 function exactParameterNameFromText(value?: string) {
   const match = textValue(value).match(/^\{\{\s*([a-zA-Z_][\w.-]*)\s*\}\}$/);
   return match?.[1] ?? "";
@@ -3457,6 +3538,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   } | null>(null);
   const [canvasMessage, setCanvasMessage] = useState("");
   const [commandInsertMenu, setCommandInsertMenu] = useState<CommandInsertMenu>(null);
+  const [logicEditorSuggest, setLogicEditorSuggest] = useState<LogicEditorSuggestState>(null);
   const [testDataOpen, setTestDataOpen] = useState(false);
   const [testDataSaving, setTestDataSaving] = useState(false);
   const [testDataError, setTestDataError] = useState("");
@@ -3468,6 +3550,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const timelineStepRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const actionCommandRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const commandParameterTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const logicEditorTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const livePreviewImageRef = useRef<HTMLImageElement | null>(null);
   const livePreviewContainerRef = useRef<HTMLDivElement | null>(null);
   const livePreviewSocketRef = useRef<WebSocket | null>(null);
@@ -3863,6 +3946,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const selectedCommandOutputTypeLabel = commandOutputTypeLabel(selectedCommandDefinition);
   const selectedCommandEditorUxKind = commandEditorUxKind(selectedCommandDefinition);
   const selectedCommandHasAdvancedRuntimeInput = commandHasAdvancedRuntimeInput(selectedStepAction);
+  const selectedCommandUsesLogicIde = isLogicIdeCommand(selectedStepAction);
   const variablePickerItems = useMemo<VariablePickerItem[]>(() => {
     const byName = new Map<string, VariablePickerItem>();
     for (const parameter of scenarioParameters) {
@@ -3891,6 +3975,79 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       left.name.localeCompare(right.name),
     );
   }, [actionStepCommands, scenarioParameters, visibleSteps]);
+  const logicEditorSuggestions = useMemo<LogicEditorSuggestion[]>(() => {
+    const builtIns: LogicEditorSuggestion[] = [
+      { detail: "Run environment name", insertText: logicVariableToken("env"), label: "$env", source: "builtin" },
+      { detail: "desktop, tablet, or phone", insertText: logicVariableToken("viewport"), label: "$viewport", source: "builtin" },
+      { detail: "Viewport width", insertText: logicVariableToken("width"), label: "$width", source: "builtin" },
+      { detail: "Viewport height", insertText: logicVariableToken("height"), label: "$height", source: "builtin" },
+      { detail: "Current browser URL", insertText: logicVariableToken("currentUrl"), label: "$currentUrl", source: "builtin" },
+      { detail: "Current page title", insertText: logicVariableToken("title"), label: "$title", source: "builtin" },
+      { detail: "Browser name", insertText: logicVariableToken("browser"), label: "$browser", source: "builtin" },
+      { detail: "OS/platform", insertText: logicVariableToken("platform"), label: "$platform", source: "builtin" },
+      { detail: "Current loop item", insertText: logicVariableToken("item"), label: "$item", source: "builtin" },
+      { detail: "Current table/test row", insertText: logicVariableToken("row"), label: "$row", source: "builtin" },
+      { detail: "Current map key", insertText: logicVariableToken("key"), label: "$key", source: "builtin" },
+      { detail: "Current map value", insertText: logicVariableToken("value"), label: "$value", source: "builtin" },
+      { detail: "Zero-based loop index", insertText: logicVariableToken("loop.index"), label: "$loop.index", source: "builtin" },
+      { detail: "One-based loop number", insertText: logicVariableToken("loop.number"), label: "$loop.number", source: "builtin" },
+    ];
+    const variables = variablePickerItems.map<LogicEditorSuggestion>((item) => ({
+      detail: item.detail,
+      insertText: logicVariableToken(item.name),
+      label: `$${item.name}`,
+      source: "variable",
+    }));
+    const helpers: LogicEditorSuggestion[] = [
+      { detail: "CSS locator", insertText: 'css("")', label: 'css("")', source: "locator" },
+      { detail: "XPath locator", insertText: 'xpath("")', label: 'xpath("")', source: "locator" },
+      { detail: "Visible text locator", insertText: 'text("")', label: 'text("")', source: "locator" },
+      { detail: "Role locator", insertText: 'role("button", "")', label: 'role("button", "")', source: "locator" },
+      { detail: "Test id locator", insertText: 'testid("")', label: 'testid("")', source: "locator" },
+      { detail: "Label locator", insertText: 'label("")', label: 'label("")', source: "locator" },
+    ];
+    const snippets: LogicEditorSuggestion[] = [
+      {
+        detail: "Desktop / phone branch",
+        insertText: [
+          'if {{$viewport}} == "desktop" {',
+          '  log "Desktop flow"',
+          '} else {',
+          '  log "Mobile/tablet flow"',
+          '}',
+        ].join("\n"),
+        label: "if desktop else",
+        source: "snippet",
+      },
+      {
+        detail: "Loop a list variable",
+        insertText: [
+          "for item in {{$items}} {",
+          '  log "Item: " + item',
+          "}",
+        ].join("\n"),
+        label: "for item in list",
+        source: "snippet",
+      },
+    ];
+    return [...builtIns, ...variables, ...helpers, ...snippets];
+  }, [variablePickerItems]);
+  const visibleLogicEditorSuggestions = useMemo(() => {
+    if (!logicEditorSuggest) return [];
+    const query = logicEditorSuggest.query.trim().toLowerCase();
+    const textarea = logicEditorTextareaRef.current;
+    const before = textarea?.value.slice(0, textarea.selectionStart ?? 0) ?? "";
+    const locatorMode =
+      /\b(css|xpath|text|role|testid|label)\(\"[^\"]*$/.test(before) ||
+      /\b(click|type|fill)\s+$/.test(before);
+    return logicEditorSuggestions
+      .filter((item) => {
+        if (locatorMode) return item.source === "locator" || item.source === "snippet";
+        if (!query) return item.source !== "snippet";
+        return `${item.label} ${item.detail}`.toLowerCase().includes(query);
+      })
+      .slice(0, 10);
+  }, [logicEditorSuggest, logicEditorSuggestions]);
   const selectedStepHasAdvancedRuntimeConfig =
     selectedStepValueSource !== "static" ||
     Boolean(selectedStepExpression || textValue(selectedStep?.options?.valueReference));
@@ -5023,6 +5180,45 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       const cursor = before.length + inserted.length;
       node.focus();
       node.setSelectionRange(cursor, cursor);
+    }, 0);
+  };
+
+  const updateLogicDsl = (stepId: string, value: string) => {
+    updateStep(stepId, (step) => ({
+      ...step,
+      inputValue: value,
+      options: {
+        ...step.options,
+        dsl: value,
+      },
+    }));
+  };
+
+  const updateLogicEditorSuggest = (value: string, cursor: number) => {
+    setLogicEditorSuggest(logicSuggestionTrigger(value, cursor));
+  };
+
+  const insertLogicSuggestion = (suggestion: LogicEditorSuggestion) => {
+    if (!selectedStep?.id) return;
+    const textarea = logicEditorTextareaRef.current;
+    const source = logicDslValue(selectedStep);
+    const cursor = textarea?.selectionStart ?? source.length;
+    const activeSuggestion = logicEditorSuggest || logicSuggestionTrigger(source, cursor);
+    const start = activeSuggestion?.start ?? cursor;
+    const end = activeSuggestion?.end ?? cursor;
+    const before = source.slice(0, start);
+    const after = source.slice(end);
+    const text = suggestion.insertText;
+    const nextValue = `${before}${text}${after}`;
+    updateLogicDsl(selectedStep.id, nextValue);
+    setLogicEditorSuggest(null);
+    window.setTimeout(() => {
+      const node = logicEditorTextareaRef.current;
+      if (!node) return;
+      const quoteIndex = text.indexOf('""');
+      const nextCursor = quoteIndex >= 0 ? before.length + quoteIndex + 1 : before.length + text.length;
+      node.focus();
+      node.setSelectionRange(nextCursor, nextCursor);
     }, 0);
   };
 
@@ -11843,6 +12039,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                           action,
                           options: {
                             ...step.options,
+                            dsl: isLogicIdeCommand(action)
+                              ? textValue(step.options?.dsl) || defaultLogicDsl(action)
+                              : undefined,
                             outputVariableName:
                               commandShowsOutputCapture(definition) && !phaseOutputVariable(step)
                                 ? commandOutputDefaultName(definition)
@@ -12016,7 +12215,96 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                   </>
                 ) : null}
                 </div>
-                {selectedCommandSchemaParameters.length ? (
+                {selectedCommandUsesLogicIde && selectedStep ? (
+                  <div className="grid gap-3 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+                          Logic IDE
+                        </h4>
+                        <p className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                          Write CaseForge logic with variables, locators, and nested blocks.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">
+                        {["if", "else if", "else", "for", "repeat", "log", "click", "type", "wait"].map((token) => (
+                          <span
+                            key={token}
+                            className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 dark:border-zinc-800 dark:bg-zinc-900"
+                          >
+                            {token}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <textarea
+                        ref={logicEditorTextareaRef}
+                        value={logicDslValue(selectedStep)}
+                        onBlur={() => window.setTimeout(() => setLogicEditorSuggest(null), 150)}
+                        onChange={(event) => {
+                          updateLogicDsl(selectedStep.id || "", event.target.value);
+                          updateLogicEditorSuggest(event.target.value, event.target.selectionStart);
+                        }}
+                        onClick={(event) => {
+                          const target = event.currentTarget;
+                          updateLogicEditorSuggest(target.value, target.selectionStart);
+                        }}
+                        onKeyUp={(event) => {
+                          const target = event.currentTarget;
+                          updateLogicEditorSuggest(target.value, target.selectionStart);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            setLogicEditorSuggest(null);
+                            return;
+                          }
+                          if (
+                            (event.key === "Enter" || event.key === "Tab") &&
+                            logicEditorSuggest &&
+                            visibleLogicEditorSuggestions[0]
+                          ) {
+                            event.preventDefault();
+                            insertLogicSuggestion(visibleLogicEditorSuggestions[0]);
+                          }
+                        }}
+                        spellCheck={false}
+                        className="min-h-[260px] w-full resize-y rounded-xl border border-zinc-200 bg-zinc-950 px-3 py-3 font-mono text-xs leading-5 text-zinc-50 outline-none focus:border-sky-400 dark:border-zinc-800"
+                      />
+                      {logicEditorSuggest && visibleLogicEditorSuggestions.length ? (
+                        <div className="absolute left-3 top-12 z-20 max-h-64 w-[min(360px,calc(100%-24px))] overflow-y-auto rounded-xl border border-zinc-200 bg-white p-1 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+                          {visibleLogicEditorSuggestions.map((suggestion) => (
+                            <button
+                              key={`${suggestion.source}-${suggestion.label}-${suggestion.insertText}`}
+                              type="button"
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                insertLogicSuggestion(suggestion);
+                              }}
+                              className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-900"
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate font-mono">{suggestion.label}</span>
+                                <span className="block truncate text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                                  {suggestion.detail}
+                                </span>
+                              </span>
+                              <span className="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-500 dark:border-zinc-800">
+                                {suggestion.source}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+                      <p>if {logicVariableToken("env")} == "staging" {"{"} log "staging" {"}"}</p>
+                      <p>for item in {logicVariableToken("activeProducts")} {"{"} log item.name {"}"}</p>
+                      <p>click css("#submit")</p>
+                    </div>
+                  </div>
+                ) : null}
+                {selectedCommandSchemaParameters.length && !selectedCommandUsesLogicIde ? (
                   <div className="grid gap-3 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
                     <div className="min-w-0">
                       <h4 className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
