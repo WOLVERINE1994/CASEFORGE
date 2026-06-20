@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.33";
+const AGENT_VERSION = "0.1.34";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -3028,7 +3028,7 @@ async function evaluateDslExpression(page, expression, runtimeVariables = {}) {
     return Function(
       "__vars",
       "__get",
-      `"use strict"; const { item, row, key, value, loop, env, viewport, width, height, currentUrl, title, browser, platform } = __vars; return (${source});`,
+      `const { item, row, key, value, loop, env, viewport, width, height, currentUrl, title, browser, platform } = __vars; with (__vars) { return (${source}); }`,
     )(vars, getValue);
   } catch (error) {
     throw new Error(`Could not evaluate logic expression "${expression}": ${error instanceof Error ? error.message : "invalid expression"}`);
@@ -3113,6 +3113,23 @@ function splitDslOutputAssignment(raw = "") {
   return {
     source: match ? match[1].trim() : source,
     target: match?.[2] || "",
+  };
+}
+
+function cleanDslVariableReference(raw = "") {
+  return String(raw || "")
+    .trim()
+    .replace(/^\{\{\s*\$?/, "")
+    .replace(/\s*\}\}$/, "")
+    .replace(/^\$/, "");
+}
+
+function splitDslCollectionField(raw = "") {
+  const source = String(raw || "").trim();
+  const match = source.match(/^(.*?)\s+field\s+(["'])(.*?)\2$/);
+  return {
+    field: match?.[3] || "",
+    source: match ? match[1].trim() : source,
   };
 }
 
@@ -3385,6 +3402,66 @@ async function executeDslNodes(page, nodes, runtimeVariables, context = {}) {
       const passed = Boolean(await evaluateDslExpression(page, rest, runtimeVariables));
       if (!passed) throw new Error(`Logic assertion failed: ${rest}`);
       results.push({ command: "assert", output: true, status: "passed", type: "command" });
+      continue;
+    }
+    if (command === "clearList") {
+      const target = cleanDslVariableReference(rest);
+      if (!target) throw new Error(`Invalid clearList command: ${source}`);
+      runtimeVariables[target] = [];
+      if (state.session) state.session.runtimeVariables = runtimeVariables;
+      results.push({ command: "clearList", output: [], status: "passed", target, type: "command" });
+      continue;
+    }
+    if (command === "addToList" || command === "addItemToList") {
+      const match = rest.match(/^([a-zA-Z_][\w.]*)\s+(.+)$/);
+      if (!match) throw new Error(`Invalid addToList command: ${source}`);
+      const target = cleanDslVariableReference(match[1]);
+      const item = await evaluateDslExpression(page, dslExpressionValue(match[2]), runtimeVariables);
+      const nextList = [...normalizeList(runtimeVariableValue(runtimeVariables, target)), item];
+      runtimeVariables[target] = nextList;
+      if (state.session) state.session.runtimeVariables = runtimeVariables;
+      results.push({ command: "addToList", output: nextList, status: "passed", target, type: "command" });
+      continue;
+    }
+    if (["countListItems", "getListItem", "joinList", "sortList", "uniqueList"].includes(command)) {
+      const assignment = splitDslOutputAssignment(rest);
+      const fieldSplit = splitDslCollectionField(assignment.source);
+      const parts = fieldSplit.source.match(/^([a-zA-Z_][\w.]*)\s*(.*)$/);
+      if (!parts) throw new Error(`Invalid ${command} command: ${source}`);
+      const sourceVariable = cleanDslVariableReference(parts[1]);
+      const list = normalizeList(runtimeVariableValue(runtimeVariables, sourceVariable));
+      const target = assignment.target || sourceVariable;
+      const extra = String(parts[2] || "").trim();
+      let output;
+      if (command === "countListItems") {
+        output = list.length;
+      } else if (command === "getListItem") {
+        const index = Math.floor(Number(await evaluateDslExpression(page, dslExpressionValue(extra || "0"), runtimeVariables) || 0));
+        output = index < 0 ? list[list.length + index] : list[index];
+      } else if (command === "joinList") {
+        const separator = extra ? dslStringValue(extra) : ",";
+        output = list.map((item) => stringifyRuntimeValue(item)).join(separator);
+      } else if (command === "sortList") {
+        const order = /^desc\b/i.test(extra) ? -1 : 1;
+        const field = fieldSplit.field;
+        output = [...list].sort((left, right) =>
+          String(collectionItemValue(left, field) ?? "").toLowerCase() > String(collectionItemValue(right, field) ?? "").toLowerCase()
+            ? order
+            : -order,
+        );
+      } else {
+        const seen = new Set();
+        const field = fieldSplit.field;
+        output = list.filter((item) => {
+          const key = stringifyRuntimeValue(collectionItemValue(item, field));
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      }
+      runtimeVariables[target] = output;
+      if (state.session) state.session.runtimeVariables = runtimeVariables;
+      results.push({ command, output, status: "passed", target, type: "command" });
       continue;
     }
     if (command === "break") {

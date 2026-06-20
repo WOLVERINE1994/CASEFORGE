@@ -395,9 +395,41 @@ type LocatorLoopAction =
   | "hover"
   | "verifyVisible";
 
+type LocatorLoopBuilderActionKind =
+  | LocatorLoopAction
+  | "addToList"
+  | "clearList"
+  | "countListItems"
+  | "createList"
+  | "getListItem"
+  | "joinList"
+  | "log"
+  | "sortList"
+  | "uniqueList"
+  | "wait";
+
+type LocatorLoopBuilderPhase = "before" | "inside" | "after";
+
+type LocatorLoopBuilderAction = {
+  action: LocatorLoopBuilderActionKind;
+  attributeName: string;
+  fieldName: string;
+  id: string;
+  listVariable: string;
+  logMessage: string;
+  outputVariable: string;
+  propertyName: string;
+  separator: string;
+  sortOrder: "asc" | "desc";
+  valueExpression: string;
+  waitMs: string;
+};
+
 type LocatorLoopBuilderState = {
   action: LocatorLoopAction;
   attributeName: string;
+  afterActions: LocatorLoopBuilderAction[];
+  beforeActions: LocatorLoopBuilderAction[];
   countValue: string;
   countVariable: string;
   createCountVariable: boolean;
@@ -406,6 +438,7 @@ type LocatorLoopBuilderState = {
   locatorValue: string;
   locatorVariable: string;
   logEach: boolean;
+  loopActions: LocatorLoopBuilderAction[];
   outputVariable: string;
   propertyName: string;
   waitMs: string;
@@ -3201,6 +3234,31 @@ const locatorLoopActionOptions: Array<{ label: string; value: LocatorLoopAction 
   { label: "Verify visible", value: "verifyVisible" },
 ];
 
+const locatorLoopBuilderActionOptions: Array<{
+  group: "Collection" | "Debug" | "Web";
+  label: string;
+  value: LocatorLoopBuilderActionKind;
+}> = [
+  { group: "Web", label: "Get text", value: "getText" },
+  { group: "Web", label: "Get attribute", value: "getAttribute" },
+  { group: "Web", label: "Get property", value: "getProperty" },
+  { group: "Web", label: "Click", value: "click" },
+  { group: "Web", label: "Hover", value: "hover" },
+  { group: "Web", label: "Verify visible", value: "verifyVisible" },
+  { group: "Web", label: "Wait", value: "wait" },
+  { group: "Collection", label: "Create list", value: "createList" },
+  { group: "Collection", label: "Add value to list", value: "addToList" },
+  { group: "Collection", label: "Clear list", value: "clearList" },
+  { group: "Collection", label: "Join list", value: "joinList" },
+  { group: "Collection", label: "Unique list", value: "uniqueList" },
+  { group: "Collection", label: "Sort list", value: "sortList" },
+  { group: "Collection", label: "Count list items", value: "countListItems" },
+  { group: "Collection", label: "Get list item", value: "getListItem" },
+  { group: "Debug", label: "Log message", value: "log" },
+];
+
+const locatorLoopBuilderOptionGroups = ["Web", "Collection", "Debug"] as const;
+
 const locatorLoopAttributeSuggestions = [
   "class",
   "href",
@@ -3243,6 +3301,56 @@ function locatorLoopDefaultOutput(action: LocatorLoopAction) {
   return "itemText";
 }
 
+function makeLocatorLoopAction(
+  action: LocatorLoopBuilderActionKind = "getText",
+  overrides: Partial<LocatorLoopBuilderAction> = {},
+): LocatorLoopBuilderAction {
+  const defaultOutput =
+    action === "getAttribute"
+      ? "itemAttribute"
+      : action === "getProperty"
+        ? "itemProperty"
+        : action === "joinList"
+          ? "joinedList"
+          : action === "uniqueList"
+            ? "uniqueList"
+            : action === "sortList"
+              ? "sortedList"
+              : action === "countListItems"
+                ? "listCount"
+                : action === "getListItem"
+                  ? "listItem"
+                  : "itemText";
+  return {
+    action,
+    attributeName: "class",
+    fieldName: "",
+    id: `loop-action-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    listVariable: "items",
+    logMessage: action === "log" ? '"List: " + items' : "",
+    outputVariable: defaultOutput,
+    propertyName: "innerText",
+    separator: ", ",
+    sortOrder: "asc",
+    valueExpression: action === "addToList" ? "itemText" : action === "getListItem" ? "0" : "",
+    waitMs: action === "wait" ? "1000" : "",
+    ...overrides,
+  };
+}
+
+function locatorLoopBuilderActions(config: LocatorLoopBuilderState) {
+  return config.loopActions.length
+    ? config.loopActions
+    : [
+        makeLocatorLoopAction(config.action, {
+          attributeName: config.attributeName,
+          outputVariable: config.outputVariable,
+          propertyName: config.propertyName,
+          waitMs: config.waitMs,
+        }),
+      ];
+}
+
 function logicStringLiteral(value: string) {
   return JSON.stringify(String(value || ""));
 }
@@ -3251,18 +3359,72 @@ function logicLocatorExpression(locatorType: "css" | "xpath", locatorValue: stri
   return `${locatorType}(${logicStringLiteral(locatorValue)})`;
 }
 
+function logicExpressionValue(value: string, fallback = "\"\"") {
+  const text = textValue(value);
+  return text || fallback;
+}
+
+function buildLocatorLoopActionDsl(
+  action: LocatorLoopBuilderAction,
+  indexedLocator: string,
+  phase: LocatorLoopBuilderPhase,
+) {
+  const lines: string[] = [];
+  const outputVariable = cleanLogicVariableName(action.outputVariable, "itemText");
+  const listVariable = cleanLogicVariableName(action.listVariable, "items");
+  const waitMs = Math.max(0, Number(action.waitMs || 0));
+  const actionLabel =
+    locatorLoopBuilderActionOptions.find((option) => option.value === action.action)?.label ||
+    action.action;
+
+  if (action.action === "getText") {
+    lines.push(`getText ${indexedLocator} as ${outputVariable}`);
+  } else if (action.action === "getAttribute") {
+    const attributeName = textValue(action.attributeName) || "class";
+    lines.push(`getAttribute ${indexedLocator} "${attributeName.replace(/"/g, '\\"')}" as ${outputVariable}`);
+  } else if (action.action === "getProperty") {
+    const propertyName = textValue(action.propertyName) || "innerText";
+    lines.push(`getProperty ${indexedLocator} "${propertyName.replace(/"/g, '\\"')}" as ${outputVariable}`);
+  } else if (action.action === "click") {
+    lines.push(`click ${indexedLocator}`);
+  } else if (action.action === "hover") {
+    lines.push(`hover ${indexedLocator}`);
+  } else if (action.action === "verifyVisible") {
+    lines.push(`verifyVisible ${indexedLocator}`);
+  } else if (action.action === "wait") {
+    lines.push(`wait ${waitMs || 1000}`);
+  } else if (action.action === "log") {
+    lines.push(`log ${logicExpressionValue(action.logMessage, logicStringLiteral(`${phase} log`))}`);
+  } else if (action.action === "createList") {
+    lines.push(`set ${listVariable} = []`);
+  } else if (action.action === "clearList") {
+    lines.push(`clearList ${listVariable}`);
+  } else if (action.action === "addToList") {
+    lines.push(`addToList ${listVariable} ${logicExpressionValue(action.valueExpression, "itemText")}`);
+  } else if (action.action === "joinList") {
+    lines.push(`joinList ${listVariable} ${logicStringLiteral(action.separator || ", ")} as ${outputVariable}`);
+  } else if (action.action === "uniqueList") {
+    const fieldName = textValue(action.fieldName);
+    lines.push(`uniqueList ${listVariable}${fieldName ? ` field ${logicStringLiteral(fieldName)}` : ""} as ${outputVariable}`);
+  } else if (action.action === "sortList") {
+    const fieldName = textValue(action.fieldName);
+    lines.push(`sortList ${listVariable} ${action.sortOrder || "asc"}${fieldName ? ` field ${logicStringLiteral(fieldName)}` : ""} as ${outputVariable}`);
+  } else if (action.action === "countListItems") {
+    lines.push(`countListItems ${listVariable} as ${outputVariable}`);
+  } else if (action.action === "getListItem") {
+    lines.push(`getListItem ${listVariable} ${logicExpressionValue(action.valueExpression, "0")} as ${outputVariable}`);
+  }
+
+  if (waitMs > 0 && action.action !== "wait") lines.push(`wait ${waitMs}`);
+  if (!lines.length) lines.push(`log ${logicStringLiteral(`${actionLabel} configured`)}`);
+  return lines;
+}
+
 function buildLocatorLoopDsl(config: LocatorLoopBuilderState) {
   const countVariable = cleanLogicVariableName(config.countVariable, "count");
   const locatorVariable = cleanLogicVariableName(config.locatorVariable, "locator");
-  const outputVariable = cleanLogicVariableName(
-    config.outputVariable,
-    locatorLoopDefaultOutput(config.action),
-  );
   const countToken = logicVariableToken(countVariable);
   const locatorToken = logicVariableToken(locatorVariable);
-  const attributeName = textValue(config.attributeName) || "class";
-  const propertyName = textValue(config.propertyName) || "innerText";
-  const waitMs = Math.max(0, Number(config.waitMs || 0));
   const lines: string[] = [];
   if (config.createCountVariable) {
     const countValue = textValue(config.countValue) || "0";
@@ -3273,40 +3435,32 @@ function buildLocatorLoopDsl(config: LocatorLoopBuilderState) {
     lines.push(`set ${locatorVariable} = ${logicStringLiteral(locatorValue)}`);
   }
   if (lines.length) lines.push("");
-  lines.push(`for item in ${countToken} {`);
   const inlineLocatorValue = textValue(config.locatorValue);
   const locatorExpression = inlineLocatorValue
     ? logicLocatorExpression(config.locatorType, inlineLocatorValue)
     : locatorToken;
   const indexedLocator = `${locatorExpression} at current index`;
-  let valueVariable = "";
-
-  if (config.action === "getText") {
-    valueVariable = outputVariable;
-    lines.push(`  getText ${indexedLocator} as ${outputVariable}`);
-  } else if (config.action === "getAttribute") {
-    valueVariable = outputVariable;
-    lines.push(`  getAttribute ${indexedLocator} "${attributeName.replace(/"/g, '\\"')}" as ${outputVariable}`);
-  } else if (config.action === "getProperty") {
-    valueVariable = outputVariable;
-    lines.push(`  getProperty ${indexedLocator} "${propertyName.replace(/"/g, '\\"')}" as ${outputVariable}`);
-  } else if (config.action === "click") {
-    lines.push(`  click ${indexedLocator}`);
-  } else if (config.action === "hover") {
-    lines.push(`  hover ${indexedLocator}`);
-  } else if (config.action === "verifyVisible") {
-    lines.push(`  verifyVisible ${indexedLocator}`);
+  for (const action of config.beforeActions) {
+    lines.push(...buildLocatorLoopActionDsl(action, indexedLocator, "before"));
   }
-
-  if (config.logEach) {
-    lines.push(
-      valueVariable
-        ? `  log "Item " + item + ": " + ${valueVariable}`
-        : `  log "Item " + item + ": ${locatorLoopActionOptions.find((option) => option.value === config.action)?.label || config.action} passed"`,
-    );
+  if (config.beforeActions.length) lines.push("");
+  lines.push(`for item in ${countToken} {`);
+  for (const action of locatorLoopBuilderActions(config)) {
+    for (const line of buildLocatorLoopActionDsl(action, indexedLocator, "inside")) {
+      lines.push(`  ${line}`);
+    }
+    if (config.logEach && ["getText", "getAttribute", "getProperty"].includes(action.action)) {
+      const outputVariable = cleanLogicVariableName(action.outputVariable, "itemText");
+      lines.push(`  log "Item " + item + ": " + ${outputVariable}`);
+    }
   }
-  if (waitMs > 0) lines.push(`  wait ${waitMs}`);
   lines.push("}");
+  if (config.afterActions.length) {
+    lines.push("");
+    for (const action of config.afterActions) {
+      lines.push(...buildLocatorLoopActionDsl(action, indexedLocator, "after"));
+    }
+  }
   return lines.join("\n");
 }
 
@@ -3426,7 +3580,7 @@ function validateLogicDsl(value: string): LogicDslValidation {
       if (!clean.includes("{")) issues.push(logicIssue(lineNumber, column, "repeat loop needs an opening brace."));
       return;
     }
-    if (/^(log|wait|break|continue)\b/.test(statement)) {
+    if (/^(addToList|clearList|countListItems|getListItem|joinList|log|sortList|uniqueList|wait|break|continue)\b/.test(statement)) {
       commandCount += 1;
       return;
     }
@@ -4079,7 +4233,17 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [logicEditorSuggest, setLogicEditorSuggest] = useState<LogicEditorSuggestState>(null);
   const [locatorLoopBuilder, setLocatorLoopBuilder] = useState<LocatorLoopBuilderState>({
     action: "getText",
+    afterActions: [
+      makeLocatorLoopAction("log", {
+        logMessage: '"Collected items: " + items',
+      }),
+    ],
     attributeName: "class",
+    beforeActions: [
+      makeLocatorLoopAction("createList", {
+        listVariable: "items",
+      }),
+    ],
     countValue: "5",
     countVariable: "count",
     createCountVariable: false,
@@ -4088,6 +4252,15 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     locatorValue: "",
     locatorVariable: "locator",
     logEach: true,
+    loopActions: [
+      makeLocatorLoopAction("getText", {
+        outputVariable: "itemText",
+      }),
+      makeLocatorLoopAction("addToList", {
+        listVariable: "items",
+        valueExpression: "itemText",
+      }),
+    ],
     outputVariable: "itemText",
     propertyName: "innerText",
     waitMs: "",
@@ -4536,6 +4709,249 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const locatorLoopPreview = useMemo(
     () => buildLocatorLoopDsl(locatorLoopBuilder),
     [locatorLoopBuilder],
+  );
+  const updateLocatorLoopBuilderAction = (
+    phase: LocatorLoopBuilderPhase,
+    actionId: string,
+    updates: Partial<LocatorLoopBuilderAction>,
+  ) => {
+    const key =
+      phase === "before"
+        ? "beforeActions"
+        : phase === "after"
+          ? "afterActions"
+          : "loopActions";
+    setLocatorLoopBuilder((current) => ({
+      ...current,
+      [key]: current[key].map((action) =>
+        action.id === actionId ? { ...action, ...updates } : action,
+      ),
+    }));
+  };
+  const addLocatorLoopBuilderAction = (
+    phase: LocatorLoopBuilderPhase,
+    action: LocatorLoopBuilderActionKind = phase === "inside" ? "getText" : phase === "before" ? "createList" : "log",
+  ) => {
+    const key =
+      phase === "before"
+        ? "beforeActions"
+        : phase === "after"
+          ? "afterActions"
+          : "loopActions";
+    setLocatorLoopBuilder((current) => ({
+      ...current,
+      [key]: [...current[key], makeLocatorLoopAction(action)],
+    }));
+  };
+  const removeLocatorLoopBuilderAction = (phase: LocatorLoopBuilderPhase, actionId: string) => {
+    const key =
+      phase === "before"
+        ? "beforeActions"
+        : phase === "after"
+          ? "afterActions"
+          : "loopActions";
+    setLocatorLoopBuilder((current) => ({
+      ...current,
+      [key]: current[key].filter((action) => action.id !== actionId),
+    }));
+  };
+  const renderLocatorLoopBuilderActionFields = (
+    phase: LocatorLoopBuilderPhase,
+    action: LocatorLoopBuilderAction,
+  ) => {
+    const needsOutput = ["getText", "getAttribute", "getProperty", "joinList", "uniqueList", "sortList", "countListItems", "getListItem"].includes(action.action);
+    const needsList = ["addToList", "clearList", "countListItems", "createList", "getListItem", "joinList", "sortList", "uniqueList"].includes(action.action);
+    return (
+      <>
+        {action.action === "getAttribute" ? (
+          <label className="text-[11px] font-semibold text-sky-900 dark:text-sky-100">
+            Attribute
+            <input
+              list="locator-loop-attribute-options"
+              value={action.attributeName}
+              onChange={(event) => updateLocatorLoopBuilderAction(phase, action.id, { attributeName: event.target.value })}
+              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            />
+          </label>
+        ) : null}
+        {action.action === "getProperty" ? (
+          <label className="text-[11px] font-semibold text-sky-900 dark:text-sky-100">
+            Property
+            <input
+              list="locator-loop-property-options"
+              value={action.propertyName}
+              onChange={(event) => updateLocatorLoopBuilderAction(phase, action.id, { propertyName: event.target.value })}
+              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            />
+          </label>
+        ) : null}
+        {needsList ? (
+          <label className="text-[11px] font-semibold text-sky-900 dark:text-sky-100">
+            List variable
+            <input
+              value={action.listVariable}
+              onChange={(event) => updateLocatorLoopBuilderAction(phase, action.id, { listVariable: event.target.value })}
+              placeholder="items"
+              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            />
+          </label>
+        ) : null}
+        {["addToList", "getListItem"].includes(action.action) ? (
+          <label className="text-[11px] font-semibold text-sky-900 dark:text-sky-100">
+            {action.action === "getListItem" ? "Index" : "Value/expression"}
+            <input
+              value={action.valueExpression}
+              onChange={(event) => updateLocatorLoopBuilderAction(phase, action.id, { valueExpression: event.target.value })}
+              placeholder={action.action === "getListItem" ? "0" : "itemText"}
+              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            />
+          </label>
+        ) : null}
+        {["sortList", "uniqueList"].includes(action.action) ? (
+          <label className="text-[11px] font-semibold text-sky-900 dark:text-sky-100">
+            Field
+            <input
+              value={action.fieldName}
+              onChange={(event) => updateLocatorLoopBuilderAction(phase, action.id, { fieldName: event.target.value })}
+              placeholder="Optional"
+              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            />
+          </label>
+        ) : null}
+        {action.action === "sortList" ? (
+          <label className="text-[11px] font-semibold text-sky-900 dark:text-sky-100">
+            Sort
+            <select
+              value={action.sortOrder}
+              onChange={(event) => updateLocatorLoopBuilderAction(phase, action.id, { sortOrder: event.target.value as "asc" | "desc" })}
+              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            >
+              <option value="asc">Ascending</option>
+              <option value="desc">Descending</option>
+            </select>
+          </label>
+        ) : null}
+        {action.action === "joinList" ? (
+          <label className="text-[11px] font-semibold text-sky-900 dark:text-sky-100">
+            Separator
+            <input
+              value={action.separator}
+              onChange={(event) => updateLocatorLoopBuilderAction(phase, action.id, { separator: event.target.value })}
+              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            />
+          </label>
+        ) : null}
+        {needsOutput ? (
+          <label className="text-[11px] font-semibold text-sky-900 dark:text-sky-100">
+            Output variable
+            <input
+              value={action.outputVariable}
+              onChange={(event) => updateLocatorLoopBuilderAction(phase, action.id, { outputVariable: event.target.value })}
+              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            />
+          </label>
+        ) : null}
+        {action.action === "wait" || ["click", "getAttribute", "getProperty", "getText", "hover", "verifyVisible"].includes(action.action) ? (
+          <label className="text-[11px] font-semibold text-sky-900 dark:text-sky-100">
+            Wait ms
+            <input
+              type="number"
+              min="0"
+              step="100"
+              value={action.waitMs}
+              onChange={(event) => updateLocatorLoopBuilderAction(phase, action.id, { waitMs: event.target.value })}
+              placeholder={action.action === "wait" ? "1000" : "0"}
+              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            />
+          </label>
+        ) : null}
+        {action.action === "log" ? (
+          <label className="text-[11px] font-semibold text-sky-900 dark:text-sky-100 sm:col-span-2">
+            Message/expression
+            <input
+              value={action.logMessage}
+              onChange={(event) => updateLocatorLoopBuilderAction(phase, action.id, { logMessage: event.target.value })}
+              placeholder={'"Items: " + items'}
+              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            />
+          </label>
+        ) : null}
+      </>
+    );
+  };
+  const renderLocatorLoopBuilderSection = (
+    phase: LocatorLoopBuilderPhase,
+    title: string,
+    description: string,
+    actions: LocatorLoopBuilderAction[],
+  ) => (
+    <div className="grid gap-2 rounded-xl border border-sky-200 bg-white/70 p-2 dark:border-sky-500/30 dark:bg-zinc-950/70">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h6 className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-900 dark:text-sky-100">
+            {title}
+          </h6>
+          <p className="text-[11px] font-medium text-sky-700 dark:text-sky-200">{description}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => addLocatorLoopBuilderAction(phase)}
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-sky-300 bg-sky-700 text-base font-bold leading-none text-white transition hover:bg-sky-800"
+          title={`Add ${title.toLowerCase()} action`}
+        >
+          +
+        </button>
+      </div>
+      {actions.length ? (
+        <div className="grid gap-2">
+          {actions.map((action, index) => (
+            <div key={action.id} className="grid gap-2 rounded-lg border border-sky-100 bg-sky-50/70 p-2 dark:border-sky-500/20 dark:bg-sky-500/10">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-[11px] font-bold text-sky-900 dark:bg-zinc-950 dark:text-sky-100">
+                  {index + 1}
+                </span>
+                <select
+                  value={action.action}
+                  onChange={(event) =>
+                    updateLocatorLoopBuilderAction(phase, action.id, {
+                      ...makeLocatorLoopAction(event.target.value as LocatorLoopBuilderActionKind),
+                      id: action.id,
+                    })
+                  }
+                  className="min-w-0 flex-1 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                >
+                  {locatorLoopBuilderOptionGroups.map((group) => (
+                    <optgroup key={group} label={group}>
+                      {locatorLoopBuilderActionOptions
+                        .filter((option) => option.group === group)
+                        .map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => removeLocatorLoopBuilderAction(phase, action.id)}
+                  className="rounded-lg border border-rose-200 bg-white px-2.5 py-2 text-xs font-bold text-rose-700 transition hover:border-rose-400 dark:border-rose-500/30 dark:bg-zinc-950 dark:text-rose-200"
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {renderLocatorLoopBuilderActionFields(phase, action)}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-lg border border-dashed border-sky-200 px-3 py-2 text-[11px] font-semibold text-sky-700 dark:border-sky-500/30 dark:text-sky-200">
+          No actions in this section.
+        </p>
+      )}
+    </div>
   );
   const logicEditorSuggestions = useMemo<LogicEditorSuggestion[]>(() => {
     const builtIns: LogicEditorSuggestion[] = [
@@ -11166,7 +11582,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.33
+            Download Companion 0.1.34
           </a>
           <button
             type="button"
@@ -13092,104 +13508,26 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                               Edit locator variable: {locatorLoopBuilder.locatorVariable || "locator"}
                             </button>
                           ) : null}
-                          <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
-                            Loop action
-                            <select
-                              value={locatorLoopBuilder.action}
-                              onChange={(event) => {
-                                const action = event.target.value as LocatorLoopAction;
-                                setLocatorLoopBuilder((current) => ({
-                                  ...current,
-                                  action,
-                                  outputVariable:
-                                    current.outputVariable === locatorLoopDefaultOutput(current.action)
-                                      ? locatorLoopDefaultOutput(action)
-                                      : current.outputVariable,
-                                }));
-                              }}
-                              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                            >
-                              {locatorLoopActionOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          {locatorLoopBuilder.action === "getAttribute" ? (
-                            <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
-                              Attribute name
-                              <input
-                                list="locator-loop-attribute-options"
-                                value={locatorLoopBuilder.attributeName}
-                                onChange={(event) =>
-                                  setLocatorLoopBuilder((current) => ({
-                                    ...current,
-                                    attributeName: event.target.value,
-                                  }))
-                                }
-                                className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                              />
-                              <datalist id="locator-loop-attribute-options">
-                                {locatorLoopAttributeSuggestions.map((name) => (
-                                  <option key={name} value={name} />
-                                ))}
-                              </datalist>
-                            </label>
-                          ) : null}
-                          {locatorLoopBuilder.action === "getProperty" ? (
-                            <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
-                              Property name
-                              <input
-                                list="locator-loop-property-options"
-                                value={locatorLoopBuilder.propertyName}
-                                onChange={(event) =>
-                                  setLocatorLoopBuilder((current) => ({
-                                    ...current,
-                                    propertyName: event.target.value,
-                                  }))
-                                }
-                                className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                              />
-                              <datalist id="locator-loop-property-options">
-                                {locatorLoopPropertySuggestions.map((name) => (
-                                  <option key={name} value={name} />
-                                ))}
-                              </datalist>
-                            </label>
-                          ) : null}
-                          {["getText", "getAttribute", "getProperty"].includes(locatorLoopBuilder.action) ? (
-                            <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
-                              Output variable
-                              <input
-                                value={locatorLoopBuilder.outputVariable}
-                                onChange={(event) =>
-                                  setLocatorLoopBuilder((current) => ({
-                                    ...current,
-                                    outputVariable: event.target.value,
-                                  }))
-                                }
-                                className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                              />
-                            </label>
-                          ) : null}
-                          <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
-                            Wait after each item
-                            <input
-                              type="number"
-                              min="0"
-                              step="100"
-                              value={locatorLoopBuilder.waitMs}
-                              placeholder="0"
-                              onChange={(event) =>
-                                setLocatorLoopBuilder((current) => ({
-                                  ...current,
-                                  waitMs: event.target.value,
-                                }))
-                              }
-                              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                            />
-                          </label>
+                        </div>
+                        <div className="grid gap-3">
+                          {renderLocatorLoopBuilderSection(
+                            "before",
+                            "Before Loop",
+                            "Prepare lists or variables before the iteration starts.",
+                            locatorLoopBuilder.beforeActions,
+                          )}
+                          {renderLocatorLoopBuilderSection(
+                            "inside",
+                            "Inside Loop",
+                            "Actions that run for each matched element or count item.",
+                            locatorLoopBuilder.loopActions,
+                          )}
+                          {renderLocatorLoopBuilderSection(
+                            "after",
+                            "After Loop",
+                            "Print, join, sort, or validate collected results after iteration.",
+                            locatorLoopBuilder.afterActions,
+                          )}
                           <label className="flex items-center gap-2 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-sky-900 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-sky-100">
                             <input
                               type="checkbox"
@@ -13202,8 +13540,18 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                               }
                               className="h-4 w-4 rounded border-sky-300 text-sky-700 focus:ring-sky-500"
                             />
-                            Log each iteration
+                            Log web getter outputs inside the loop
                           </label>
+                          <datalist id="locator-loop-attribute-options">
+                            {locatorLoopAttributeSuggestions.map((name) => (
+                              <option key={name} value={name} />
+                            ))}
+                          </datalist>
+                          <datalist id="locator-loop-property-options">
+                            {locatorLoopPropertySuggestions.map((name) => (
+                              <option key={name} value={name} />
+                            ))}
+                          </datalist>
                         </div>
                         <pre className="max-h-36 overflow-auto rounded-lg bg-zinc-950 p-3 font-mono text-[11px] leading-5 text-sky-100">
                           {locatorLoopPreview}
