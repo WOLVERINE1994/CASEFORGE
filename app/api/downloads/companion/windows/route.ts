@@ -1,6 +1,6 @@
 const owner = "WOLVERINE1994";
 const repo = "CASEFORGE";
-const version = "0.1.30";
+const version = "0.1.31";
 const tag = `companion-v${version}`;
 const assetName = `CaseForge-Companion-Setup-${version}.exe`;
 

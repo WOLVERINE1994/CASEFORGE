@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.30";
+const AGENT_VERSION = "0.1.31";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -3071,6 +3071,16 @@ function parseDslLocator(raw = "") {
   return { type: "css", value: args[0] || "" };
 }
 
+async function parseRuntimeDslLocator(page, raw = "", runtimeVariables = {}) {
+  const source = String(raw || "").trim();
+  if (!source) return { type: "css", value: "" };
+  if (/^(css|xpath|text|role|testid|label)\(/.test(source)) return parseDslLocator(source);
+  const resolved = await evaluateDslExpression(page, dslExpressionValue(source), runtimeVariables).catch(() => source);
+  const value = stringifyRuntimeValue(resolved).trim();
+  const type = looksLikeXPathSelector(value) ? "xpath" : "css";
+  return { type, value };
+}
+
 function splitDslTrailingElementIndex(raw = "") {
   const source = String(raw || "").trim();
   const match = source.match(/\s+at\s+(.+)$/i);
@@ -3090,11 +3100,30 @@ async function evaluateDslElementIndex(page, expression, runtimeVariables) {
   return await evaluateDslExpression(page, dslExpressionValue(source), runtimeVariables);
 }
 
+function splitDslOutputAssignment(raw = "") {
+  const source = String(raw || "").trim();
+  const match = source.match(/^(.*)\s+as\s+([a-zA-Z_][\w.]*)$/);
+  return {
+    source: match ? match[1].trim() : source,
+    target: match?.[2] || "",
+  };
+}
+
+function splitDslTrailingArgument(raw = "") {
+  const source = String(raw || "").trim();
+  if (!source) return { argument: "", source: "" };
+  const quoted = source.match(/^(.*)\s+(["'])(.*?)\2$/);
+  if (quoted) return { argument: quoted[3], source: quoted[1].trim() };
+  const plain = source.match(/^(.*)\s+([a-zA-Z_][\w:.-]*)$/);
+  if (plain) return { argument: plain[2], source: plain[1].trim() };
+  return { argument: "", source };
+}
+
 async function dslStepForLocatorCommand(page, command, rest, runtimeVariables) {
   const indexSplit = splitDslTrailingElementIndex(rest);
   const locatorMatch = indexSplit.source.match(/^(css|xpath|text|role|testid|label)\((?:"[^"]*"|'[^']*'|[^)])*\)(?:\s+(.+))?$/);
   const locatorSource = locatorMatch ? locatorMatch[0].slice(0, locatorMatch[0].length - String(locatorMatch[2] || "").length).trim() : indexSplit.source;
-  const locator = parseDslLocator(locatorSource);
+  const locator = await parseRuntimeDslLocator(page, locatorSource, runtimeVariables);
   const value = locatorMatch?.[2] ? await evaluateDslExpression(page, dslExpressionValue(locatorMatch[2]), runtimeVariables) : "";
   const elementIndex = indexSplit.elementIndexExpression
     ? await evaluateDslElementIndex(page, indexSplit.elementIndexExpression, runtimeVariables)
@@ -3355,19 +3384,36 @@ async function executeDslNodes(page, nodes, runtimeVariables, context = {}) {
     if (command === "continue") {
       throw new LoopControlSignal("continue");
     }
-    if (command === "getText") {
-      const asMatch = rest.match(/^(.*)\s+as\s+([a-zA-Z_][\w.]*)$/);
-      const locatorRest = asMatch ? asMatch[1] : rest;
-      const step = await dslStepForLocatorCommand(page, "getText", locatorRest, runtimeVariables);
+    if (["getText", "getAttribute", "getProperty"].includes(command)) {
+      const assignment = splitDslOutputAssignment(rest);
+      const argumentSplit = command === "getText"
+        ? { argument: "", source: assignment.source }
+        : splitDslTrailingArgument(assignment.source);
+      const locatorRest = argumentSplit.source;
+      const stepAction = command === "getAttribute" ? "getAttribute" : command === "getProperty" ? "getProperty" : "getText";
+      const step = await dslStepForLocatorCommand(page, stepAction, locatorRest, runtimeVariables);
+      if (command === "getAttribute") {
+        step.options = { ...(step.options || {}), attributeName: argumentSplit.argument };
+      }
+      if (command === "getProperty") {
+        step.options = { ...(step.options || {}), propertyName: argumentSplit.argument };
+      }
       const output = await executeStepWithRuntimeVariables(page, step, runtimeVariables, context);
-      if (asMatch?.[2]) {
-        runtimeVariables[asMatch[2]] = output;
+      if (assignment.target) {
+        runtimeVariables[assignment.target] = output;
         if (state.session) state.session.runtimeVariables = runtimeVariables;
       }
-      results.push({ command, output, status: "passed", target: asMatch?.[2] || "", type: "command" });
+      results.push({ command, output, propertyName: argumentSplit.argument, status: "passed", target: assignment.target, type: "command" });
       continue;
     }
-    if (["click", "type", "fill"].includes(command)) {
+    if (command === "verifyVisible") {
+      const step = await dslStepForLocatorCommand(page, "assert", rest, runtimeVariables);
+      step.assertionType = "visible";
+      const output = await executeStepWithRuntimeVariables(page, step, runtimeVariables, context);
+      results.push({ command, output: output ?? true, status: "passed", type: "command" });
+      continue;
+    }
+    if (["click", "hover", "type", "fill"].includes(command)) {
       const step = await dslStepForLocatorCommand(page, command, rest, runtimeVariables);
       const output = await executeStepWithRuntimeVariables(page, step, runtimeVariables, context);
       results.push({ command, output, status: "passed", type: "command" });
@@ -4644,6 +4690,11 @@ async function executePlaybackStep(page, step) {
   else if (action === "uncheck") await locator.uncheck({ force: Boolean(options.force), timeout });
   else if (action === "getInputValue") return await locator.inputValue({ timeout });
   else if (action === "getText") return await locator.innerText({ timeout });
+  else if (action === "getAttribute") {
+    const attributeName = String(options.attributeName || step.attributeName || step.params?.attributeName || inputValue || "");
+    if (!attributeName) throw new Error("Get attribute requires an attribute name.");
+    return await locator.evaluate((element, name) => element.getAttribute(name) ?? "", attributeName);
+  }
   else if (action === "getWebElementsText") {
     const items = await extractWebElements(page, step);
     return items.map((item) => item.text);

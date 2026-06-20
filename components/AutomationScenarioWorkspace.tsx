@@ -387,6 +387,25 @@ type VariablePickerItem = {
   source: "commandOutput" | "scenarioParameter";
 };
 
+type LocatorLoopAction =
+  | "click"
+  | "getAttribute"
+  | "getProperty"
+  | "getText"
+  | "hover"
+  | "verifyVisible";
+
+type LocatorLoopBuilderState = {
+  action: LocatorLoopAction;
+  attributeName: string;
+  countVariable: string;
+  locatorVariable: string;
+  logEach: boolean;
+  outputVariable: string;
+  propertyName: string;
+  waitMs: string;
+};
+
 type CustomSnippetCommand = {
   description?: string;
   failIfEmpty?: boolean;
@@ -3165,6 +3184,102 @@ function logicIdeTemplates(action: string) {
     : templates;
 }
 
+const locatorLoopActionOptions: Array<{ label: string; value: LocatorLoopAction }> = [
+  { label: "Get text", value: "getText" },
+  { label: "Get attribute", value: "getAttribute" },
+  { label: "Get property", value: "getProperty" },
+  { label: "Click each", value: "click" },
+  { label: "Hover each", value: "hover" },
+  { label: "Verify visible", value: "verifyVisible" },
+];
+
+const locatorLoopAttributeSuggestions = [
+  "class",
+  "href",
+  "src",
+  "alt",
+  "title",
+  "aria-label",
+  "aria-expanded",
+  "aria-checked",
+  "role",
+  "id",
+  "name",
+  "value",
+  "data-testid",
+];
+
+const locatorLoopPropertySuggestions = [
+  "checked",
+  "disabled",
+  "value",
+  "innerText",
+  "textContent",
+  "href",
+  "src",
+];
+
+function cleanLogicVariableName(value: string, fallback: string) {
+  const clean = String(value || "")
+    .trim()
+    .replace(/^\{\{\$?/, "")
+    .replace(/\}\}$/, "")
+    .replace(/^\$/, "")
+    .replace(/[^a-zA-Z0-9_.-]/g, "");
+  return clean || fallback;
+}
+
+function locatorLoopDefaultOutput(action: LocatorLoopAction) {
+  if (action === "getAttribute") return "itemAttribute";
+  if (action === "getProperty") return "itemProperty";
+  return "itemText";
+}
+
+function buildLocatorLoopDsl(config: LocatorLoopBuilderState) {
+  const countVariable = cleanLogicVariableName(config.countVariable, "count");
+  const locatorVariable = cleanLogicVariableName(config.locatorVariable, "locator");
+  const outputVariable = cleanLogicVariableName(
+    config.outputVariable,
+    locatorLoopDefaultOutput(config.action),
+  );
+  const countToken = logicVariableToken(countVariable);
+  const locatorToken = logicVariableToken(locatorVariable);
+  const attributeName = textValue(config.attributeName) || "class";
+  const propertyName = textValue(config.propertyName) || "innerText";
+  const waitMs = Math.max(0, Number(config.waitMs || 0));
+  const lines = [`for item in ${countToken} {`];
+  const indexedLocator = `${locatorToken} at current index`;
+  let valueVariable = "";
+
+  if (config.action === "getText") {
+    valueVariable = outputVariable;
+    lines.push(`  getText ${indexedLocator} as ${outputVariable}`);
+  } else if (config.action === "getAttribute") {
+    valueVariable = outputVariable;
+    lines.push(`  getAttribute ${indexedLocator} "${attributeName.replace(/"/g, '\\"')}" as ${outputVariable}`);
+  } else if (config.action === "getProperty") {
+    valueVariable = outputVariable;
+    lines.push(`  getProperty ${indexedLocator} "${propertyName.replace(/"/g, '\\"')}" as ${outputVariable}`);
+  } else if (config.action === "click") {
+    lines.push(`  click ${indexedLocator}`);
+  } else if (config.action === "hover") {
+    lines.push(`  hover ${indexedLocator}`);
+  } else if (config.action === "verifyVisible") {
+    lines.push(`  verifyVisible ${indexedLocator}`);
+  }
+
+  if (config.logEach) {
+    lines.push(
+      valueVariable
+        ? `  log "Item " + item + ": " + ${valueVariable}`
+        : `  log "Item " + item + ": ${locatorLoopActionOptions.find((option) => option.value === config.action)?.label || config.action} passed"`,
+    );
+  }
+  if (waitMs > 0) lines.push(`  wait ${waitMs}`);
+  lines.push("}");
+  return lines.join("\n");
+}
+
 function logicDslValue(step?: AutomationStep | null) {
   return textValue(step?.options?.dsl) || defaultLogicDsl(displayAction(step?.action || "conditionalBlock"));
 }
@@ -3189,7 +3304,7 @@ function logicSuggestionTrigger(value: string, cursor: number): LogicEditorSugge
       start: helperMatch.index,
     };
   }
-  const commandLocatorMatch = before.match(/\b(click|type|fill|getText)\s+$/);
+  const commandLocatorMatch = before.match(/\b(click|hover|type|fill|getText|getAttribute|getProperty|verifyVisible)\s+$/);
   if (commandLocatorMatch && commandLocatorMatch.index !== undefined) {
     return {
       cursor,
@@ -3285,7 +3400,7 @@ function validateLogicDsl(value: string): LogicDslValidation {
       commandCount += 1;
       return;
     }
-    if (/^(click|type|fill|getText)\s+(css|xpath|text|role|testid|label)\(/.test(statement)) {
+    if (/^(click|hover|type|fill|getText|getAttribute|getProperty|verifyVisible)\s+.+/.test(statement)) {
       commandCount += 1;
       return;
     }
@@ -3932,6 +4047,16 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [canvasMessage, setCanvasMessage] = useState("");
   const [commandInsertMenu, setCommandInsertMenu] = useState<CommandInsertMenu>(null);
   const [logicEditorSuggest, setLogicEditorSuggest] = useState<LogicEditorSuggestState>(null);
+  const [locatorLoopBuilder, setLocatorLoopBuilder] = useState<LocatorLoopBuilderState>({
+    action: "getText",
+    attributeName: "class",
+    countVariable: "count",
+    locatorVariable: "locator",
+    logEach: true,
+    outputVariable: "itemText",
+    propertyName: "innerText",
+    waitMs: "",
+  });
   const [testDataOpen, setTestDataOpen] = useState(false);
   const [testDataSaving, setTestDataSaving] = useState(false);
   const [testDataError, setTestDataError] = useState("");
@@ -4372,6 +4497,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       left.name.localeCompare(right.name),
     );
   }, [actionStepCommands, scenarioParameters, visibleSteps]);
+  const locatorLoopPreview = useMemo(
+    () => buildLocatorLoopDsl(locatorLoopBuilder),
+    [locatorLoopBuilder],
+  );
   const logicEditorSuggestions = useMemo<LogicEditorSuggestion[]>(() => {
     const builtIns: LogicEditorSuggestion[] = [
       { detail: "Run environment name", insertText: logicVariableToken("env"), label: "$env", source: "builtin" },
@@ -4436,7 +4565,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     const before = textarea?.value.slice(0, textarea.selectionStart ?? 0) ?? "";
     const locatorMode =
       /\b(css|xpath|text|role|testid|label)\(\"[^\"]*$/.test(before) ||
-      /\b(click|type|fill|getText)\s+$/.test(before);
+      /\b(click|hover|type|fill|getText|getAttribute|getProperty|verifyVisible)\s+$/.test(before);
     return logicEditorSuggestions
       .filter((item) => {
         if (locatorMode) return item.source === "locator" || item.source === "snippet";
@@ -11001,7 +11130,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.30
+            Download Companion 0.1.31
           </a>
           <button
             type="button"
@@ -12777,7 +12906,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">
-                        {["if", "else if", "else", "for", "repeat", "log", "click", "type", "getText", "wait"].map((token) => (
+                        {["if", "else if", "else", "for", "repeat", "log", "click", "hover", "getText", "getAttribute", "getProperty", "verifyVisible", "wait"].map((token) => (
                           <span
                             key={token}
                             className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 dark:border-zinc-800 dark:bg-zinc-900"
@@ -12799,6 +12928,179 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                         </button>
                       ))}
                     </div>
+                    {selectedStepAction === "loopBlock" ? (
+                      <div className="grid gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 dark:border-sky-500/30 dark:bg-sky-500/10">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h5 className="text-xs font-bold uppercase tracking-[0.16em] text-sky-900 dark:text-sky-100">
+                              Locator Loop Builder
+                            </h5>
+                            <p className="mt-1 text-[11px] font-medium text-sky-700 dark:text-sky-200">
+                              Build a loop from a locator variable without writing the logic by hand.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => updateLogicDsl(selectedStep.id || "", locatorLoopPreview)}
+                            className="rounded-lg border border-sky-700 bg-sky-700 px-3 py-2 text-xs font-bold text-white transition hover:bg-sky-800"
+                          >
+                            Build Loop
+                          </button>
+                        </div>
+                        <datalist id="logic-variable-options">
+                          {variablePickerItems.map((item) => (
+                            <option key={item.name} value={item.name}>
+                              {item.detail}
+                            </option>
+                          ))}
+                        </datalist>
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                            Count variable
+                            <input
+                              list="logic-variable-options"
+                              value={locatorLoopBuilder.countVariable}
+                              onChange={(event) =>
+                                setLocatorLoopBuilder((current) => ({
+                                  ...current,
+                                  countVariable: event.target.value,
+                                }))
+                              }
+                              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                            />
+                          </label>
+                          <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                            Locator variable
+                            <input
+                              list="logic-variable-options"
+                              value={locatorLoopBuilder.locatorVariable}
+                              onChange={(event) =>
+                                setLocatorLoopBuilder((current) => ({
+                                  ...current,
+                                  locatorVariable: event.target.value,
+                                }))
+                              }
+                              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                            />
+                          </label>
+                          <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                            Loop action
+                            <select
+                              value={locatorLoopBuilder.action}
+                              onChange={(event) => {
+                                const action = event.target.value as LocatorLoopAction;
+                                setLocatorLoopBuilder((current) => ({
+                                  ...current,
+                                  action,
+                                  outputVariable:
+                                    current.outputVariable === locatorLoopDefaultOutput(current.action)
+                                      ? locatorLoopDefaultOutput(action)
+                                      : current.outputVariable,
+                                }));
+                              }}
+                              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                            >
+                              {locatorLoopActionOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {locatorLoopBuilder.action === "getAttribute" ? (
+                            <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                              Attribute name
+                              <input
+                                list="locator-loop-attribute-options"
+                                value={locatorLoopBuilder.attributeName}
+                                onChange={(event) =>
+                                  setLocatorLoopBuilder((current) => ({
+                                    ...current,
+                                    attributeName: event.target.value,
+                                  }))
+                                }
+                                className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                              />
+                              <datalist id="locator-loop-attribute-options">
+                                {locatorLoopAttributeSuggestions.map((name) => (
+                                  <option key={name} value={name} />
+                                ))}
+                              </datalist>
+                            </label>
+                          ) : null}
+                          {locatorLoopBuilder.action === "getProperty" ? (
+                            <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                              Property name
+                              <input
+                                list="locator-loop-property-options"
+                                value={locatorLoopBuilder.propertyName}
+                                onChange={(event) =>
+                                  setLocatorLoopBuilder((current) => ({
+                                    ...current,
+                                    propertyName: event.target.value,
+                                  }))
+                                }
+                                className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                              />
+                              <datalist id="locator-loop-property-options">
+                                {locatorLoopPropertySuggestions.map((name) => (
+                                  <option key={name} value={name} />
+                                ))}
+                              </datalist>
+                            </label>
+                          ) : null}
+                          {["getText", "getAttribute", "getProperty"].includes(locatorLoopBuilder.action) ? (
+                            <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                              Output variable
+                              <input
+                                value={locatorLoopBuilder.outputVariable}
+                                onChange={(event) =>
+                                  setLocatorLoopBuilder((current) => ({
+                                    ...current,
+                                    outputVariable: event.target.value,
+                                  }))
+                                }
+                                className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                              />
+                            </label>
+                          ) : null}
+                          <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+                            Wait after each item
+                            <input
+                              type="number"
+                              min="0"
+                              step="100"
+                              value={locatorLoopBuilder.waitMs}
+                              placeholder="0"
+                              onChange={(event) =>
+                                setLocatorLoopBuilder((current) => ({
+                                  ...current,
+                                  waitMs: event.target.value,
+                                }))
+                              }
+                              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                            />
+                          </label>
+                          <label className="flex items-center gap-2 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-sky-900 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-sky-100">
+                            <input
+                              type="checkbox"
+                              checked={locatorLoopBuilder.logEach}
+                              onChange={(event) =>
+                                setLocatorLoopBuilder((current) => ({
+                                  ...current,
+                                  logEach: event.target.checked,
+                                }))
+                              }
+                              className="h-4 w-4 rounded border-sky-300 text-sky-700 focus:ring-sky-500"
+                            />
+                            Log each iteration
+                          </label>
+                        </div>
+                        <pre className="max-h-36 overflow-auto rounded-lg bg-zinc-950 p-3 font-mono text-[11px] leading-5 text-sky-100">
+                          {locatorLoopPreview}
+                        </pre>
+                      </div>
+                    ) : null}
                     <div className="relative">
                       <textarea
                         ref={logicEditorTextareaRef}
