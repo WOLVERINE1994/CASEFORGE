@@ -1697,20 +1697,25 @@ async function activatePageForStep(session, step, reason = "step") {
 }
 
 function locatorForValue(page, locatorType, value) {
-  const normalizedType = String(locatorType || "css").toLowerCase();
+  const text = String(value || "").trim();
+  const looksLikeXPath = /^(xpath=|\/|\.\/|\.\.\/|\()/i.test(text);
+  const normalizedType =
+    String(locatorType || "css").toLowerCase() === "css" && looksLikeXPath
+      ? "xpath"
+      : String(locatorType || "css").toLowerCase();
   if (normalizedType === "role") {
-    const separator = value.indexOf(":");
-    const role = separator >= 0 ? value.slice(0, separator) : value;
-    const name = separator >= 0 ? value.slice(separator + 1) : "";
+    const separator = text.indexOf(":");
+    const role = separator >= 0 ? text.slice(0, separator) : text;
+    const name = separator >= 0 ? text.slice(separator + 1) : "";
     return page.getByRole(role, name ? { name } : undefined);
   }
   if (normalizedType === "label" || normalizedType === "aria-label") {
-    return page.getByLabel(value);
+    return page.getByLabel(text);
   }
-  if (normalizedType === "placeholder") return page.getByPlaceholder(value);
-  if (normalizedType === "text") return page.getByText(value);
-  if (normalizedType === "alt") return page.getByAltText(value);
-  if (normalizedType === "title") return page.getByTitle(value);
+  if (normalizedType === "placeholder") return page.getByPlaceholder(text);
+  if (normalizedType === "text") return page.getByText(text);
+  if (normalizedType === "alt") return page.getByAltText(text);
+  if (normalizedType === "title") return page.getByTitle(text);
   if (
     normalizedType === "testid" ||
     normalizedType === "data-testid" ||
@@ -1718,11 +1723,11 @@ function locatorForValue(page, locatorType, value) {
     normalizedType === "data-qa" ||
     normalizedType === "data-cy"
   ) {
-    const escaped = String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const escaped = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     return page.locator(`[data-testid="${escaped}"],[data-test="${escaped}"],[data-qa="${escaped}"],[data-cy="${escaped}"]`);
   }
-  if (normalizedType === "xpath") return page.locator(`xpath=${value}`);
-  return page.locator(value);
+  if (normalizedType === "xpath") return page.locator(/^xpath=/i.test(text) ? text : `xpath=${text}`);
+  return page.locator(text);
 }
 
 async function testLocatorForSession(session, input) {

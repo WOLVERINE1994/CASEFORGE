@@ -2195,9 +2195,17 @@ function looksLikeBareLocatorToken(value) {
   return /^[A-Za-z][A-Za-z0-9_-]*$/.test(String(value || "").trim());
 }
 
+function looksLikeXPathSelector(value) {
+  const text = String(value || "").trim();
+  return /^(xpath=|\/|\.\/|\.\.\/|\()/i.test(text);
+}
+
 function normalizedLocatorTypeForStep(step, target, value) {
   const explicitType = target.locatorType || target.strategy || step.locatorType || step.strategy || "";
-  if (explicitType) return String(explicitType).toLowerCase();
+  if (explicitType) {
+    const normalized = String(explicitType).toLowerCase();
+    return normalized === "css" && looksLikeXPathSelector(value) ? "xpath" : normalized;
+  }
   const matchingCandidate = (Array.isArray(step.locatorCandidates) ? step.locatorCandidates : []).find((candidate) => {
     const candidateValue = candidate?.value || "";
     return String(candidateValue).trim() === String(value || "").trim();
@@ -2205,6 +2213,7 @@ function normalizedLocatorTypeForStep(step, target, value) {
   if (matchingCandidate?.type || matchingCandidate?.strategy || matchingCandidate?.locatorType) {
     return String(matchingCandidate.type || matchingCandidate.strategy || matchingCandidate.locatorType).toLowerCase();
   }
+  if (looksLikeXPathSelector(value)) return "xpath";
   return looksLikeBareLocatorToken(value) ? "testid" : "css";
 }
 
@@ -2268,7 +2277,7 @@ function locatorFor(page, step) {
     return applyLocatorIndex(scope.getByRole(role, name ? { name } : undefined), step);
   }
   if (locatorType === "id") return applyLocatorIndex(scope.locator(`#${value}`), step);
-  if (locatorType === "xpath") return applyLocatorIndex(scope.locator(`xpath=${value}`), step);
+  if (locatorType === "xpath") return applyLocatorIndex(scope.locator(/^xpath=/i.test(value) ? value : `xpath=${value}`), step);
   return applyLocatorIndex(scope.locator(value), step);
 }
 

@@ -942,6 +942,16 @@ function normalizeLocatorType(value?: string) {
   return locatorOrder.includes(lower) ? lower : "css";
 }
 
+function looksLikeXPathLocator(value: unknown) {
+  return /^(xpath=|\/|\.\/|\.\.\/|\()/i.test(String(value || "").trim());
+}
+
+function inferLocatorTypeFromValue(value: unknown, fallback = "css") {
+  const normalizedFallback = normalizeLocatorType(fallback);
+  if ((normalizedFallback === "css" || !normalizedFallback) && looksLikeXPathLocator(value)) return "xpath";
+  return normalizedFallback;
+}
+
 function textValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -5366,12 +5376,14 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         [parameter.name]: rawValue,
       };
       if (parameter.name === "locator") {
+        const value = String(rawValue ?? "");
         return {
           ...step,
           options,
           target: {
             ...step.target,
-            value: String(rawValue ?? ""),
+            locatorType: inferLocatorTypeFromValue(value, step.target.locatorType),
+            value,
           },
         };
       }
@@ -12765,16 +12777,20 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                       <input
                         value={selectedStep.target?.value || ""}
                         onChange={(event) =>
-                          updateStep(selectedStep.id, (step) => ({
-                            ...step,
-                            options: { ...step.options, waitType: "soft" },
-                            target: {
-                              ...step.target,
-                              displayName: step.target.displayName || "Element",
-                              elementKind: "web element",
-                              value: event.target.value,
-                            },
-                          }))
+                          updateStep(selectedStep.id, (step) => {
+                            const value = event.target.value;
+                            return {
+                              ...step,
+                              options: { ...step.options, waitType: "soft" },
+                              target: {
+                                ...step.target,
+                                displayName: step.target.displayName || "Element",
+                                elementKind: "web element",
+                                locatorType: inferLocatorTypeFromValue(value, step.target.locatorType),
+                                value,
+                              },
+                            };
+                          })
                         }
                         className="mt-1 w-full min-w-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
                       />
