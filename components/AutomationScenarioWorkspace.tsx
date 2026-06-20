@@ -3244,6 +3244,10 @@ function logicStringLiteral(value: string) {
   return JSON.stringify(String(value || ""));
 }
 
+function logicLocatorExpression(locatorType: "css" | "xpath", locatorValue: string) {
+  return `${locatorType}(${logicStringLiteral(locatorValue)})`;
+}
+
 function buildLocatorLoopDsl(config: LocatorLoopBuilderState) {
   const countVariable = cleanLogicVariableName(config.countVariable, "count");
   const locatorVariable = cleanLogicVariableName(config.locatorVariable, "locator");
@@ -3267,7 +3271,12 @@ function buildLocatorLoopDsl(config: LocatorLoopBuilderState) {
   }
   if (lines.length) lines.push("");
   lines.push(`for item in ${countToken} {`);
-  const indexedLocator = `${locatorToken} at current index`;
+  const inlineLocatorValue = textValue(config.locatorValue);
+  const locatorExpression =
+    config.createLocatorVariable && inlineLocatorValue
+      ? logicLocatorExpression(config.locatorType, inlineLocatorValue)
+      : locatorToken;
+  const indexedLocator = `${locatorExpression} at current index`;
   let valueVariable = "";
 
   if (config.action === "getText") {
@@ -13002,7 +13011,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                           <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
                             Locator variable
                             <select
-                              value={locatorLoopBuilder.createLocatorVariable ? "__create__" : locatorLoopBuilder.locatorVariable}
+                              value={locatorLoopBuilder.locatorVariable}
                               onChange={(event) => {
                                 const value = event.target.value;
                                 if (value === "__create__") {
@@ -13014,6 +13023,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                                   setLocatorLoopCreateModalOpen(true);
                                   return;
                                 }
+                                if (locatorLoopBuilder.createLocatorVariable && value === locatorLoopBuilder.locatorVariable) {
+                                  return;
+                                }
                                 setLocatorLoopBuilder((current) => ({
                                   ...current,
                                   createLocatorVariable: false,
@@ -13023,8 +13035,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                               className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
                             >
                               <option value="">Select variable...</option>
-                              {locatorLoopBuilder.locatorVariable && !variablePickerItems.some((item) => item.name === locatorLoopBuilder.locatorVariable) && !locatorLoopBuilder.createLocatorVariable ? (
-                                <option value={locatorLoopBuilder.locatorVariable}>{locatorLoopBuilder.locatorVariable}</option>
+                              {locatorLoopBuilder.locatorVariable && !variablePickerItems.some((item) => item.name === locatorLoopBuilder.locatorVariable) ? (
+                                <option value={locatorLoopBuilder.locatorVariable}>
+                                  {locatorLoopBuilder.locatorVariable}
+                                  {locatorLoopBuilder.createLocatorVariable ? " - New locator variable" : ""}
+                                </option>
                               ) : null}
                               {variablePickerItems.map((item) => (
                                 <option key={item.name} value={item.name}>
