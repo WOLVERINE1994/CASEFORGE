@@ -575,6 +575,7 @@ type LogicEditorSuggestState = {
 } | null;
 
 type LogicDslValidation = {
+  branchCount: number;
   commandCount: number;
   elseIfCount: number;
   forCount: number;
@@ -3000,6 +3001,14 @@ function logicIdeTemplates(action: string) {
       ].join("\n"),
     },
     {
+      label: "Loop Table Rows",
+      value: [
+        "for row in {{$tableData.tableData}} {",
+        '  log "Row: " + row',
+        "}",
+      ].join("\n"),
+    },
+    {
       label: "Repeat Retry",
       value: [
         "repeat 3 {",
@@ -3020,7 +3029,7 @@ function logicIdeTemplates(action: string) {
     },
   ];
   return action === "loopBlock"
-    ? templates.filter((template) => ["For List", "Repeat Retry", "Nested If"].includes(template.label))
+    ? templates.filter((template) => ["For List", "Loop Table Rows", "Repeat Retry", "Nested If"].includes(template.label))
     : templates;
 }
 
@@ -3064,9 +3073,14 @@ function stripLogicDslStrings(value: string) {
   return value.replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, "\"\"");
 }
 
+function logicIssue(line: number, column: number, message: string) {
+  return `Line ${line}, column ${Math.max(1, column)}: ${message}`;
+}
+
 function validateLogicDsl(value: string): LogicDslValidation {
   const issues: string[] = [];
   let depth = 0;
+  let branchCount = 0;
   let ifCount = 0;
   let elseIfCount = 0;
   let forCount = 0;
@@ -3080,33 +3094,39 @@ function validateLogicDsl(value: string): LogicDslValidation {
     const clean = stripLogicDslStrings(trimmed);
     const opens = (clean.match(/\{/g) || []).length;
     const closes = (clean.match(/\}/g) || []).length;
-    if (closes > depth + opens) issues.push(`Line ${lineNumber}: closing brace has no matching opening brace.`);
+    if (closes > depth + opens) {
+      issues.push(logicIssue(lineNumber, Math.max(1, rawLine.indexOf("}") + 1), "closing brace has no matching opening brace."));
+    }
     depth += opens - closes;
 
     const statement = clean.replace(/[{}]/g, "").trim();
+    const column = Math.max(1, rawLine.indexOf(trimmed) + 1);
     if (!statement) return;
     if (/^if\s+.+/.test(statement)) {
       ifCount += 1;
-      if (!clean.includes("{")) issues.push(`Line ${lineNumber}: if statement needs an opening brace.`);
+      branchCount += 1;
+      if (!clean.includes("{")) issues.push(logicIssue(lineNumber, column, "if statement needs an opening brace."));
       return;
     }
     if (/^else\s+if\s+.+/.test(statement)) {
       elseIfCount += 1;
-      if (!clean.includes("{")) issues.push(`Line ${lineNumber}: else if statement needs an opening brace.`);
+      branchCount += 1;
+      if (!clean.includes("{")) issues.push(logicIssue(lineNumber, column, "else if statement needs an opening brace."));
       return;
     }
     if (/^else$/.test(statement)) {
-      if (!clean.includes("{")) issues.push(`Line ${lineNumber}: else statement needs an opening brace.`);
+      branchCount += 1;
+      if (!clean.includes("{")) issues.push(logicIssue(lineNumber, column, "else statement needs an opening brace."));
       return;
     }
     if (/^for\s+[a-zA-Z_][\w]*\s+in\s+.+/.test(statement)) {
       forCount += 1;
-      if (!clean.includes("{")) issues.push(`Line ${lineNumber}: for loop needs an opening brace.`);
+      if (!clean.includes("{")) issues.push(logicIssue(lineNumber, column, "for loop needs an opening brace."));
       return;
     }
     if (/^repeat\s+.+/.test(statement)) {
       repeatCount += 1;
-      if (!clean.includes("{")) issues.push(`Line ${lineNumber}: repeat loop needs an opening brace.`);
+      if (!clean.includes("{")) issues.push(logicIssue(lineNumber, column, "repeat loop needs an opening brace."));
       return;
     }
     if (/^(log|wait|break|continue)\b/.test(statement)) {
@@ -3125,24 +3145,25 @@ function validateLogicDsl(value: string): LogicDslValidation {
       commandCount += 1;
       return;
     }
-    issues.push(`Line ${lineNumber}: unsupported statement "${trimmed}".`);
+    issues.push(logicIssue(lineNumber, column, `unsupported statement "${trimmed}".`));
   });
   if (depth > 0) issues.push(`Missing ${depth} closing brace${depth === 1 ? "" : "s"}.`);
-  const parts = [
-    ifCount ? `${ifCount} if` : "",
-    elseIfCount ? `${elseIfCount} else-if` : "",
-    forCount ? `${forCount} for-loop` : "",
-    repeatCount ? `${repeatCount} repeat-loop` : "",
-    commandCount ? `${commandCount} command${commandCount === 1 ? "" : "s"}` : "",
-  ].filter(Boolean);
+  const parts = [];
+  if (ifCount) {
+    parts.push(`This will create ${ifCount} IF block${ifCount === 1 ? "" : "s"} with ${branchCount} branch${branchCount === 1 ? "" : "es"}.`);
+  }
+  if (forCount) parts.push(`${forCount} for-loop${forCount === 1 ? "" : "s"}.`);
+  if (repeatCount) parts.push(`${repeatCount} repeat-loop${repeatCount === 1 ? "" : "s"}.`);
+  if (commandCount) parts.push(`${commandCount} command${commandCount === 1 ? "" : "s"}.`);
   return {
+    branchCount,
     commandCount,
     elseIfCount,
     forCount,
     ifCount,
     issues,
     repeatCount,
-    summary: parts.length ? parts.join(", ") : "No executable logic yet",
+    summary: parts.length ? parts.join(" ") : "No executable logic yet.",
     valid: issues.length === 0,
   };
 }
