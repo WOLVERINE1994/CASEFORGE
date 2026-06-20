@@ -1,5 +1,5 @@
 const windowsInstallerUrl =
-  "https://github.com/WOLVERINE1994/CASEFORGE/releases/download/companion-v0.1.30/CaseForge-Companion-Setup-0.1.30.exe";
+  "/api/downloads/companion/windows";
 
 const osCards = [
   {
@@ -64,6 +64,7 @@ export default function CompanionDownloadPage() {
               {card.enabled ? (
                 <a
                   href={card.href}
+                  download
                   className="rounded-lg border border-white bg-white px-4 py-2 text-center text-sm font-semibold !text-zinc-950 transition hover:border-emerald-400 hover:bg-zinc-950 hover:!text-white"
                 >
                   {card.action}
