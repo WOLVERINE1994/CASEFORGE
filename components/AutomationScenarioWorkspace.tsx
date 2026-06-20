@@ -574,6 +574,17 @@ type LogicEditorSuggestState = {
   start: number;
 } | null;
 
+type LogicDslValidation = {
+  commandCount: number;
+  elseIfCount: number;
+  forCount: number;
+  ifCount: number;
+  issues: string[];
+  repeatCount: number;
+  summary: string;
+  valid: boolean;
+};
+
 const localAgentUrl =
   process.env.NEXT_PUBLIC_AUTOMATION_LOCAL_AGENT_URL || "http://127.0.0.1:4873";
 const companionDownloadUrl =
@@ -1825,11 +1836,54 @@ function tableCommandDetailLines(output: unknown) {
   return lines;
 }
 
+function logicDslRunSummary(output: unknown) {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return "";
+  const record = output as Record<string, unknown>;
+  if (!Array.isArray(record.results)) return "";
+  const results = record.results as unknown[];
+  const counts = { command: 0, for: 0, if: 0, repeat: 0, skipped: 0 };
+  const visit = (items: unknown[]) => {
+    for (const item of items) {
+      const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      const type = textValue(row.type);
+      if (type in counts) counts[type as keyof typeof counts] += 1;
+      if (row.status === "skipped") counts.skipped += 1;
+      if (Array.isArray(row.results)) visit(row.results);
+    }
+  };
+  visit(results);
+  return `Logic: ${counts.if} branch block${counts.if === 1 ? "" : "s"}, ${counts.for} for-loop${counts.for === 1 ? "" : "s"}, ${counts.repeat} repeat-loop${counts.repeat === 1 ? "" : "s"}, ${counts.command} command${counts.command === 1 ? "" : "s"}${counts.skipped ? `, ${counts.skipped} skipped` : ""}`;
+}
+
+function logicDslRunDetailLines(output: unknown) {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return [];
+  const record = output as Record<string, unknown>;
+  const lines: string[] = [];
+  const walk = (items: unknown[], depth = 0) => {
+    for (const item of items.slice(0, 12)) {
+      const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      const prefix = depth ? "  ".repeat(Math.min(depth, 2)) : "";
+      const type = textValue(row.type);
+      if (type === "if") {
+        lines.push(`${prefix}Logic branch ${textValue(row.branch) || "if"}: ${textValue(row.status) || "passed"}`);
+      } else if (type === "for" || type === "repeat") {
+        lines.push(`${prefix}Logic ${type}: ${Number(row.iterations ?? 0)} iteration(s).`);
+      } else if (type === "command") {
+        lines.push(`${prefix}Logic command ${textValue(row.command) || "command"} passed.`);
+      }
+      if (Array.isArray(row.results) && lines.length < 12) walk(row.results, depth + 1);
+    }
+  };
+  if (Array.isArray(record.results)) walk(record.results);
+  return lines.slice(0, 12);
+}
+
 function commandConsoleOutputForStep(step: AutomationStep | undefined, output: unknown) {
   if (!step) return "";
   const action = displayAction(step.action);
   if (action === "logMessage") return commandOutputSummary(output);
   if (action === "runJavaScriptSnippet") return javaScriptSnippetSummary(output);
+  if (isLogicIdeCommand(action)) return logicDslRunSummary(output);
   if (action === "validateAccordionSections") return accordionValidationSummary(output);
   if (action.includes("WebTable") || action === "getWebTableData" || action === "validateWebTable") {
     return tableCommandSummary(output);
@@ -1859,6 +1913,9 @@ function commandConsoleDetailLinesForStep(step: AutomationStep | undefined, outp
   const action = displayAction(step.action);
   if (action === "runJavaScriptSnippet") {
     return javaScriptSnippetDetailLines(output);
+  }
+  if (isLogicIdeCommand(action)) {
+    return logicDslRunDetailLines(output);
   }
   if (action.includes("WebTable") || action === "getWebTableData" || action === "validateWebTable") {
     return tableCommandDetailLines(output);
@@ -2894,6 +2951,79 @@ function defaultLogicDsl(action: string) {
   ].join("\n");
 }
 
+function logicIdeTemplates(action: string) {
+  const templates = [
+    {
+      label: "Desktop / Phone",
+      value: [
+        'if {{$viewport}} == "desktop" {',
+        '  log "Running desktop flow"',
+        '} else if {{$viewport}} == "phone" {',
+        '  log "Running phone flow"',
+        '} else {',
+        '  log "Running tablet/fallback flow"',
+        '}',
+      ].join("\n"),
+    },
+    {
+      label: "Staging / Prod",
+      value: [
+        'if {{$env}} == "staging" {',
+        '  log "Staging flow"',
+        '} else if {{$env}} == "production" {',
+        '  log "Production-safe flow"',
+        '} else {',
+        '  log "Unknown environment"',
+        '}',
+      ].join("\n"),
+    },
+    {
+      label: "Nested If",
+      value: [
+        'if {{$viewport}} == "desktop" {',
+        '  if {{$env}} == "staging" {',
+        '    log "Desktop staging"',
+        '  } else {',
+        '    log "Desktop non-staging"',
+        '  }',
+        '} else {',
+        '  log "Non-desktop flow"',
+        '}',
+      ].join("\n"),
+    },
+    {
+      label: "For List",
+      value: [
+        "for item in {{$items}} {",
+        '  log "Item: " + item',
+        "}",
+      ].join("\n"),
+    },
+    {
+      label: "Repeat Retry",
+      value: [
+        "repeat 3 {",
+        '  log "Retry #" + {{$loop.number}}',
+        "  wait 1000",
+        "}",
+      ].join("\n"),
+    },
+    {
+      label: "Locator Flow",
+      value: [
+        'if {{$viewport}} == "desktop" {',
+        '  click css("#desktop-menu")',
+        '} else {',
+        '  click xpath(\'//button[contains(., "Menu")]\')',
+        '}',
+      ].join("\n"),
+    },
+  ];
+  return action === "loopBlock"
+    ? templates.filter((template) => ["For List", "Repeat Retry", "Nested If"].includes(template.label))
+    : templates;
+}
+
 function logicDslValue(step?: AutomationStep | null) {
   return textValue(step?.options?.dsl) || defaultLogicDsl(displayAction(step?.action || "conditionalBlock"));
 }
@@ -2918,7 +3048,7 @@ function logicSuggestionTrigger(value: string, cursor: number): LogicEditorSugge
       start: helperMatch.index,
     };
   }
-  const commandLocatorMatch = before.match(/\b(click|type|fill)\s+$/);
+  const commandLocatorMatch = before.match(/\b(click|type|fill|getText)\s+$/);
   if (commandLocatorMatch && commandLocatorMatch.index !== undefined) {
     return {
       cursor,
@@ -2928,6 +3058,93 @@ function logicSuggestionTrigger(value: string, cursor: number): LogicEditorSugge
     };
   }
   return null;
+}
+
+function stripLogicDslStrings(value: string) {
+  return value.replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, "\"\"");
+}
+
+function validateLogicDsl(value: string): LogicDslValidation {
+  const issues: string[] = [];
+  let depth = 0;
+  let ifCount = 0;
+  let elseIfCount = 0;
+  let forCount = 0;
+  let repeatCount = 0;
+  let commandCount = 0;
+  const lines = value.split(/\r?\n/);
+  lines.forEach((rawLine, index) => {
+    const lineNumber = index + 1;
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith("//")) return;
+    const clean = stripLogicDslStrings(trimmed);
+    const opens = (clean.match(/\{/g) || []).length;
+    const closes = (clean.match(/\}/g) || []).length;
+    if (closes > depth + opens) issues.push(`Line ${lineNumber}: closing brace has no matching opening brace.`);
+    depth += opens - closes;
+
+    const statement = clean.replace(/[{}]/g, "").trim();
+    if (!statement) return;
+    if (/^if\s+.+/.test(statement)) {
+      ifCount += 1;
+      if (!clean.includes("{")) issues.push(`Line ${lineNumber}: if statement needs an opening brace.`);
+      return;
+    }
+    if (/^else\s+if\s+.+/.test(statement)) {
+      elseIfCount += 1;
+      if (!clean.includes("{")) issues.push(`Line ${lineNumber}: else if statement needs an opening brace.`);
+      return;
+    }
+    if (/^else$/.test(statement)) {
+      if (!clean.includes("{")) issues.push(`Line ${lineNumber}: else statement needs an opening brace.`);
+      return;
+    }
+    if (/^for\s+[a-zA-Z_][\w]*\s+in\s+.+/.test(statement)) {
+      forCount += 1;
+      if (!clean.includes("{")) issues.push(`Line ${lineNumber}: for loop needs an opening brace.`);
+      return;
+    }
+    if (/^repeat\s+.+/.test(statement)) {
+      repeatCount += 1;
+      if (!clean.includes("{")) issues.push(`Line ${lineNumber}: repeat loop needs an opening brace.`);
+      return;
+    }
+    if (/^(log|wait|break|continue)\b/.test(statement)) {
+      commandCount += 1;
+      return;
+    }
+    if (/^(click|type|fill|getText)\s+(css|xpath|text|role|testid|label)\(/.test(statement)) {
+      commandCount += 1;
+      return;
+    }
+    if (/^set\s+[a-zA-Z_][\w.]*\s*=/.test(statement)) {
+      commandCount += 1;
+      return;
+    }
+    if (/^assert\s+.+/.test(statement)) {
+      commandCount += 1;
+      return;
+    }
+    issues.push(`Line ${lineNumber}: unsupported statement "${trimmed}".`);
+  });
+  if (depth > 0) issues.push(`Missing ${depth} closing brace${depth === 1 ? "" : "s"}.`);
+  const parts = [
+    ifCount ? `${ifCount} if` : "",
+    elseIfCount ? `${elseIfCount} else-if` : "",
+    forCount ? `${forCount} for-loop` : "",
+    repeatCount ? `${repeatCount} repeat-loop` : "",
+    commandCount ? `${commandCount} command${commandCount === 1 ? "" : "s"}` : "",
+  ].filter(Boolean);
+  return {
+    commandCount,
+    elseIfCount,
+    forCount,
+    ifCount,
+    issues,
+    repeatCount,
+    summary: parts.length ? parts.join(", ") : "No executable logic yet",
+    valid: issues.length === 0,
+  };
 }
 
 function exactParameterNameFromText(value?: string) {
@@ -3947,6 +4164,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const selectedCommandEditorUxKind = commandEditorUxKind(selectedCommandDefinition);
   const selectedCommandHasAdvancedRuntimeInput = commandHasAdvancedRuntimeInput(selectedStepAction);
   const selectedCommandUsesLogicIde = isLogicIdeCommand(selectedStepAction);
+  const selectedLogicDslValidation = useMemo(
+    () => validateLogicDsl(selectedStep && selectedCommandUsesLogicIde ? logicDslValue(selectedStep) : ""),
+    [selectedCommandUsesLogicIde, selectedStep],
+  );
   const variablePickerItems = useMemo<VariablePickerItem[]>(() => {
     const byName = new Map<string, VariablePickerItem>();
     for (const parameter of scenarioParameters) {
@@ -4039,7 +4260,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     const before = textarea?.value.slice(0, textarea.selectionStart ?? 0) ?? "";
     const locatorMode =
       /\b(css|xpath|text|role|testid|label)\(\"[^\"]*$/.test(before) ||
-      /\b(click|type|fill)\s+$/.test(before);
+      /\b(click|type|fill|getText)\s+$/.test(before);
     return logicEditorSuggestions
       .filter((item) => {
         if (locatorMode) return item.source === "locator" || item.source === "snippet";
@@ -12227,7 +12448,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">
-                        {["if", "else if", "else", "for", "repeat", "log", "click", "type", "wait"].map((token) => (
+                        {["if", "else if", "else", "for", "repeat", "log", "click", "type", "getText", "wait"].map((token) => (
                           <span
                             key={token}
                             className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 dark:border-zinc-800 dark:bg-zinc-900"
@@ -12236,6 +12457,18 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                           </span>
                         ))}
                       </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {logicIdeTemplates(selectedStepAction).map((template) => (
+                        <button
+                          key={template.label}
+                          type="button"
+                          onClick={() => updateLogicDsl(selectedStep.id || "", template.value)}
+                          className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-white dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-950"
+                        >
+                          {template.label}
+                        </button>
+                      ))}
                     </div>
                     <div className="relative">
                       <textarea
@@ -12295,6 +12528,25 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                             </button>
                           ))}
                         </div>
+                      ) : null}
+                    </div>
+                    <div
+                      className={`rounded-xl border p-3 text-xs font-semibold ${
+                        selectedLogicDslValidation.valid
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100"
+                          : "border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100"
+                      }`}
+                    >
+                      <p>
+                        {selectedLogicDslValidation.valid ? "Logic looks valid" : "Logic needs attention"}:{" "}
+                        {selectedLogicDslValidation.summary}
+                      </p>
+                      {selectedLogicDslValidation.issues.length ? (
+                        <ul className="mt-2 grid gap-1">
+                          {selectedLogicDslValidation.issues.slice(0, 5).map((issue) => (
+                            <li key={issue}>{issue}</li>
+                          ))}
+                        </ul>
                       ) : null}
                     </div>
                     <div className="grid gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">

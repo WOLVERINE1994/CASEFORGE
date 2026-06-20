@@ -2822,6 +2822,12 @@ function dslStringValue(raw = "") {
   return text;
 }
 
+function dslExpressionValue(raw = "") {
+  const text = String(raw || "").trim();
+  if (!text) return "\"\"";
+  return text;
+}
+
 function parseDslLocator(raw = "") {
   const source = String(raw || "").trim();
   const match = source.match(/^(css|xpath|text|role|testid|label)\((.*)\)$/);
@@ -2841,11 +2847,11 @@ function parseDslLocator(raw = "") {
   return { type: "css", value: args[0] || "" };
 }
 
-function dslStepForLocatorCommand(command, rest, runtimeVariables) {
+async function dslStepForLocatorCommand(page, command, rest, runtimeVariables) {
   const locatorMatch = String(rest || "").trim().match(/^(css|xpath|text|role|testid|label)\((?:"[^"]*"|'[^']*'|[^)])*\)(?:\s+(.+))?$/);
   const locatorSource = locatorMatch ? locatorMatch[0].slice(0, locatorMatch[0].length - String(locatorMatch[2] || "").length).trim() : rest;
   const locator = parseDslLocator(locatorSource);
-  const value = locatorMatch?.[2] ? resolveRuntimeValue(dslStringValue(locatorMatch[2]), runtimeVariables) : "";
+  const value = locatorMatch?.[2] ? await evaluateDslExpression(page, dslExpressionValue(locatorMatch[2]), runtimeVariables) : "";
   const target = {
     displayName: locator.value || locator.type,
     elementKind: "web element",
@@ -3005,7 +3011,19 @@ async function executeDslNodes(page, nodes, runtimeVariables, context = {}) {
           last: itemIndex === items.length - 1,
           number: itemIndex + 1,
         }, node.itemName);
-        loopResults.push({ index: itemIndex, item, results: await executeDslNodes(page, node.nodes, runtimeVariables, context), status: "passed" });
+        try {
+          loopResults.push({ index: itemIndex, item, results: await executeDslNodes(page, node.nodes, runtimeVariables, context), status: "passed" });
+        } catch (error) {
+          if (error instanceof LoopControlSignal && error.type === "break") {
+            loopResults.push({ index: itemIndex, item, results: [], status: "broken" });
+            break;
+          }
+          if (error instanceof LoopControlSignal && error.type === "continue") {
+            loopResults.push({ index: itemIndex, item, results: [], status: "continued" });
+            continue;
+          }
+          throw error;
+        }
       }
       results.push({ iterations: loopResults.length, results: loopResults, status: "passed", type: "for" });
       continue;
@@ -3022,7 +3040,19 @@ async function executeDslNodes(page, nodes, runtimeVariables, context = {}) {
           last: itemIndex === count - 1,
           number: itemIndex + 1,
         });
-        loopResults.push({ index: itemIndex, results: await executeDslNodes(page, node.nodes, runtimeVariables, context), status: "passed" });
+        try {
+          loopResults.push({ index: itemIndex, results: await executeDslNodes(page, node.nodes, runtimeVariables, context), status: "passed" });
+        } catch (error) {
+          if (error instanceof LoopControlSignal && error.type === "break") {
+            loopResults.push({ index: itemIndex, results: [], status: "broken" });
+            break;
+          }
+          if (error instanceof LoopControlSignal && error.type === "continue") {
+            loopResults.push({ index: itemIndex, results: [], status: "continued" });
+            continue;
+          }
+          throw error;
+        }
       }
       results.push({ iterations: loopResults.length, results: loopResults, status: "passed", type: "repeat" });
       continue;
@@ -3043,8 +3073,41 @@ async function executeDslNodes(page, nodes, runtimeVariables, context = {}) {
       results.push({ command: "wait", duration, status: "passed", type: "command" });
       continue;
     }
+    if (command === "set") {
+      const setMatch = rest.match(/^([a-zA-Z_][\w.]*)\s*=\s*(.+)$/);
+      if (!setMatch) throw new Error(`Invalid set command: ${source}`);
+      const output = await evaluateDslExpression(page, setMatch[2], runtimeVariables);
+      runtimeVariables[setMatch[1]] = output;
+      if (state.session) state.session.runtimeVariables = runtimeVariables;
+      results.push({ command: "set", output, status: "passed", target: setMatch[1], type: "command" });
+      continue;
+    }
+    if (command === "assert") {
+      const passed = Boolean(await evaluateDslExpression(page, rest, runtimeVariables));
+      if (!passed) throw new Error(`Logic assertion failed: ${rest}`);
+      results.push({ command: "assert", output: true, status: "passed", type: "command" });
+      continue;
+    }
+    if (command === "break") {
+      throw new LoopControlSignal("break");
+    }
+    if (command === "continue") {
+      throw new LoopControlSignal("continue");
+    }
+    if (command === "getText") {
+      const asMatch = rest.match(/^(.*)\s+as\s+([a-zA-Z_][\w.]*)$/);
+      const locatorRest = asMatch ? asMatch[1] : rest;
+      const step = await dslStepForLocatorCommand(page, "getText", locatorRest, runtimeVariables);
+      const output = await executeStepWithRuntimeVariables(page, step, runtimeVariables, context);
+      if (asMatch?.[2]) {
+        runtimeVariables[asMatch[2]] = output;
+        if (state.session) state.session.runtimeVariables = runtimeVariables;
+      }
+      results.push({ command, output, status: "passed", target: asMatch?.[2] || "", type: "command" });
+      continue;
+    }
     if (["click", "type", "fill"].includes(command)) {
-      const step = dslStepForLocatorCommand(command, rest, runtimeVariables);
+      const step = await dslStepForLocatorCommand(page, command, rest, runtimeVariables);
       const output = await executeStepWithRuntimeVariables(page, step, runtimeVariables, context);
       results.push({ command, output, status: "passed", type: "command" });
       continue;
