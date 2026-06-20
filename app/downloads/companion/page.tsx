@@ -1,7 +1,5 @@
-import { CompanionDownloadButton } from "./CompanionDownloadButton";
-
 const windowsInstallerUrl =
-  "/api/downloads/companion/windows";
+  "https://github.com/WOLVERINE1994/CASEFORGE/releases/download/companion-v0.1.32/CaseForge-Companion-Setup-0.1.32.exe";
 
 const osCards = [
   {
@@ -64,11 +62,14 @@ export default function CompanionDownloadPage() {
               </div>
               <p className="min-h-20 text-sm leading-6 text-zinc-300">{card.description}</p>
               {card.enabled ? (
-                <CompanionDownloadButton
+                <a
                   href={card.href}
-                  label={card.action}
+                  rel="noreferrer"
+                  target="_blank"
                   className="rounded-lg border border-white bg-white px-4 py-2 text-center text-sm font-semibold !text-zinc-950 transition hover:border-emerald-400 hover:bg-zinc-950 hover:!text-white"
-                />
+                >
+                  {card.action}
+                </a>
               ) : (
                 <button
                   type="button"
@@ -80,6 +81,14 @@ export default function CompanionDownloadPage() {
               )}
             </article>
           ))}
+        </section>
+
+        <section className="rounded-lg border border-sky-400/30 bg-sky-400/10 p-5">
+          <h2 className="text-lg font-semibold text-sky-100">Private GitHub Download</h2>
+          <p className="mt-2 text-sm leading-6 text-sky-50/90">
+            The Windows installer is hosted in the private CaseForge GitHub release. If GitHub asks,
+            sign in with an account that can access the repository, then the installer download will continue.
+          </p>
         </section>
 
         <section className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-5">
