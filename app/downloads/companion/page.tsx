@@ -1,3 +1,5 @@
+import { CompanionDownloadButton } from "./CompanionDownloadButton";
+
 const windowsInstallerUrl =
   "/api/downloads/companion/windows";
 
@@ -62,13 +64,11 @@ export default function CompanionDownloadPage() {
               </div>
               <p className="min-h-20 text-sm leading-6 text-zinc-300">{card.description}</p>
               {card.enabled ? (
-                <a
+                <CompanionDownloadButton
                   href={card.href}
-                  download
+                  label={card.action}
                   className="rounded-lg border border-white bg-white px-4 py-2 text-center text-sm font-semibold !text-zinc-950 transition hover:border-emerald-400 hover:bg-zinc-950 hover:!text-white"
-                >
-                  {card.action}
-                </a>
+                />
               ) : (
                 <button
                   type="button"
