@@ -413,10 +413,14 @@ type LocatorLoopBuilderPhase = "before" | "inside" | "after";
 type LocatorLoopBuilderAction = {
   action: LocatorLoopBuilderActionKind;
   attributeName: string;
+  createLocatorVariable: boolean;
   fieldName: string;
   id: string;
   listVariable: string;
   logMessage: string;
+  locatorType: "css" | "xpath";
+  locatorValue: string;
+  locatorVariable: string;
   outputVariable: string;
   propertyName: string;
   separator: string;
@@ -433,10 +437,6 @@ type LocatorLoopBuilderState = {
   countValue: string;
   countVariable: string;
   createCountVariable: boolean;
-  createLocatorVariable: boolean;
-  locatorType: "css" | "xpath";
-  locatorValue: string;
-  locatorVariable: string;
   logEach: boolean;
   loopActions: LocatorLoopBuilderAction[];
   outputVariable: string;
@@ -3259,6 +3259,10 @@ const locatorLoopBuilderActionOptions: Array<{
 
 const locatorLoopBuilderOptionGroups = ["Web", "Collection", "Debug"] as const;
 
+function isLocatorLoopWebAction(action: LocatorLoopBuilderActionKind) {
+  return ["click", "getAttribute", "getProperty", "getText", "hover", "verifyVisible"].includes(action);
+}
+
 const locatorLoopAttributeSuggestions = [
   "class",
   "href",
@@ -3324,10 +3328,14 @@ function makeLocatorLoopAction(
   return {
     action,
     attributeName: "class",
+    createLocatorVariable: false,
     fieldName: "",
     id: `loop-action-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     listVariable: "items",
     logMessage: action === "log" ? '"List: " + items' : "",
+    locatorType: "xpath",
+    locatorValue: "",
+    locatorVariable: isLocatorLoopWebAction(action) ? "locator" : "",
     outputVariable: defaultOutput,
     propertyName: "innerText",
     separator: ", ",
@@ -3351,12 +3359,12 @@ function locatorLoopBuilderActions(config: LocatorLoopBuilderState) {
       ];
 }
 
-function logicStringLiteral(value: string) {
-  return JSON.stringify(String(value || ""));
+function locatorLoopPhaseKey(phase: LocatorLoopBuilderPhase) {
+  return phase === "before" ? "beforeActions" : phase === "after" ? "afterActions" : "loopActions";
 }
 
-function logicLocatorExpression(locatorType: "css" | "xpath", locatorValue: string) {
-  return `${locatorType}(${logicStringLiteral(locatorValue)})`;
+function logicStringLiteral(value: string) {
+  return JSON.stringify(String(value || ""));
 }
 
 function logicExpressionValue(value: string, fallback = "\"\"") {
@@ -3366,12 +3374,13 @@ function logicExpressionValue(value: string, fallback = "\"\"") {
 
 function buildLocatorLoopActionDsl(
   action: LocatorLoopBuilderAction,
-  indexedLocator: string,
   phase: LocatorLoopBuilderPhase,
 ) {
   const lines: string[] = [];
   const outputVariable = cleanLogicVariableName(action.outputVariable, "itemText");
   const listVariable = cleanLogicVariableName(action.listVariable, "items");
+  const locatorVariable = cleanLogicVariableName(action.locatorVariable, "locator");
+  const indexedLocator = `${logicVariableToken(locatorVariable)} at current index`;
   const waitMs = Math.max(0, Number(action.waitMs || 0));
   const actionLabel =
     locatorLoopBuilderActionOptions.find((option) => option.value === action.action)?.label ||
@@ -3422,31 +3431,29 @@ function buildLocatorLoopActionDsl(
 
 function buildLocatorLoopDsl(config: LocatorLoopBuilderState) {
   const countVariable = cleanLogicVariableName(config.countVariable, "count");
-  const locatorVariable = cleanLogicVariableName(config.locatorVariable, "locator");
   const countToken = logicVariableToken(countVariable);
-  const locatorToken = logicVariableToken(locatorVariable);
   const lines: string[] = [];
   if (config.createCountVariable) {
     const countValue = textValue(config.countValue) || "0";
     lines.push(`set ${countVariable} = ${Number.isFinite(Number(countValue)) ? String(Number(countValue)) : logicStringLiteral(countValue)}`);
   }
-  if (config.createLocatorVariable) {
-    const locatorValue = textValue(config.locatorValue) || (config.locatorType === "xpath" ? "//button" : "button");
+  const declaredLocators = new Set<string>();
+  for (const action of locatorLoopBuilderActions(config)) {
+    if (!isLocatorLoopWebAction(action.action) || !action.createLocatorVariable) continue;
+    const locatorVariable = cleanLogicVariableName(action.locatorVariable, "locator");
+    if (declaredLocators.has(locatorVariable)) continue;
+    const locatorValue = textValue(action.locatorValue) || (action.locatorType === "xpath" ? "//button" : "button");
     lines.push(`set ${locatorVariable} = ${logicStringLiteral(locatorValue)}`);
+    declaredLocators.add(locatorVariable);
   }
   if (lines.length) lines.push("");
-  const inlineLocatorValue = textValue(config.locatorValue);
-  const locatorExpression = inlineLocatorValue
-    ? logicLocatorExpression(config.locatorType, inlineLocatorValue)
-    : locatorToken;
-  const indexedLocator = `${locatorExpression} at current index`;
   for (const action of config.beforeActions) {
-    lines.push(...buildLocatorLoopActionDsl(action, indexedLocator, "before"));
+    lines.push(...buildLocatorLoopActionDsl(action, "before"));
   }
   if (config.beforeActions.length) lines.push("");
   lines.push(`for item in ${countToken} {`);
   for (const action of locatorLoopBuilderActions(config)) {
-    for (const line of buildLocatorLoopActionDsl(action, indexedLocator, "inside")) {
+    for (const line of buildLocatorLoopActionDsl(action, "inside")) {
       lines.push(`  ${line}`);
     }
     if (config.logEach && ["getText", "getAttribute", "getProperty"].includes(action.action)) {
@@ -3458,7 +3465,7 @@ function buildLocatorLoopDsl(config: LocatorLoopBuilderState) {
   if (config.afterActions.length) {
     lines.push("");
     for (const action of config.afterActions) {
-      lines.push(...buildLocatorLoopActionDsl(action, indexedLocator, "after"));
+      lines.push(...buildLocatorLoopActionDsl(action, "after"));
     }
   }
   return lines.join("\n");
@@ -4247,13 +4254,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     countValue: "5",
     countVariable: "count",
     createCountVariable: false,
-    createLocatorVariable: false,
-    locatorType: "xpath",
-    locatorValue: "",
-    locatorVariable: "locator",
     logEach: true,
     loopActions: [
       makeLocatorLoopAction("getText", {
+        locatorVariable: "locator",
         outputVariable: "itemText",
       }),
       makeLocatorLoopAction("addToList", {
@@ -4266,6 +4270,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     waitMs: "",
   });
   const [locatorLoopCreateModalOpen, setLocatorLoopCreateModalOpen] = useState(false);
+  const [locatorLoopCreateModalTarget, setLocatorLoopCreateModalTarget] = useState<{
+    actionId: string;
+    phase: LocatorLoopBuilderPhase;
+  } | null>(null);
   const [testDataOpen, setTestDataOpen] = useState(false);
   const [testDataSaving, setTestDataSaving] = useState(false);
   const [testDataError, setTestDataError] = useState("");
@@ -4715,12 +4723,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     actionId: string,
     updates: Partial<LocatorLoopBuilderAction>,
   ) => {
-    const key =
-      phase === "before"
-        ? "beforeActions"
-        : phase === "after"
-          ? "afterActions"
-          : "loopActions";
+    const key = locatorLoopPhaseKey(phase);
     setLocatorLoopBuilder((current) => ({
       ...current,
       [key]: current[key].map((action) =>
@@ -4732,24 +4735,14 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     phase: LocatorLoopBuilderPhase,
     action: LocatorLoopBuilderActionKind = phase === "inside" ? "getText" : phase === "before" ? "createList" : "log",
   ) => {
-    const key =
-      phase === "before"
-        ? "beforeActions"
-        : phase === "after"
-          ? "afterActions"
-          : "loopActions";
+    const key = locatorLoopPhaseKey(phase);
     setLocatorLoopBuilder((current) => ({
       ...current,
       [key]: [...current[key], makeLocatorLoopAction(action)],
     }));
   };
   const removeLocatorLoopBuilderAction = (phase: LocatorLoopBuilderPhase, actionId: string) => {
-    const key =
-      phase === "before"
-        ? "beforeActions"
-        : phase === "after"
-          ? "afterActions"
-          : "loopActions";
+    const key = locatorLoopPhaseKey(phase);
     setLocatorLoopBuilder((current) => ({
       ...current,
       [key]: current[key].filter((action) => action.id !== actionId),
@@ -4763,6 +4756,58 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     const needsList = ["addToList", "clearList", "countListItems", "createList", "getListItem", "joinList", "sortList", "uniqueList"].includes(action.action);
     return (
       <>
+        {isLocatorLoopWebAction(action.action) ? (
+          <label className="text-[11px] font-semibold text-sky-900 dark:text-sky-100">
+            Locator variable
+            <select
+              value={action.locatorVariable}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value === "__create__") {
+                  updateLocatorLoopBuilderAction(phase, action.id, {
+                    createLocatorVariable: true,
+                    locatorVariable: action.locatorVariable || `${action.action}Locator`,
+                  });
+                  setLocatorLoopCreateModalTarget({ actionId: action.id, phase });
+                  setLocatorLoopCreateModalOpen(true);
+                  return;
+                }
+                updateLocatorLoopBuilderAction(phase, action.id, {
+                  createLocatorVariable: false,
+                  locatorVariable: value,
+                  locatorValue: "",
+                });
+              }}
+              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            >
+              <option value="">Select variable...</option>
+              {action.locatorVariable && !variablePickerItems.some((item) => item.name === action.locatorVariable) ? (
+                <option value={action.locatorVariable}>
+                  {action.locatorVariable}
+                  {action.createLocatorVariable ? " - New locator variable" : ""}
+                </option>
+              ) : null}
+              {variablePickerItems.map((item) => (
+                <option key={item.name} value={item.name}>
+                  {item.name} - {item.detail}
+                </option>
+              ))}
+              <option value="__create__">+ Create locator variable</option>
+            </select>
+          </label>
+        ) : null}
+        {isLocatorLoopWebAction(action.action) && action.createLocatorVariable ? (
+          <button
+            type="button"
+            onClick={() => {
+              setLocatorLoopCreateModalTarget({ actionId: action.id, phase });
+              setLocatorLoopCreateModalOpen(true);
+            }}
+            className="self-end rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-left text-xs font-semibold text-sky-900 transition hover:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-sky-100"
+          >
+            Edit locator: {action.locatorVariable || "locator"}
+          </button>
+        ) : null}
         {action.action === "getAttribute" ? (
           <label className="text-[11px] font-semibold text-sky-900 dark:text-sky-100">
             Attribute
@@ -4920,7 +4965,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                   }
                   className="min-w-0 flex-1 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
                 >
-                  {locatorLoopBuilderOptionGroups.map((group) => (
+                  {locatorLoopBuilderOptionGroups
+                    .filter((group) => phase === "inside" || group !== "Web")
+                    .map((group) => (
                     <optgroup key={group} label={group}>
                       {locatorLoopBuilderActionOptions
                         .filter((option) => option.group === group)
@@ -4953,6 +5000,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       )}
     </div>
   );
+  const locatorLoopCreateModalAction =
+    locatorLoopCreateModalTarget
+      ? locatorLoopBuilder[locatorLoopPhaseKey(locatorLoopCreateModalTarget.phase)].find(
+          (action) => action.id === locatorLoopCreateModalTarget.actionId,
+        ) ?? null
+      : null;
   const logicEditorSuggestions = useMemo<LogicEditorSuggestion[]>(() => {
     const builtIns: LogicEditorSuggestion[] = [
       { detail: "Run environment name", insertText: logicVariableToken("env"), label: "$env", source: "builtin" },
@@ -13388,7 +13441,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                               Locator Loop Builder
                             </h5>
                             <p className="mt-1 text-[11px] font-medium text-sky-700 dark:text-sky-200">
-                              Build a loop from a locator variable without writing the logic by hand.
+                              Build one loop with action-specific locators and collection steps.
                             </p>
                           </div>
                           <button
@@ -13426,47 +13479,6 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                               <option value="__create__">+ Create count variable</option>
                             </select>
                           </label>
-                          <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
-                            Locator variable
-                            <select
-                              value={locatorLoopBuilder.locatorVariable}
-                              onChange={(event) => {
-                                const value = event.target.value;
-                                if (value === "__create__") {
-                                  setLocatorLoopBuilder((current) => ({
-                                    ...current,
-                                    createLocatorVariable: true,
-                                    locatorVariable: current.locatorVariable || "locator",
-                                  }));
-                                  setLocatorLoopCreateModalOpen(true);
-                                  return;
-                                }
-                                if (locatorLoopBuilder.createLocatorVariable && value === locatorLoopBuilder.locatorVariable) {
-                                  return;
-                                }
-                                setLocatorLoopBuilder((current) => ({
-                                  ...current,
-                                  createLocatorVariable: false,
-                                  locatorVariable: value,
-                                }));
-                              }}
-                              className="mt-1 w-full rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-950 outline-none focus:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                            >
-                              <option value="">Select variable...</option>
-                              {locatorLoopBuilder.locatorVariable && !variablePickerItems.some((item) => item.name === locatorLoopBuilder.locatorVariable) ? (
-                                <option value={locatorLoopBuilder.locatorVariable}>
-                                  {locatorLoopBuilder.locatorVariable}
-                                  {locatorLoopBuilder.createLocatorVariable ? " - New locator variable" : ""}
-                                </option>
-                              ) : null}
-                              {variablePickerItems.map((item) => (
-                                <option key={item.name} value={item.name}>
-                                  {item.name} - {item.detail}
-                                </option>
-                              ))}
-                              <option value="__create__">+ Create locator variable</option>
-                            </select>
-                          </label>
                           {locatorLoopBuilder.createCountVariable ? (
                             <>
                               <label className="text-xs font-semibold text-sky-900 dark:text-sky-100">
@@ -13498,15 +13510,6 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                                 />
                               </label>
                             </>
-                          ) : null}
-                          {locatorLoopBuilder.createLocatorVariable ? (
-                            <button
-                              type="button"
-                              onClick={() => setLocatorLoopCreateModalOpen(true)}
-                              className="rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-left text-xs font-semibold text-sky-900 transition hover:border-sky-500 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-sky-100"
-                            >
-                              Edit locator variable: {locatorLoopBuilder.locatorVariable || "locator"}
-                            </button>
                           ) : null}
                         </div>
                         <div className="grid gap-3">
@@ -16254,7 +16257,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         </div>
       ) : null}
 
-      {locatorLoopCreateModalOpen ? (
+      {locatorLoopCreateModalOpen && locatorLoopCreateModalAction && locatorLoopCreateModalTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
           <div className="w-full max-w-lg rounded-[16px] border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
             <div className="flex items-start justify-between gap-3">
@@ -16270,12 +16273,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 type="button"
                 onClick={() => {
                   setLocatorLoopCreateModalOpen(false);
-                  if (!textValue(locatorLoopBuilder.locatorValue)) {
-                    setLocatorLoopBuilder((current) => ({
-                      ...current,
+                  if (!textValue(locatorLoopCreateModalAction.locatorValue)) {
+                    updateLocatorLoopBuilderAction(locatorLoopCreateModalTarget.phase, locatorLoopCreateModalTarget.actionId, {
                       createLocatorVariable: false,
-                    }));
+                    });
                   }
+                  setLocatorLoopCreateModalTarget(null);
                 }}
                 className="rounded-lg px-2 py-1 text-sm font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
               >
@@ -16287,12 +16290,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 Variable name
                 <input
                   autoFocus
-                  value={locatorLoopBuilder.locatorVariable}
+                  value={locatorLoopCreateModalAction.locatorVariable}
                   onChange={(event) =>
-                    setLocatorLoopBuilder((current) => ({
-                      ...current,
+                    updateLocatorLoopBuilderAction(locatorLoopCreateModalTarget.phase, locatorLoopCreateModalTarget.actionId, {
                       locatorVariable: event.target.value,
-                    }))
+                    })
                   }
                   placeholder="productLocator"
                   className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 outline-none placeholder:text-zinc-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
@@ -16301,12 +16303,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
               <label className="grid gap-1 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
                 Locator type
                 <select
-                  value={locatorLoopBuilder.locatorType}
+                  value={locatorLoopCreateModalAction.locatorType}
                   onChange={(event) =>
-                    setLocatorLoopBuilder((current) => ({
-                      ...current,
+                    updateLocatorLoopBuilderAction(locatorLoopCreateModalTarget.phase, locatorLoopCreateModalTarget.actionId, {
                       locatorType: event.target.value as "css" | "xpath",
-                    }))
+                    })
                   }
                   className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                 >
@@ -16317,32 +16318,31 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
               <label className="grid gap-1 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
                 Locator value
                 <textarea
-                  value={locatorLoopBuilder.locatorValue}
+                  value={locatorLoopCreateModalAction.locatorValue}
                   onChange={(event) =>
-                    setLocatorLoopBuilder((current) => ({
-                      ...current,
+                    updateLocatorLoopBuilderAction(locatorLoopCreateModalTarget.phase, locatorLoopCreateModalTarget.actionId, {
                       locatorValue: event.target.value,
-                    }))
+                    })
                   }
-                  placeholder={locatorLoopBuilder.locatorType === "xpath" ? "//button[@type='button']/div/div" : "button[type='button'] > div > div"}
+                  placeholder={locatorLoopCreateModalAction.locatorType === "xpath" ? "//button[@type='button']/div/div" : "button[type='button'] > div > div"}
                   className="min-h-24 rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 outline-none placeholder:text-zinc-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                 />
               </label>
               <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
-                Preview: set {cleanLogicVariableName(locatorLoopBuilder.locatorVariable, "locator")} ={" "}
-                {logicStringLiteral(textValue(locatorLoopBuilder.locatorValue) || "locator")}
+                Preview: set {cleanLogicVariableName(locatorLoopCreateModalAction.locatorVariable, "locator")} ={" "}
+                {logicStringLiteral(textValue(locatorLoopCreateModalAction.locatorValue) || "locator")}
               </div>
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     setLocatorLoopCreateModalOpen(false);
-                    if (!textValue(locatorLoopBuilder.locatorValue)) {
-                      setLocatorLoopBuilder((current) => ({
-                        ...current,
+                    if (!textValue(locatorLoopCreateModalAction.locatorValue)) {
+                      updateLocatorLoopBuilderAction(locatorLoopCreateModalTarget.phase, locatorLoopCreateModalTarget.actionId, {
                         createLocatorVariable: false,
-                      }));
+                      });
                     }
+                    setLocatorLoopCreateModalTarget(null);
                   }}
                   className="rounded-xl border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-700 dark:border-zinc-800 dark:text-zinc-200"
                 >
@@ -16351,16 +16351,16 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 <button
                   type="button"
                   onClick={() => {
-                    setLocatorLoopBuilder((current) => ({
-                      ...current,
+                    updateLocatorLoopBuilderAction(locatorLoopCreateModalTarget.phase, locatorLoopCreateModalTarget.actionId, {
                       createLocatorVariable: true,
-                      locatorVariable: cleanLogicVariableName(current.locatorVariable, "locator"),
-                    }));
+                      locatorVariable: cleanLogicVariableName(locatorLoopCreateModalAction.locatorVariable, "locator"),
+                    });
                     setLocatorLoopCreateModalOpen(false);
+                    setLocatorLoopCreateModalTarget(null);
                   }}
                   disabled={
-                    !cleanLogicVariableName(locatorLoopBuilder.locatorVariable, "") ||
-                    !textValue(locatorLoopBuilder.locatorValue)
+                    !cleanLogicVariableName(locatorLoopCreateModalAction.locatorVariable, "") ||
+                    !textValue(locatorLoopCreateModalAction.locatorValue)
                   }
                   className="rounded-xl bg-sky-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-sky-800 disabled:opacity-50"
                 >
