@@ -413,6 +413,21 @@ const collectionOutput: AutomationOutputDefinition = {
   outputType: "object",
 };
 
+const comparisonOutput: AutomationOutputDefinition = {
+  canSaveAsVariable: true,
+  defaultOutputVariableName: "comparisonResult",
+  outputSchema: {
+    properties: {
+      failedCount: { type: "number" },
+      mismatches: { type: "array" },
+      passed: { type: "boolean" },
+      passedCount: { type: "number" },
+    },
+    type: "object",
+  },
+  outputType: "object",
+};
+
 const voidOutput: AutomationOutputDefinition = {
   canSaveAsVariable: false,
   outputType: "void",
@@ -959,6 +974,29 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     outputDefinition: collectionOutput,
     runtimeHandler: "web.data.uniqueList",
   }),
+  command("compareValues", "Compare values", [
+    param("actual", "json", {
+      description: "Actual value or variable reference.",
+      required: true,
+      valueSourceAllowed: allValueSources,
+    }),
+    param("expected", "json", {
+      description: "Expected value or variable reference.",
+      required: true,
+      valueSourceAllowed: allValueSources,
+    }),
+    param("operator", "select", operatorParam),
+    param("caseSensitive", "boolean", { defaultValue: false }),
+    param("trimWhitespace", "boolean", { defaultValue: true }),
+    param("numericTolerance", "number"),
+  ], {
+    aliases: ["Compare string", "Compare text", "Compare variable values", "Assert values equal", "Verify value equals"],
+    category: "data.compare",
+    description: "Compares two scalar values such as strings, numbers, booleans, or variables.",
+    outputDefinition: comparisonOutput,
+    runtimeHandler: "web.data.compareValues",
+    stepKind: "assertion",
+  }),
   command("compareLists", "Compare lists", [
     param("actual", "variableReference", { required: true }),
     param("expected", "json", { required: true }),
@@ -970,11 +1008,53 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
         { label: "Ignore order", value: "ignoreOrder" },
       ],
     }),
+    param("keyFields", "string", {
+      description: "Optional comma-separated field names for matching object rows by key.",
+    }),
+    param("caseSensitive", "boolean", { defaultValue: false }),
+    param("trimWhitespace", "boolean", { defaultValue: true }),
+    param("numericTolerance", "number"),
   ], {
-    aliases: ["Compare arrays", "Verify list equals"],
+    aliases: ["Compare arrays", "Verify list equals", "Compare list to list", "Compare collection"],
     category: "data.collections.list",
-    outputDefinition: collectionOutput,
+    description: "Compares two lists and reports missing, extra, and mismatched items.",
+    outputDefinition: comparisonOutput,
     runtimeHandler: "web.data.compareLists",
+    stepKind: "assertion",
+  }),
+  command("compareDatasets", "Compare datasets", [
+    param("actual", "json", {
+      description: "Actual dataset variable or JSON.",
+      required: true,
+      valueSourceAllowed: allValueSources,
+    }),
+    param("expected", "json", {
+      description: "Expected dataset variable or JSON.",
+      required: true,
+      valueSourceAllowed: allValueSources,
+    }),
+    param("compareMode", "select", {
+      defaultValue: "exact",
+      options: [
+        { label: "Exact", value: "exact" },
+        { label: "Actual contains expected", value: "containsExpected" },
+        { label: "Ignore order", value: "ignoreOrder" },
+        { label: "Ignore extra actual rows", value: "ignoreExtraActual" },
+        { label: "Ignore extra expected rows", value: "ignoreExtraExpected" },
+      ],
+    }),
+    param("keyFields", "string", {
+      description: "Optional comma-separated field names for matching object rows by key.",
+    }),
+    param("caseSensitive", "boolean", { defaultValue: false }),
+    param("trimWhitespace", "boolean", { defaultValue: true }),
+    param("numericTolerance", "number"),
+  ], {
+    aliases: ["Compare data sets", "Compare objects", "Compare object arrays", "Compare JSON", "Compare expected and actual data"],
+    category: "data.compare",
+    description: "Compares strings, lists, object arrays, maps, or JSON datasets with detailed mismatch output.",
+    outputDefinition: comparisonOutput,
+    runtimeHandler: "web.data.compareDatasets",
     stepKind: "assertion",
   }),
   command("createMap", "Create map/object", [

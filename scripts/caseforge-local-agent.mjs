@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.34";
+const AGENT_VERSION = "0.1.35";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -2799,6 +2799,166 @@ function collectionItemValue(item, field) {
   return key ? getRuntimePathValue(item, key) : item;
 }
 
+function runtimeComparisonValue(value, runtimeVariables = {}) {
+  if (value === undefined || value === null) return value;
+  if (typeof value !== "string") return value;
+  const text = value.trim();
+  if (!text) return "";
+  const tokenMatch = text.match(/^\{\{\s*\$?([^}]+?)\s*\}\}$/);
+  if (tokenMatch) {
+    const variableValue = runtimeVariableValue(runtimeVariables, dslVariableName(tokenMatch[1]));
+    return variableValue === undefined ? value : variableValue;
+  }
+  const variableValue = runtimeVariableValue(runtimeVariables, dslVariableName(text));
+  if (variableValue !== undefined) return variableValue;
+  return parseStructuredRuntimeValue(value, value);
+}
+
+function comparisonKeyFields(options = {}) {
+  return String(options.keyFields || options.keyColumns || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function comparableDatasetValue(value, options = {}) {
+  const parsed = parseStructuredRuntimeValue(value, value);
+  if (typeof parsed === "string") {
+    const trimmed = optionBoolean(options.trimWhitespace, true) ? parsed.replace(/\s+/g, " ").trim() : parsed;
+    return optionBoolean(options.caseSensitive, false) ? trimmed : trimmed.toLowerCase();
+  }
+  if (typeof parsed === "number" || typeof parsed === "boolean" || parsed === null || parsed === undefined) return parsed;
+  return parsed;
+}
+
+function stableComparisonText(value, options = {}) {
+  const normalized = comparableDatasetValue(value, options);
+  if (normalized && typeof normalized === "object") {
+    if (Array.isArray(normalized)) return `[${normalized.map((item) => stableComparisonText(item, options)).join(",")}]`;
+    return `{${Object.keys(normalized).sort().map((key) => `${key}:${stableComparisonText(normalized[key], options)}`).join(",")}}`;
+  }
+  return stringifyRuntimeValue(normalized);
+}
+
+function compareScalarValues(actual, expected, options = {}) {
+  const operator = String(options.operator || options.matchType || "equals");
+  const left = comparableDatasetValue(actual, options);
+  const right = comparableDatasetValue(expected, options);
+  const tolerance = optionalNumber(options.numericTolerance);
+  if (tolerance !== null && Number.isFinite(Number(left)) && Number.isFinite(Number(right))) {
+    const delta = Math.abs(Number(left) - Number(right));
+    const passed = operator === "notEquals" ? delta > tolerance : delta <= tolerance;
+    return { delta, passed };
+  }
+  const passed = evaluateRuntimeComparison(left, right, operator, options);
+  return { passed };
+}
+
+function rowKeyForComparison(row, keyFields, options = {}) {
+  if (!keyFields.length || !row || typeof row !== "object" || Array.isArray(row)) {
+    return stableComparisonText(row, options);
+  }
+  return keyFields.map((field) => stableComparisonText(getRuntimePathValue(row, field), options)).join("|");
+}
+
+function compareObjectsByFields(actual, expected, path, options = {}) {
+  const mismatches = [];
+  const keys = new Set([
+    ...Object.keys(actual && typeof actual === "object" && !Array.isArray(actual) ? actual : {}),
+    ...Object.keys(expected && typeof expected === "object" && !Array.isArray(expected) ? expected : {}),
+  ]);
+  for (const key of keys) {
+    const nextPath = path ? `${path}.${key}` : key;
+    const actualValue = actual?.[key];
+    const expectedValue = expected?.[key];
+    if (actualValue && typeof actualValue === "object" && !Array.isArray(actualValue) && expectedValue && typeof expectedValue === "object" && !Array.isArray(expectedValue)) {
+      mismatches.push(...compareObjectsByFields(actualValue, expectedValue, nextPath, options));
+    } else if (!compareScalarValues(actualValue, expectedValue, options).passed) {
+      mismatches.push({ actual: actualValue, expected: expectedValue, path: nextPath, reason: "Value mismatch" });
+    }
+  }
+  return mismatches;
+}
+
+function compareDatasetValues(actualInput, expectedInput, options = {}) {
+  const actual = runtimeComparisonValue(actualInput, options.runtimeVariables || {});
+  const expected = runtimeComparisonValue(expectedInput, options.runtimeVariables || {});
+  const mode = String(options.compareMode || "exact");
+  const keyFields = comparisonKeyFields(options);
+  const actualIsList = Array.isArray(actual);
+  const expectedIsList = Array.isArray(expected);
+  const mismatchedItems = [];
+  const missingItems = [];
+  const extraItems = [];
+
+  if (!actualIsList && !expectedIsList) {
+    if (actual && typeof actual === "object" && expected && typeof expected === "object") {
+      mismatchedItems.push(...compareObjectsByFields(actual, expected, "", options));
+    } else {
+      const scalar = compareScalarValues(actual, expected, options);
+      if (!scalar.passed) mismatchedItems.push({ actual, expected, path: "", reason: "Value mismatch" });
+    }
+  } else {
+    const actualRows = normalizeList(actual);
+    const expectedRows = normalizeList(expected);
+    const actualMap = new Map(actualRows.map((row, index) => [keyFields.length ? rowKeyForComparison(row, keyFields, options) : String(index), { index, row }]));
+    const expectedMap = new Map(expectedRows.map((row, index) => [keyFields.length ? rowKeyForComparison(row, keyFields, options) : String(index), { index, row }]));
+    if (mode === "containsExpected") {
+      for (const [key, expectedRow] of expectedMap) {
+        const actualRow = keyFields.length ? actualMap.get(key) : actualRows.find((row) => stableComparisonText(row, options) === stableComparisonText(expectedRow.row, options));
+        if (!actualRow) missingItems.push({ expected: expectedRow.row, key, rowIndex: expectedRow.index });
+      }
+    } else if (mode === "ignoreOrder" || keyFields.length) {
+      for (const [key, expectedRow] of expectedMap) {
+        const actualRow = actualMap.get(key);
+        if (!actualRow) {
+          missingItems.push({ expected: expectedRow.row, key, rowIndex: expectedRow.index });
+          continue;
+        }
+        mismatchedItems.push(...compareObjectsByFields(actualRow.row, expectedRow.row, `row[${key}]`, options));
+      }
+      for (const [key, actualRow] of actualMap) {
+        if (!expectedMap.has(key)) extraItems.push({ actual: actualRow.row, key, rowIndex: actualRow.index });
+      }
+    } else {
+      const max = Math.max(actualRows.length, expectedRows.length);
+      for (let index = 0; index < max; index += 1) {
+        if (index >= expectedRows.length) {
+          extraItems.push({ actual: actualRows[index], rowIndex: index });
+        } else if (index >= actualRows.length) {
+          missingItems.push({ expected: expectedRows[index], rowIndex: index });
+        } else {
+          const actualRow = actualRows[index];
+          const expectedRow = expectedRows[index];
+          if (actualRow && typeof actualRow === "object" && expectedRow && typeof expectedRow === "object") {
+            mismatchedItems.push(...compareObjectsByFields(actualRow, expectedRow, `row[${index}]`, options));
+          } else if (!compareScalarValues(actualRow, expectedRow, options).passed) {
+            mismatchedItems.push({ actual: actualRow, expected: expectedRow, path: `row[${index}]`, reason: "Value mismatch" });
+          }
+        }
+      }
+    }
+    if (mode === "ignoreExtraActual" || mode === "containsExpected") extraItems.length = 0;
+    if (mode === "ignoreExtraExpected") missingItems.length = 0;
+  }
+
+  const failedCount = mismatchedItems.length + missingItems.length + extraItems.length;
+  return {
+    actual,
+    actualCount: Array.isArray(actual) ? actual.length : undefined,
+    compareMode: mode,
+    expected,
+    expectedCount: Array.isArray(expected) ? expected.length : undefined,
+    extraItems,
+    failedCount,
+    keyFields,
+    mismatches: mismatchedItems,
+    missingItems,
+    passed: failedCount === 0,
+    passedCount: failedCount === 0 ? 1 : 0,
+  };
+}
+
 async function executeCollectionCommand(page, step, runtimeVariables = {}) {
   const action = step.action;
   const options = step.options || {};
@@ -2865,19 +3025,47 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
       return true;
     });
   }
+  if (action === "compareValues") {
+    const actual = runtimeComparisonValue(options.actual ?? options.source ?? options.leftValue, runtimeVariables);
+    const expected = runtimeComparisonValue(options.expected ?? options.expectedValue ?? options.rightValue, runtimeVariables);
+    const scalar = compareScalarValues(actual, expected, options);
+    const output = {
+      actual,
+      expected,
+      failedCount: scalar.passed ? 0 : 1,
+      mismatches: scalar.passed ? [] : [{ actual, expected, path: "", reason: "Value mismatch" }],
+      operator: options.operator || options.matchType || "equals",
+      passed: scalar.passed,
+      passedCount: scalar.passed ? 1 : 0,
+    };
+    if (!output.passed) {
+      const error = new Error("Value comparison failed.");
+      error.output = output;
+      throw error;
+    }
+    return output;
+  }
   if (action === "compareLists") {
-    const expected = normalizeList(options.expected);
-    const actualText = list.map((item) => stringifyRuntimeValue(item));
-    const expectedText = expected.map((item) => stringifyRuntimeValue(item));
-    const mode = String(options.compareMode || "exact");
-    const passed = mode === "containsExpected"
-      ? expectedText.every((item) => actualText.includes(item))
-      : mode === "ignoreOrder"
-        ? actualText.length === expectedText.length && expectedText.every((item) => actualText.includes(item))
-        : stringifyRuntimeValue(list) === stringifyRuntimeValue(expected);
-    const output = { actual: list, expected, missingItems: expected.filter((item) => !actualText.includes(stringifyRuntimeValue(item))), passed };
-    if (!passed) {
+    const actualValue = runtimeComparisonValue(options.actual ?? options.source, runtimeVariables);
+    const expectedValue = runtimeComparisonValue(options.expected, runtimeVariables);
+    const output = compareDatasetValues(normalizeList(actualValue), normalizeList(expectedValue), {
+      ...options,
+      runtimeVariables,
+    });
+    if (!output.passed) {
       const error = new Error("List comparison failed.");
+      error.output = output;
+      throw error;
+    }
+    return output;
+  }
+  if (action === "compareDatasets") {
+    const output = compareDatasetValues(options.actual ?? options.source, options.expected, {
+      ...options,
+      runtimeVariables,
+    });
+    if (!output.passed) {
+      const error = new Error("Dataset comparison failed.");
       error.output = output;
       throw error;
     }
@@ -2974,6 +3162,8 @@ async function extractWebElements(page, step) {
 const collectionActionNames = new Set([
   "addItemToList",
   "compareLists",
+  "compareDatasets",
+  "compareValues",
   "countListItems",
   "createList",
   "createMap",
@@ -4847,6 +5037,10 @@ async function executeStepWithRuntimeVariables(page, step, runtimeVariables, con
       options: {
         ...resolveRuntimeValue(step.options || {}, runtimeVariables),
         actual: step.options?.actual,
+        expected: step.options?.expected,
+        expectedValue: step.options?.expectedValue,
+        leftValue: step.options?.leftValue,
+        rightValue: step.options?.rightValue,
         source: step.options?.source,
       },
     };

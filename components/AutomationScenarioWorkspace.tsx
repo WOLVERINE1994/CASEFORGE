@@ -1918,6 +1918,34 @@ function tableCommandDetailLines(output: unknown) {
   return lines;
 }
 
+function comparisonCommandSummary(output: unknown) {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return "";
+  const record = output as Record<string, unknown>;
+  if (typeof record.passed !== "boolean" && typeof record.failedCount !== "number") return "";
+  const failed = Number(record.failedCount ?? 0);
+  const passed = Boolean(record.passed);
+  const missing = Array.isArray(record.missingItems) ? record.missingItems.length : 0;
+  const extra = Array.isArray(record.extraItems) ? record.extraItems.length : 0;
+  const mismatches = Array.isArray(record.mismatches) ? record.mismatches.length : 0;
+  return `Comparison ${passed ? "passed" : "failed"}${failed ? `: ${failed} issue${failed === 1 ? "" : "s"}` : ""}${missing ? `, ${missing} missing` : ""}${extra ? `, ${extra} extra` : ""}${mismatches ? `, ${mismatches} mismatch${mismatches === 1 ? "" : "es"}` : ""}`;
+}
+
+function comparisonCommandDetailLines(output: unknown) {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return [];
+  const record = output as Record<string, unknown>;
+  const lines: string[] = [];
+  const mismatches = Array.isArray(record.mismatches) ? record.mismatches : [];
+  for (const item of mismatches.slice(0, 8)) {
+    const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    lines.push(`Mismatch ${textValue(row.path) || "value"}: expected "${textValue(row.expected)}", actual "${textValue(row.actual)}"`);
+  }
+  const missing = Array.isArray(record.missingItems) ? record.missingItems : [];
+  if (missing.length) lines.push(`Missing items: ${missing.length}`);
+  const extra = Array.isArray(record.extraItems) ? record.extraItems : [];
+  if (extra.length) lines.push(`Extra items: ${extra.length}`);
+  return lines;
+}
+
 function logicDslRunSummary(output: unknown) {
   if (!output || typeof output !== "object" || Array.isArray(output)) return "";
   const record = output as Record<string, unknown>;
@@ -1975,6 +2003,9 @@ function commandConsoleOutputForStep(step: AutomationStep | undefined, output: u
   if (action === "runJavaScriptSnippet") return javaScriptSnippetSummary(output);
   if (isLogicIdeCommand(action)) return logicDslRunSummary(output);
   if (action === "validateAccordionSections") return accordionValidationSummary(output);
+  if (action === "compareValues" || action === "compareLists" || action === "compareDatasets") {
+    return comparisonCommandSummary(output);
+  }
   if (action.includes("WebTable") || action === "getWebTableData" || action === "validateWebTable") {
     return tableCommandSummary(output);
   }
@@ -2006,6 +2037,9 @@ function commandConsoleDetailLinesForStep(step: AutomationStep | undefined, outp
   }
   if (isLogicIdeCommand(action)) {
     return logicDslRunDetailLines(output);
+  }
+  if (action === "compareValues" || action === "compareLists" || action === "compareDatasets") {
+    return comparisonCommandDetailLines(output);
   }
   if (action.includes("WebTable") || action === "getWebTableData" || action === "validateWebTable") {
     return tableCommandDetailLines(output);
@@ -11635,7 +11669,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.34
+            Download Companion 0.1.35
           </a>
           <button
             type="button"
