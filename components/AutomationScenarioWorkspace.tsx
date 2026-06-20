@@ -13202,75 +13202,78 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 <details
                   open={locatorDiagnosticsOpen}
                   onToggle={(event) => setLocatorDiagnosticsOpen(event.currentTarget.open)}
-                  className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
+                  className="min-w-0 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
                 >
-                  <summary className="cursor-pointer list-none rounded-lg px-1 py-0.5 text-xs font-semibold text-zinc-700 outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-emerald-500/30 dark:text-zinc-200 dark:hover:bg-zinc-900 [&::-webkit-details-marker]:hidden">
+                  <summary className="cursor-pointer list-none rounded-lg px-2 py-1 text-xs font-semibold text-zinc-700 outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-emerald-500/30 dark:text-zinc-200 dark:hover:bg-zinc-900 [&::-webkit-details-marker]:hidden">
                     Locator diagnostics
                   </summary>
                   <div className="mt-3 grid min-w-0 gap-3">
-                <div className="min-w-0 overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
-                  <p className="text-xs font-semibold text-emerald-950 dark:text-emerald-100">
-                    Custom locator
-                  </p>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-[150px_minmax(0,1fr)]">
-                    <label className="text-xs font-semibold text-emerald-800 dark:text-emerald-200">
-                      Type
-                      <select
-                        value={customLocatorType}
-                        onChange={(event) =>
-                          setCustomLocatorType(event.target.value === "xpath" ? "xpath" : "css")
-                        }
-                        className="mt-1 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                      >
-                        <option value="css">CSS</option>
-                        <option value="xpath">XPath</option>
-                      </select>
-                    </label>
-                    <label className="text-xs font-semibold text-emerald-800 dark:text-emerald-200">
-                      Value
-                      <textarea
-                        value={customLocatorValue}
-                        onChange={(event) => setCustomLocatorValue(event.target.value)}
-                        placeholder={
-                          customLocatorType === "xpath"
-                            ? "//button[contains(., 'Submit')]"
-                            : "#submit-button"
-                        }
-                        className="mt-1 min-h-16 w-full resize-y rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm leading-5 text-zinc-950 outline-none placeholder:text-zinc-400 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-                      />
-                    </label>
-                  </div>
-                  <div className="mt-3 flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        addCustomLocatorCandidate(selectedStep.id, {
-                          type: customLocatorType,
-                          value: customLocatorValue,
-                        });
-                        setCustomLocatorValue("");
-                      }}
-                      disabled={!customLocatorValue.trim()}
-                      className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-emerald-200 dark:hover:bg-emerald-500/10"
-                    >
-                      Save as fallback
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        replaceStepLocator(selectedStep.id, {
-                          type: customLocatorType,
-                          value: customLocatorValue.trim(),
-                        });
-                        setCustomLocatorValue("");
-                      }}
-                      disabled={!customLocatorValue.trim()}
-                      className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
-                    >
-                      Use as primary
-                    </button>
-                  </div>
-                </div>
+                    <div className="min-w-0 rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+                      <p className="text-xs font-semibold text-emerald-950 dark:text-emerald-100">
+                        Custom locator
+                      </p>
+                      <p className="mt-1 text-[11px] font-medium text-emerald-800 dark:text-emerald-200">
+                        Choose CSS or XPath, then save it as a fallback or replace the primary locator.
+                      </p>
+                      <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-[150px_minmax(0,1fr)]">
+                        <label className="min-w-0 text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+                          Type
+                          <select
+                            value={customLocatorType}
+                            onChange={(event) =>
+                              setCustomLocatorType(event.target.value === "xpath" ? "xpath" : "css")
+                            }
+                            className="mt-1 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                          >
+                            <option value="css">CSS</option>
+                            <option value="xpath">XPath</option>
+                          </select>
+                        </label>
+                        <label className="min-w-0 text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+                          Value
+                          <textarea
+                            value={customLocatorValue}
+                            onChange={(event) => setCustomLocatorValue(event.target.value)}
+                            placeholder={
+                              customLocatorType === "xpath"
+                                ? "//button[contains(., 'Submit')]"
+                                : "#submit-button"
+                            }
+                            className="mt-1 min-h-20 w-full resize-y rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm leading-5 text-zinc-950 outline-none placeholder:text-zinc-400 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                          />
+                        </label>
+                      </div>
+                      <div className="mt-3 flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            addCustomLocatorCandidate(selectedStep.id, {
+                              type: customLocatorType,
+                              value: customLocatorValue,
+                            });
+                            setCustomLocatorValue("");
+                          }}
+                          disabled={!customLocatorValue.trim()}
+                          className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-emerald-200 dark:hover:bg-emerald-500/10"
+                        >
+                          Save as fallback
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            replaceStepLocator(selectedStep.id, {
+                              type: customLocatorType,
+                              value: customLocatorValue.trim(),
+                            });
+                            setCustomLocatorValue("");
+                          }}
+                          disabled={!customLocatorValue.trim()}
+                          className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          Use as primary
+                        </button>
+                      </div>
+                    </div>
                 {selectedStepQuality ? (
                   <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
                     <div className="flex items-start justify-between gap-3">
