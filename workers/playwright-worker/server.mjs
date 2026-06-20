@@ -3093,6 +3093,82 @@ async function workerExecuteTableCommand(page, step, timeout) {
   throw new Error(`Unsupported table action: ${action}`);
 }
 
+async function workerExtractElements(session, page, step, index, context, timeout) {
+  const options = step.options || {};
+  const locator = await primaryResolvedLocator(session, page, step, index, context);
+  const includeHidden = tableBoolean(options.includeHidden, false);
+  const trimWhitespace = tableBoolean(options.trimWhitespace, true);
+  const attributeName = String(options.attributeName || "").trim();
+  const maxItems = Math.max(1, tableNumber(options.maxItems) ?? 500);
+  return await locator.evaluateAll((elements, config) => {
+    const clean = (value) => {
+      const text = String(value ?? "");
+      return config.trimWhitespace ? text.replace(/\s+/g, " ").trim() : text;
+    };
+    const visible = (element) => {
+      if (config.includeHidden) return true;
+      if (!element || !element.isConnected || element.closest("[hidden],[aria-hidden='true']")) return false;
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const cssEscape = (value) =>
+      window.CSS?.escape ? window.CSS.escape(String(value)) : String(value).replace(/"/g, '\\"');
+    const roleOf = (element) => {
+      const role = element.getAttribute("role");
+      if (role) return role;
+      const tag = element.tagName.toLowerCase();
+      if (tag === "button") return "button";
+      if (tag === "a") return "link";
+      if (tag === "select") return "combobox";
+      if (tag === "textarea") return "textbox";
+      if (tag === "input") {
+        const type = String(element.getAttribute("type") || "text").toLowerCase();
+        if (type === "checkbox") return "checkbox";
+        if (type === "radio") return "radio";
+        if (type === "submit" || type === "button") return "button";
+        return "textbox";
+      }
+      return "";
+    };
+    const locatorHint = (element, text) => {
+      const testId =
+        element.getAttribute("data-testid") ||
+        element.getAttribute("data-test") ||
+        element.getAttribute("data-qa") ||
+        element.getAttribute("data-cy");
+      if (testId) return { type: "testid", value: testId };
+      const id = element.getAttribute("id");
+      if (id) return { type: "css", value: `#${cssEscape(id)}` };
+      const aria = element.getAttribute("aria-label");
+      const role = roleOf(element);
+      if (aria && role) return { type: "role", value: `${role}:${aria}` };
+      if (text) return { type: "text", value: text.slice(0, 120) };
+      return { type: "css", value: element.tagName.toLowerCase() };
+    };
+    return elements
+      .filter(visible)
+      .slice(0, config.maxItems)
+      .map((element, itemIndex) => {
+        const text = clean(element.innerText || element.textContent || "");
+        const attributeValue = config.attributeName ? clean(element.getAttribute(config.attributeName) || "") : "";
+        const rect = element.getBoundingClientRect();
+        return {
+          attributeName: config.attributeName,
+          attributeValue,
+          index: itemIndex,
+          locator: locatorHint(element, text),
+          role: roleOf(element),
+          tag: element.tagName.toLowerCase(),
+          text,
+          visible: visible(element),
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+        };
+      });
+  }, { attributeName, includeHidden, maxItems, trimWhitespace });
+}
+
 async function executeStep(session, step, index, context = {}) {
   const startedAt = now();
   const startedMs = Date.now();
@@ -3272,6 +3348,38 @@ async function executeStep(session, step, index, context = {}) {
       await withLocatorFallback(session, page, step, index, context, timeout, "Uncheck", (locator, fallbackTimeout) =>
         locator.uncheck({ timeout: fallbackTimeout, force: Boolean(options.force) }),
       );
+    } else if (action === "getInputValue") {
+      const locator = await primaryResolvedLocator(session, page, step, index, context);
+      stepOutput = await locator.inputValue({ timeout });
+    } else if (action === "getText") {
+      const locator = await primaryResolvedLocator(session, page, step, index, context);
+      stepOutput = await locator.innerText({ timeout });
+    } else if (action === "getProperty") {
+      const locator = await primaryResolvedLocator(session, page, step, index, context);
+      const propertyName = String(options.propertyName || step.propertyName || step.params?.propertyName || inputValue || "");
+      if (!propertyName) throw new Error("Get property requires a property name.");
+      stepOutput = await locator.evaluate((element, name) => {
+        const record = element;
+        const value = record[name];
+        if (value === undefined || value === null) return element.getAttribute(name) ?? "";
+        return typeof value === "string" ? value : JSON.stringify(value);
+      }, propertyName);
+    } else if (action === "getCssValue") {
+      const locator = await primaryResolvedLocator(session, page, step, index, context);
+      const propertyName = String(options.cssProperty || step.cssProperty || step.params?.cssProperty || inputValue || "");
+      if (!propertyName) throw new Error("Get CSS value requires a CSS property.");
+      stepOutput = await locator.evaluate((element, name) => window.getComputedStyle(element).getPropertyValue(name), propertyName);
+    } else if (action === "getElementCount") {
+      const locator = await primaryResolvedLocator(session, page, step, index, context);
+      stepOutput = await locator.count();
+    } else if (action === "getWebElementsText") {
+      const items = await workerExtractElements(session, page, step, index, context, timeout);
+      stepOutput = items.map((item) => item.text);
+    } else if (action === "getWebElementsAttribute") {
+      const items = await workerExtractElements(session, page, step, index, context, timeout);
+      stepOutput = items.map((item) => item.attributeValue);
+    } else if (action === "getWebElementsList") {
+      stepOutput = await workerExtractElements(session, page, step, index, context, timeout);
     } else if (action === "waitForElement") {
       const locator = await primaryResolvedLocator(session, page, step, index, context);
       await waitForLocatorReady(locator, step, index, timeout, "Wait for element", "visible");

@@ -1221,6 +1221,43 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     outputDefinition: { canSaveAsVariable: true, defaultOutputVariableName: "count", outputType: "number" },
     runtimeHandler: "web.getElementCount",
   }),
+  command("getWebElementsText", "Get Web Elements text list", [
+    locatorParam(),
+    param("includeHidden", "boolean", { defaultValue: false }),
+    param("trimWhitespace", "boolean", { defaultValue: true }),
+  ], {
+    aliases: ["Get repeated element text", "Get list of element texts", "Get Web Elements Text"],
+    category: "web.get",
+    description: "Returns visible text from every element matching a CSS, XPath, text, role, label, or test id locator.",
+    outputDefinition: { canSaveAsVariable: true, defaultOutputVariableName: "items", outputType: "array" },
+    runtimeHandler: "web.getWebElementsText",
+  }),
+  command("getWebElementsAttribute", "Get Web Elements attribute list", [
+    locatorParam(),
+    param("attributeName", "attributeName", { required: true }),
+    param("includeHidden", "boolean", { defaultValue: false }),
+    param("trimWhitespace", "boolean", { defaultValue: true }),
+  ], {
+    aliases: ["Get repeated element attribute", "Get list of element attributes", "Get hrefs from elements"],
+    category: "web.get",
+    description: "Returns one attribute value from every element matching the locator.",
+    outputDefinition: { canSaveAsVariable: true, defaultOutputVariableName: "items", outputType: "array" },
+    runtimeHandler: "web.getWebElementsAttribute",
+  }),
+  command("getWebElementsList", "Get Web Elements list", [
+    locatorParam(),
+    param("includeHidden", "boolean", { defaultValue: false }),
+    param("attributeName", "attributeName", {
+      description: "Optional attribute to include for each matched element.",
+    }),
+    param("maxItems", "number", { defaultValue: 500 }),
+  ], {
+    aliases: ["Get repeated web elements", "Get element list", "Get Web Elements"],
+    category: "web.get",
+    description: "Returns a rich array of matched elements with index, text, tag, role, selected attribute, and locator hints.",
+    outputDefinition: { canSaveAsVariable: true, defaultOutputVariableName: "items", outputType: "array" },
+    runtimeHandler: "web.getWebElementsList",
+  }),
   command("wait", "Wait", [param("duration", "number", { defaultValue: 1000 })], {
     aliases: ["Hard wait", "Wait for time"],
     category: "wait.time",
