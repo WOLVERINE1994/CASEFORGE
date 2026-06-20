@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.32";
+const AGENT_VERSION = "0.1.33";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -2523,7 +2523,7 @@ function runtimeVariableValue(variables, name) {
 function interpolateRuntimeVariables(value, variables) {
   if (typeof value !== "string") return value;
   return value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, name) => {
-    const key = String(name || "").trim();
+    const key = dslVariableName(name);
     const variableValue = runtimeVariableValue(variables, key);
     if (!key || variableValue === undefined) return match;
     return stringifyRuntimeValue(variableValue);
@@ -2542,7 +2542,7 @@ function stringifyJavaScriptRuntimeValue(value) {
 function interpolateJavaScriptRuntimeVariables(value, variables) {
   if (typeof value !== "string") return value;
   return value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, name) => {
-    const key = String(name || "").trim();
+    const key = dslVariableName(name);
     const variableValue = runtimeVariableValue(variables, key);
     if (!key || variableValue === undefined) return match;
     return stringifyJavaScriptRuntimeValue(variableValue);
@@ -3075,6 +3075,13 @@ async function parseRuntimeDslLocator(page, raw = "", runtimeVariables = {}) {
   const source = String(raw || "").trim();
   if (!source) return { type: "css", value: "" };
   if (/^(css|xpath|text|role|testid|label)\(/.test(source)) return parseDslLocator(source);
+  const variableMatch = source.match(/^\{\{\s*\$?([^}]+?)\s*\}\}$/);
+  if (variableMatch) {
+    const resolvedVariable = runtimeVariableValue(runtimeVariables, dslVariableName(variableMatch[1]));
+    const value = stringifyRuntimeValue(resolvedVariable).trim();
+    const type = looksLikeXPathSelector(value) ? "xpath" : "css";
+    return { type, value };
+  }
   const resolved = await evaluateDslExpression(page, dslExpressionValue(source), runtimeVariables).catch(() => source);
   const value = stringifyRuntimeValue(resolved).trim();
   const type = looksLikeXPathSelector(value) ? "xpath" : "css";
@@ -3134,7 +3141,9 @@ async function dslStepForLocatorCommand(page, command, rest, runtimeVariables) {
   const target = {
     displayName: locator.value || locator.type,
     elementKind: "web element",
-    type: "manual",
+    locatorType: locator.type,
+    strategy: locator.type,
+    type: locator.type === "xpath" || locator.type === "css" ? locator.type : "manual",
     value: locator.value,
   };
   const base = {
