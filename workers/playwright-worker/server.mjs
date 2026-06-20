@@ -2068,6 +2068,25 @@ function waitForAmbiguityResolution(session, payload) {
   });
 }
 
+function locatorIndexForStep(step) {
+  const raw =
+    step?.options?.elementIndex ??
+    step?.options?.ordinalIndex ??
+    step?.options?.index ??
+    step?.elementIndex ??
+    step?.ordinalIndex ??
+    "";
+  if (raw === undefined || raw === null || raw === "") return null;
+  const number = Number(raw);
+  if (!Number.isFinite(number)) throw new Error(`Element Index must be a number. Received "${raw}".`);
+  const indexBase = String(step?.options?.indexBase || step?.indexBase || "oneBased").toLowerCase();
+  const zeroBasedIndex = indexBase === "zerobased" || indexBase === "zero-based" ? number : number - 1;
+  if (!Number.isInteger(zeroBasedIndex) || zeroBasedIndex < 0) {
+    throw new Error(`Element Index resolved to ${number}, which is outside the valid range.`);
+  }
+  return zeroBasedIndex;
+}
+
 async function resolveLocatorForAttempt(session, page, step, index, context, attempt) {
   const locator = attempt.locator;
   if (!locator || typeof locator.count !== "function") {
@@ -2079,6 +2098,14 @@ async function resolveLocatorForAttempt(session, page, step, index, context, att
     matchCount = await locator.count();
   } catch {
     return typeof locator.first === "function" ? locator.first() : locator;
+  }
+
+  const explicitIndex = locatorIndexForStep(step);
+  if (explicitIndex !== null) {
+    if (explicitIndex >= matchCount) {
+      throw new Error(`Element Index ${explicitIndex + 1} is outside the ${matchCount} matched element(s).`);
+    }
+    return typeof locator.nth === "function" ? locator.nth(explicitIndex) : locator;
   }
 
   if (matchCount <= 1) {
@@ -3370,7 +3397,8 @@ async function executeStep(session, step, index, context = {}) {
       if (!propertyName) throw new Error("Get CSS value requires a CSS property.");
       stepOutput = await locator.evaluate((element, name) => window.getComputedStyle(element).getPropertyValue(name), propertyName);
     } else if (action === "getElementCount") {
-      const locator = await primaryResolvedLocator(session, page, step, index, context);
+      const locator = locatorAttemptsFor(page, step)[0]?.locator;
+      if (!locator || typeof locator.count !== "function") throw new Error("Get element count requires a locator.");
       stepOutput = await locator.count();
     } else if (action === "getWebElementsText") {
       const items = await workerExtractElements(session, page, step, index, context, timeout);

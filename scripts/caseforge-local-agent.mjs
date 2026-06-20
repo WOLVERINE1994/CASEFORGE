@@ -2208,6 +2208,33 @@ function normalizedLocatorTypeForStep(step, target, value) {
   return looksLikeBareLocatorToken(value) ? "testid" : "css";
 }
 
+function locatorIndexForStep(step) {
+  const raw =
+    step?.options?.elementIndex ??
+    step?.options?.ordinalIndex ??
+    step?.options?.index ??
+    step?.elementIndex ??
+    step?.ordinalIndex ??
+    "";
+  if (raw === undefined || raw === null || raw === "") return null;
+  const number = Number(raw);
+  if (!Number.isFinite(number)) throw new Error(`Element Index must be a number. Received "${raw}".`);
+  const indexBase = String(step?.options?.indexBase || step?.indexBase || "oneBased").toLowerCase();
+  const zeroBasedIndex = indexBase === "zerobased" || indexBase === "zero-based" ? number : number - 1;
+  if (!Number.isInteger(zeroBasedIndex) || zeroBasedIndex < 0) {
+    throw new Error(`Element Index resolved to ${number}, which is outside the valid range.`);
+  }
+  return zeroBasedIndex;
+}
+
+function applyLocatorIndex(locator, step) {
+  const index = locatorIndexForStep(step);
+  if (index === null && step?.action === "getElementCount") return locator;
+  if (index === null) return typeof locator.first === "function" ? locator.first() : locator;
+  if (typeof locator.nth !== "function") return locator;
+  return locator.nth(index);
+}
+
 function locatorFor(page, step) {
   const scope = frameScopeFor(page, step);
   const target = step.target || {};
@@ -2222,26 +2249,27 @@ function locatorFor(page, step) {
     throw new Error(`Step ${step.id || action} is missing a locator.`);
   }
 
-  if (locatorType === "text") return scope.getByText(value).first();
-  if (locatorType === "aria-label" || locatorType === "label") return scope.getByLabel(value).first();
-  if (locatorType === "placeholder") return scope.getByPlaceholder(value).first();
-  if (locatorType === "alt") return scope.getByAltText(value).first();
-  if (locatorType === "title") return scope.getByTitle(value).first();
+  if (locatorType === "text") return applyLocatorIndex(scope.getByText(value), step);
+  if (locatorType === "aria-label" || locatorType === "label") return applyLocatorIndex(scope.getByLabel(value), step);
+  if (locatorType === "placeholder") return applyLocatorIndex(scope.getByPlaceholder(value), step);
+  if (locatorType === "alt") return applyLocatorIndex(scope.getByAltText(value), step);
+  if (locatorType === "title") return applyLocatorIndex(scope.getByTitle(value), step);
   if (locatorType === "testid" || locatorType === "data-testid" || locatorType === "data-test" || locatorType === "data-qa" || locatorType === "data-cy") {
     const escaped = cssAttributeValue(value);
-    return scope
-      .locator(`[data-testid="${escaped}"],[data-test="${escaped}"],[data-qa="${escaped}"],[data-cy="${escaped}"]`)
-      .first();
+    return applyLocatorIndex(
+      scope.locator(`[data-testid="${escaped}"],[data-test="${escaped}"],[data-qa="${escaped}"],[data-cy="${escaped}"]`),
+      step,
+    );
   }
   if (locatorType === "role") {
     const separator = value.indexOf(":");
     const role = separator >= 0 ? value.slice(0, separator) : value;
     const name = separator >= 0 ? value.slice(separator + 1) : "";
-    return scope.getByRole(role, name ? { name } : undefined).first();
+    return applyLocatorIndex(scope.getByRole(role, name ? { name } : undefined), step);
   }
-  if (locatorType === "id") return scope.locator(`#${value}`).first();
-  if (locatorType === "xpath") return scope.locator(`xpath=${value}`).first();
-  return scope.locator(value).first();
+  if (locatorType === "id") return applyLocatorIndex(scope.locator(`#${value}`), step);
+  if (locatorType === "xpath") return applyLocatorIndex(scope.locator(`xpath=${value}`), step);
+  return applyLocatorIndex(scope.locator(value), step);
 }
 
 function numericPointFromStep(step) {
@@ -2923,11 +2951,37 @@ function parseDslLocator(raw = "") {
   return { type: "css", value: args[0] || "" };
 }
 
+function splitDslTrailingElementIndex(raw = "") {
+  const source = String(raw || "").trim();
+  const match = source.match(/\s+at\s+(.+)$/i);
+  if (!match) return { elementIndexExpression: "", source };
+  return {
+    elementIndexExpression: match[1].trim(),
+    source: source.slice(0, match.index).trim(),
+  };
+}
+
+async function evaluateDslElementIndex(page, expression, runtimeVariables) {
+  const source = String(expression || "").trim();
+  if (!source) return "";
+  if (/^current\s+index$/i.test(source) || /^currentIndex$/i.test(source)) {
+    return runtimeVariableValue(runtimeVariables, "loop.number") ?? runtimeVariableValue(runtimeVariables, "loop.index") ?? "";
+  }
+  return await evaluateDslExpression(page, dslExpressionValue(source), runtimeVariables);
+}
+
 async function dslStepForLocatorCommand(page, command, rest, runtimeVariables) {
-  const locatorMatch = String(rest || "").trim().match(/^(css|xpath|text|role|testid|label)\((?:"[^"]*"|'[^']*'|[^)])*\)(?:\s+(.+))?$/);
-  const locatorSource = locatorMatch ? locatorMatch[0].slice(0, locatorMatch[0].length - String(locatorMatch[2] || "").length).trim() : rest;
+  const indexSplit = splitDslTrailingElementIndex(rest);
+  const locatorMatch = indexSplit.source.match(/^(css|xpath|text|role|testid|label)\((?:"[^"]*"|'[^']*'|[^)])*\)(?:\s+(.+))?$/);
+  const locatorSource = locatorMatch ? locatorMatch[0].slice(0, locatorMatch[0].length - String(locatorMatch[2] || "").length).trim() : indexSplit.source;
   const locator = parseDslLocator(locatorSource);
   const value = locatorMatch?.[2] ? await evaluateDslExpression(page, dslExpressionValue(locatorMatch[2]), runtimeVariables) : "";
+  const elementIndex = indexSplit.elementIndexExpression
+    ? await evaluateDslElementIndex(page, indexSplit.elementIndexExpression, runtimeVariables)
+    : "";
+  const indexOptions = elementIndex === "" || elementIndex === undefined || elementIndex === null
+    ? {}
+    : { elementIndex: String(elementIndex), indexBase: "oneBased" };
   const target = {
     displayName: locator.value || locator.type,
     elementKind: "web element",
@@ -2937,12 +2991,13 @@ async function dslStepForLocatorCommand(page, command, rest, runtimeVariables) {
   const base = {
     action: command,
     description: `${command} ${locator.value || locator.type}`,
+    options: indexOptions,
     target,
   };
   if (locator.type === "role") {
     return {
       ...base,
-      options: { locatorRole: locator.role, locatorText: locator.value },
+      options: { ...indexOptions, locatorRole: locator.role, locatorText: locator.value },
       target: { ...target, type: "role", value: `${locator.role || "button"}:${locator.value || ""}` },
     };
   }

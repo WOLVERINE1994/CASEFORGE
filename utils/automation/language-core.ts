@@ -462,6 +462,29 @@ function param(
 const locatorParam = (options: Omit<AutomationCommandParameterDefinition, "name" | "type"> = {}) =>
   param("locator", "locator", { required: true, ...options });
 
+const elementIndexParam = param("elementIndex", "string", {
+  description: "Optional element number to target when the locator matches multiple elements. Supports variables like {{loop.number}}.",
+  label: "Element Index",
+  required: false,
+  valueSourceAllowed: allValueSources,
+});
+
+const indexBaseParam = param("indexBase", "select", {
+  defaultValue: "oneBased",
+  description: "Use one-based indexes for loop numbers, or zero-based indexes for developer-style indexes.",
+  label: "Index Base",
+  options: [
+    { label: "One-based", value: "oneBased" },
+    { label: "Zero-based", value: "zeroBased" },
+  ],
+});
+
+const indexedLocatorParams = (options: Omit<AutomationCommandParameterDefinition, "name" | "type"> = {}) => [
+  locatorParam(options),
+  elementIndexParam,
+  indexBaseParam,
+];
+
 const timeoutParam = param("timeoutMs", "number", {
   defaultValue: 30000,
   description: "Maximum wait time for this command.",
@@ -1055,27 +1078,27 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     category: "browser.scroll",
     runtimeHandler: "web.scroll",
   }),
-  command("click", "Click on a Web Element", [locatorParam(), timeoutParam, param("scrollIntoView", "boolean", { defaultValue: true })], {
+  command("click", "Click on a Web Element", [...indexedLocatorParams(), timeoutParam, param("scrollIntoView", "boolean", { defaultValue: true })], {
     aliases: ["Click web element", "Click (JS) a Web Element", "Scroll and Click on Web Element"],
     category: "web.element",
     runtimeHandler: "web.click",
   }),
-  command("doubleClick", "Double click on a Web Element", [locatorParam(), timeoutParam], {
+  command("doubleClick", "Double click on a Web Element", [...indexedLocatorParams(), timeoutParam], {
     aliases: ["Double click web element"],
     category: "web.element",
     runtimeHandler: "web.doubleClick",
   }),
-  command("rightClick", "Right click on a Web Element", [locatorParam(), timeoutParam], {
+  command("rightClick", "Right click on a Web Element", [...indexedLocatorParams(), timeoutParam], {
     aliases: ["Right click web element"],
     category: "web.element",
     runtimeHandler: "web.rightClick",
   }),
-  command("hover", "Hover on a Web Element", [locatorParam(), timeoutParam], {
+  command("hover", "Hover on a Web Element", [...indexedLocatorParams(), timeoutParam], {
     aliases: ["Hover on web element"],
     category: "web.element",
     runtimeHandler: "web.hover",
   }),
-  command("scrollIntoView", "Scroll element into view", [locatorParam(), param("scrollBehavior", "select", {
+  command("scrollIntoView", "Scroll element into view", [...indexedLocatorParams(), param("scrollBehavior", "select", {
     options: [
       { label: "Auto", value: "auto" },
       { label: "Smooth", value: "smooth" },
@@ -1105,7 +1128,7 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     category: "web.element",
     runtimeHandler: "web.coordinateClick",
   }),
-  command("press", "Press special keyboard key on Web Element", [param("key", "keyboardKey", { required: true }), locatorParam({ required: false })], {
+  command("press", "Press special keyboard key on Web Element", [param("key", "keyboardKey", { required: true }), ...indexedLocatorParams({ required: false })], {
     aliases: ["Send combo click on Web Element", "Press keyboard key"],
     category: "web.element",
     runtimeHandler: "web.press",
@@ -1117,7 +1140,7 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     runtimeHandler: "web.uploadFile",
   }),
   command("fill", "Enter text in a Web Input", [
-    locatorParam(),
+    ...indexedLocatorParams(),
     param("text", "string", { label: "Text", required: true, valueSourceAllowed: allValueSources }),
     param("clearBeforeType", "boolean", { defaultValue: true }),
   ], {
@@ -1126,7 +1149,7 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     runtimeHandler: "web.fill",
   }),
   command("type", "Enter Text in element with keystroke delay", [
-    locatorParam(),
+    ...indexedLocatorParams(),
     param("text", "string", { required: true, valueSourceAllowed: allValueSources }),
     param("delayMs", "number"),
   ], {
@@ -1141,12 +1164,12 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     runtimeAction: "fill",
     runtimeHandler: "web.fillSecret",
   }),
-  command("clear", "Clear text in Web Input field", [locatorParam()], {
+  command("clear", "Clear text in Web Input field", indexedLocatorParams(), {
     aliases: ["Clear web input"],
     category: "web.input",
     runtimeHandler: "web.clear",
   }),
-  command("getInputValue", "Get value from Web Input field", [locatorParam()], {
+  command("getInputValue", "Get value from Web Input field", indexedLocatorParams(), {
     aliases: ["Get input value"],
     category: "web.input",
     outputDefinition: { ...stringOutput, defaultOutputVariableName: "inputValue" },
@@ -1199,19 +1222,19 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     runtimeHandler: "web.assertCount",
     stepKind: "assertion",
   }),
-  command("getText", "Get text from a Web Element", [locatorParam()], {
+  command("getText", "Get text from a Web Element", indexedLocatorParams(), {
     aliases: ["Get Web Element property/text"],
     category: "web.get",
     outputDefinition: { ...stringOutput, defaultOutputVariableName: "text" },
     runtimeHandler: "web.getText",
   }),
-  command("getProperty", "Get Web Element property/text", [locatorParam(), param("propertyName", "propertyName", { required: true })], {
+  command("getProperty", "Get Web Element property/text", [...indexedLocatorParams(), param("propertyName", "propertyName", { required: true })], {
     aliases: ["Get element property"],
     category: "web.get",
     outputDefinition: { ...stringOutput, defaultOutputVariableName: "propertyValue" },
     runtimeHandler: "web.getProperty",
   }),
-  command("getCssValue", "Get Web Element CSS value", [locatorParam(), param("cssProperty", "cssProperty", { required: true })], {
+  command("getCssValue", "Get Web Element CSS value", [...indexedLocatorParams(), param("cssProperty", "cssProperty", { required: true })], {
     category: "web.get",
     outputDefinition: { ...stringOutput, defaultOutputVariableName: "cssValue" },
     runtimeHandler: "web.getCssValue",

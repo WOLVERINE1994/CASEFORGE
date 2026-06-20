@@ -3009,6 +3009,15 @@ function logicIdeTemplates(action: string) {
       ].join("\n"),
     },
     {
+      label: "Count + Index",
+      value: [
+        "repeat {{$productCount}} {",
+        '  getText css(".product-card") at {{$loop.number}} as productText',
+        '  log "Product: " + productText',
+        "}",
+      ].join("\n"),
+    },
+    {
       label: "Repeat Retry",
       value: [
         "repeat 3 {",
@@ -3029,7 +3038,7 @@ function logicIdeTemplates(action: string) {
     },
   ];
   return action === "loopBlock"
-    ? templates.filter((template) => ["For List", "Loop Table Rows", "Repeat Retry", "Nested If"].includes(template.label))
+    ? templates.filter((template) => ["For List", "Loop Table Rows", "Count + Index", "Repeat Retry", "Nested If"].includes(template.label))
     : templates;
 }
 
