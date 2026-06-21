@@ -6,6 +6,7 @@ const AGENT_HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
 const AGENT_PORT = process.env.CASEFORGE_AGENT_PORT || "4873";
 const HEALTH_URL = `http://${AGENT_HOST}:${AGENT_PORT}/health`;
 const CASEFORGE_URL = process.env.CASEFORGE_APP_URL || "https://caseforge-nine.vercel.app";
+const APP_VERSION = app.getVersion();
 
 let mainWindow;
 let agentProcess;
@@ -69,6 +70,7 @@ const getStatus = async () => {
     port: AGENT_PORT,
     healthUrl: HEALTH_URL,
     caseforgeUrl: CASEFORGE_URL,
+    version: APP_VERSION,
     health,
     logs: logBuffer,
   };
@@ -116,6 +118,7 @@ const startAgent = async () => {
       port: AGENT_PORT,
       healthUrl: HEALTH_URL,
       caseforgeUrl: CASEFORGE_URL,
+      version: APP_VERSION,
     });
   });
 
@@ -142,7 +145,7 @@ const createWindow = () => {
     height: 700,
     minWidth: 860,
     minHeight: 620,
-    title: "CaseForge Companion",
+    title: `CaseForge Companion ${APP_VERSION}`,
     backgroundColor: "#f6f8fb",
     webPreferences: {
       preload: path.join(app.getAppPath(), "src", "preload.mjs"),

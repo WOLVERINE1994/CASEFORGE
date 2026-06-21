@@ -9,6 +9,7 @@ const statusText = document.querySelector("[data-status-text]");
 const endpointText = document.querySelector("[data-endpoint]");
 const detailText = document.querySelector("[data-detail]");
 const logsEl = document.querySelector("[data-logs]");
+const versionText = document.querySelector("[data-version]");
 const startButton = document.querySelector("[data-start]");
 const stopButton = document.querySelector("[data-stop]");
 const healthButton = document.querySelector("[data-health]");
@@ -46,6 +47,7 @@ const renderStatus = () => {
   statusPill.className = `status-pill ${running ? "running" : "stopped"}`;
   statusText.textContent = running ? "Agent running" : "Agent stopped";
   endpointText.textContent = status ? `${status.host}:${status.port}` : "127.0.0.1:4873";
+  versionText.textContent = status?.version ? `Version ${status.version}` : "Version unknown";
 
   if (running && managedByApp) {
     detailText.textContent = "CaseForge Companion is running and ready for Live Preview workflows.";

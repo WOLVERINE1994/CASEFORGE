@@ -11687,7 +11687,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.35
+            Download Companion 0.1.36
           </a>
           <button
             type="button"

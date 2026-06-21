@@ -78,6 +78,24 @@
         margin: 10px 0 12px;
       }
 
+      .title-row {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .version-badge {
+        background: #ecfdf5;
+        border: 1px solid #99f6e4;
+        border-radius: 999px;
+        color: #0f766e;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0;
+        padding: 6px 10px;
+      }
+
       .intro {
         color: #4b5563;
         font-size: 16px;
@@ -261,7 +279,10 @@
       <section class="hero">
         <div>
           <div class="eyebrow">Legacy Local Adapter</div>
-          <h1>CaseForge Companion</h1>
+          <div class="title-row">
+            <h1>CaseForge Companion</h1>
+            <span class="version-badge" data-version>Version checking...</span>
+          </div>
           <p class="intro">
             Compatibility bridge for restricted or migration-only workflows. Public web automation
             uses managed cloud sessions without this desktop app.
