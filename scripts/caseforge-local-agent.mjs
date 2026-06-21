@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.40";
+const AGENT_VERSION = "0.1.41";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -2821,6 +2821,15 @@ function firstDefinedRuntimeInput(...values) {
   return undefined;
 }
 
+function firstNonBlankRuntimeInput(...values) {
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === "string" && !value.trim()) continue;
+    return value;
+  }
+  return undefined;
+}
+
 function runtimeInputFromValueSource(options = {}) {
   const source = String(options.valueSource || options.valueType || "").trim();
   const reference = String(options.valueReference || "").trim();
@@ -3043,7 +3052,7 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
   }
   if (action === "compareValues") {
     const actual = runtimeComparisonValue(
-      firstDefinedRuntimeInput(
+      firstNonBlankRuntimeInput(
         options.actual,
         options.source,
         options.leftValue,
@@ -3077,7 +3086,7 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
   }
   if (action === "compareLists") {
     const actualValue = runtimeComparisonValue(
-      firstDefinedRuntimeInput(
+      firstNonBlankRuntimeInput(
         options.actual,
         options.source,
         options.leftValue,
@@ -3105,7 +3114,7 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
   }
   if (action === "compareDatasets") {
     const output = compareDatasetValues(
-      firstDefinedRuntimeInput(
+      firstNonBlankRuntimeInput(
         options.actual,
         options.source,
         options.leftValue,
