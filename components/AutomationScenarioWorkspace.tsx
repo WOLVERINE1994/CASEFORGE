@@ -1309,6 +1309,7 @@ function timelineBadges(step: AutomationStep, healed: boolean) {
     if (!url) return [{ label: "Missing URL", title: "Add a URL before running this navigation command.", tone: "rose" as const }];
     return /^https?:\/\//i.test(url) ? [] : [{ label: "Check URL", title: "Use a valid http:// or https:// URL.", tone: "amber" as const }];
   }
+  if (!stepShowsLocatorDiagnostics(step)) return [];
   const quality = locatorQualityForStep(step);
   const badges: Array<{
     label: string;
@@ -1539,6 +1540,18 @@ function visibleStepInputValue(step: AutomationStep) {
 
 function isCompareCommandAction(action: string) {
   return action === "compareValues" || action === "compareLists" || action === "compareDatasets";
+}
+
+function stepShowsLocatorDiagnostics(step?: AutomationStep | null) {
+  if (!step) return false;
+  const action = displayAction(step.action);
+  if (isCompareCommandAction(action)) return false;
+  return Boolean(
+    commandRequiresLocator(action) ||
+      step.target?.value ||
+      step.locatorCandidates?.length ||
+      stepAmbiguity(step),
+  );
 }
 
 function primaryValueParameterForCommand(action: string) {
@@ -4695,8 +4708,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const sourceSelectedStep = selectedActionCommand ?? selectedScenarioStep;
   const selectedStep = drawerOpen && commandPromptDraft ? commandPromptDraft : sourceSelectedStep;
   const selectedStepAmbiguity = selectedStep ? stepAmbiguity(selectedStep) : null;
-  const selectedStepQuality = selectedStep ? locatorQualityForStep(selectedStep) : null;
   const selectedStepAction = selectedStep ? displayAction(selectedStep.action) : "";
+  const selectedStepShowsLocatorDiagnostics = stepShowsLocatorDiagnostics(selectedStep);
+  const selectedStepQuality = selectedStepShowsLocatorDiagnostics && selectedStep ? locatorQualityForStep(selectedStep) : null;
   const selectedCommandDefinition =
     selectedStepAction === "action"
       ? actionCommandDefinition
@@ -4758,6 +4772,26 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       left.name.localeCompare(right.name),
     );
   }, [actionStepCommands, scenarioParameters, visibleSteps]);
+  const compareActualVariableItems = useMemo(
+    () =>
+      variablePickerItems
+        .slice()
+        .sort((left, right) => {
+          if (left.source !== right.source) return left.source === "commandOutput" ? -1 : 1;
+          return left.name.localeCompare(right.name);
+        }),
+    [variablePickerItems],
+  );
+  const selectedStepVariableItem = selectedStepParameterName
+    ? variablePickerItems.find((item) => item.name === selectedStepParameterName)
+    : undefined;
+  const selectedStepDataValueItems: VariablePickerItem[] = isCompareCommandAction(selectedStepAction)
+    ? compareActualVariableItems
+    : scenarioParameters.map((parameter) => ({
+        detail: `Scenario parameter${parameter.type ? ` (${parameter.type})` : ""}`,
+        name: parameter.name,
+        source: "scenarioParameter",
+      }));
   const locatorLoopPreview = useMemo(
     () => buildLocatorLoopDsl(locatorLoopBuilder),
     [locatorLoopBuilder],
@@ -13344,7 +13378,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                     {commandSupportsTestData(selectedStepAction) ? (
                       <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950">
                         <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
-                          Data-driven value
+                          {isCompareCommandAction(selectedStepAction) ? "Actual variable" : "Data-driven value"}
                           <select
                             value={selectedStepParameterName}
                             onChange={(event) => {
@@ -13354,16 +13388,23 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                                 inputValue: parameterName ? parameterToken(parameterName) : "",
                                 options: {
                                   ...step.options,
+                                  actual: isCompareCommandAction(selectedStepAction)
+                                    ? parameterName
+                                      ? parameterToken(parameterName)
+                                      : ""
+                                    : step.options?.actual,
                                   parameterName: parameterName || undefined,
                                 },
                               }));
                             }}
                             className="mt-1 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-950 outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
                           >
-                            <option value="">Use typed value</option>
-                            {scenarioParameters.map((parameter) => (
-                              <option key={parameter.id} value={parameter.name}>
-                                {parameter.name}
+                            <option value="">
+                              {isCompareCommandAction(selectedStepAction) ? "Use typed actual value" : "Use typed value"}
+                            </option>
+                            {selectedStepDataValueItems.map((item) => (
+                              <option key={`${item.source}-${item.name}`} value={item.name}>
+                                {item.name} - {item.detail}
                               </option>
                             ))}
                           </select>
@@ -13371,15 +13412,23 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                         {selectedStepParameterName ? (
                           <p className="mt-1 min-w-0 break-words text-[11px] font-medium text-zinc-500 [overflow-wrap:anywhere] dark:text-zinc-400">
                             Uses {parameterToken(selectedStepParameterName)}
-                            {selectedStepParameterPreview ? ` -> ${selectedStepParameterPreview}` : ""}
+                            {isCompareCommandAction(selectedStepAction) && selectedStepVariableItem
+                              ? ` - ${selectedStepVariableItem.detail}`
+                              : selectedStepParameterPreview
+                                ? ` -> ${selectedStepParameterPreview}`
+                                : ""}
                           </p>
-                        ) : scenarioParameters.length ? (
+                        ) : selectedStepDataValueItems.length ? (
                           <p className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                            Bind this value to a reusable test data column for multiple rows/runs.
+                            {isCompareCommandAction(selectedStepAction)
+                              ? "Choose a previous command output or scenario parameter as the actual value."
+                              : "Bind this value to a reusable test data column for multiple rows/runs."}
                           </p>
                         ) : (
                           <p className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                            Add test data columns when the same script should run with different values.
+                            {isCompareCommandAction(selectedStepAction)
+                              ? "Create a command that saves output first, then select that variable here."
+                              : "Add test data columns when the same script should run with different values."}
                           </p>
                         )}
                       </div>
@@ -14348,15 +14397,16 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                     </label>
                   </div>
                 </details>
-                <details
-                  open={locatorDiagnosticsOpen}
-                  onToggle={(event) => setLocatorDiagnosticsOpen(event.currentTarget.open)}
-                  className="min-w-0 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
-                >
-                  <summary className="cursor-pointer list-none rounded-lg px-2 py-1 text-xs font-semibold text-zinc-700 outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-emerald-500/30 dark:text-zinc-200 dark:hover:bg-zinc-900 [&::-webkit-details-marker]:hidden">
-                    Locator diagnostics
-                  </summary>
-                  <div className="mt-3 grid min-w-0 gap-3">
+                {selectedStepShowsLocatorDiagnostics ? (
+                  <details
+                    open={locatorDiagnosticsOpen}
+                    onToggle={(event) => setLocatorDiagnosticsOpen(event.currentTarget.open)}
+                    className="min-w-0 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
+                  >
+                    <summary className="cursor-pointer list-none rounded-lg px-2 py-1 text-xs font-semibold text-zinc-700 outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-emerald-500/30 dark:text-zinc-200 dark:hover:bg-zinc-900 [&::-webkit-details-marker]:hidden">
+                      Locator diagnostics
+                    </summary>
+                    <div className="mt-3 grid min-w-0 gap-3">
                     <div className="min-w-0 rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
                       <p className="text-xs font-semibold text-emerald-950 dark:text-emerald-100">
                         Custom locator
@@ -14638,8 +14688,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                     </div>
                   </div>
                 ) : null}
-                  </div>
-                </details>
+                    </div>
+                  </details>
+                ) : null}
               </div>
               <div className="shrink-0 border-t border-zinc-200 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-950">
                 <div className="flex items-center justify-between gap-3">
@@ -16069,7 +16120,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         </div>
       ) : null}
 
-      {locatorFlyout && locatorFlyoutStep && locatorFlyoutQuality ? (
+      {locatorFlyout && locatorFlyoutStep && locatorFlyoutQuality && stepShowsLocatorDiagnostics(locatorFlyoutStep) ? (
         <div
           className="fixed z-50 max-h-[calc(100vh-24px)] w-[min(360px,calc(100vw-24px))] overflow-y-auto overflow-x-hidden rounded-xl border border-zinc-200 bg-white p-3 text-xs shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
           style={{ left: locatorFlyout.x, top: locatorFlyout.y }}
