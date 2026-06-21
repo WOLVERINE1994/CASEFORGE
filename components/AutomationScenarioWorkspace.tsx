@@ -1540,6 +1540,9 @@ function visibleStepInputValue(step: AutomationStep) {
 function primaryValueParameterForCommand(action: string) {
   if (action === "runJavaScriptSnippet") return undefined;
   const definition = commandDefinitionForAction(action);
+  if (action === "compareValues") {
+    return definition?.parameters.find((parameter) => parameter.name === "actual");
+  }
   const primaryParameterNames = new Set([
     "actionName",
     "amount",
@@ -1588,7 +1591,7 @@ function commandShowsInputValue(action: string) {
 
 function commandSupportsTestData(action: string) {
   const parameter = primaryValueParameterForCommand(action);
-  return Boolean(parameter && ["expected", "expectedText", "option", "text", "url", "value"].includes(parameter.name));
+  return Boolean(parameter && ["actual", "expected", "expectedText", "option", "text", "url", "value"].includes(parameter.name));
 }
 
 function commandCanSaveOutput(definition?: AutomationCommandDefinition | null) {
@@ -1671,6 +1674,9 @@ function commandRequiresLocator(action: string) {
 
 function commandParameterDisplayValue(step: AutomationStep, parameter: AutomationCommandParameterDefinition) {
   if (parameter.name === "locator") return step.target?.value || "";
+  if (displayAction(step.action) === "compareValues" && parameter.name === "actual") {
+    return textValue(step.inputValue) || String(step.options?.actual ?? parameter.defaultValue ?? "");
+  }
   if (parameter.name === "expectedText" || parameter.name === "expected") {
     return textValue(step.expectedValue) || String(step.options?.[parameter.name] ?? parameter.defaultValue ?? "");
   }
@@ -6229,6 +6235,18 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           inputValue: value,
           options: {
             ...options,
+            parameterName: exactParameterNameFromText(value) || undefined,
+          },
+        };
+      }
+      if (action === "compareValues" && parameter.name === "actual") {
+        const value = String(rawValue ?? "");
+        return {
+          ...step,
+          inputValue: value,
+          options: {
+            ...options,
+            actual: value,
             parameterName: exactParameterNameFromText(value) || undefined,
           },
         };
@@ -13300,6 +13318,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                               inputValue: nextValue,
                               options: {
                                 ...step.options,
+                                actual: selectedStepAction === "compareValues" ? nextValue : step.options?.actual,
                                 parameterName: nextParameterName || undefined,
                               },
                             };
