@@ -1537,10 +1537,14 @@ function visibleStepInputValue(step: AutomationStep) {
   return compactStepValue(step.inputValue);
 }
 
+function isCompareCommandAction(action: string) {
+  return action === "compareValues" || action === "compareLists" || action === "compareDatasets";
+}
+
 function primaryValueParameterForCommand(action: string) {
   if (action === "runJavaScriptSnippet") return undefined;
   const definition = commandDefinitionForAction(action);
-  if (action === "compareValues") {
+  if (isCompareCommandAction(action)) {
     return definition?.parameters.find((parameter) => parameter.name === "actual");
   }
   const primaryParameterNames = new Set([
@@ -1674,7 +1678,7 @@ function commandRequiresLocator(action: string) {
 
 function commandParameterDisplayValue(step: AutomationStep, parameter: AutomationCommandParameterDefinition) {
   if (parameter.name === "locator") return step.target?.value || "";
-  if (displayAction(step.action) === "compareValues" && parameter.name === "actual") {
+  if (isCompareCommandAction(displayAction(step.action)) && parameter.name === "actual") {
     return textValue(step.inputValue) || String(step.options?.actual ?? parameter.defaultValue ?? "");
   }
   if (parameter.name === "expectedText" || parameter.name === "expected") {
@@ -6235,11 +6239,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           inputValue: value,
           options: {
             ...options,
+            actual: isCompareCommandAction(action) && parameter.name === "actual" ? value : options.actual,
             parameterName: exactParameterNameFromText(value) || undefined,
           },
         };
       }
-      if (action === "compareValues" && parameter.name === "actual") {
+      if (isCompareCommandAction(action) && parameter.name === "actual") {
         const value = String(rawValue ?? "");
         return {
           ...step,
@@ -13318,7 +13323,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                               inputValue: nextValue,
                               options: {
                                 ...step.options,
-                                actual: selectedStepAction === "compareValues" ? nextValue : step.options?.actual,
+                                actual: isCompareCommandAction(selectedStepAction) ? nextValue : step.options?.actual,
                                 parameterName: nextParameterName || undefined,
                               },
                             };

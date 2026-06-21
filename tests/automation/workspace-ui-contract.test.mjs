@@ -159,6 +159,14 @@ test("scenario workspace supports ACCELQ-style test data and parameterized runs"
   assert.match(workspaceSource, /testCase\?\.name,/);
 });
 
+test("compare commands use actual as the top input and expected in the expected result section", () => {
+  assert.match(workspaceSource, /function isCompareCommandAction\(action: string\)/);
+  assert.match(workspaceSource, /action === "compareValues" \|\| action === "compareLists" \|\| action === "compareDatasets"/);
+  assert.match(workspaceSource, /if \(isCompareCommandAction\(action\)\) \{\s*return definition\?\.parameters\.find\(\(parameter\) => parameter\.name === "actual"\);/);
+  assert.match(workspaceSource, /actual: isCompareCommandAction\(selectedStepAction\) \? nextValue : step\.options\?\.actual/);
+  assert.match(workspaceSource, /if \(parameter\.name === "expected" \|\| parameter\.name === "expectedText"\) \{/);
+});
+
 test("recording desktop sessions open maximized while custom devices keep explicit viewport", () => {
   assert.match(workspaceSource, /maximize\?: boolean/);
   assert.match(workspaceSource, /viewport: \{ height: 900, maximize: true, width: 1440 \}/);
