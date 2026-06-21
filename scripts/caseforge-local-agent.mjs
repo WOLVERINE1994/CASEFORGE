@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.37";
+const AGENT_VERSION = "0.1.38";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -2814,6 +2814,13 @@ function runtimeComparisonValue(value, runtimeVariables = {}) {
   return parseStructuredRuntimeValue(value, value);
 }
 
+function firstDefinedRuntimeInput(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) return value;
+  }
+  return undefined;
+}
+
 function comparisonKeyFields(options = {}) {
   return String(options.keyFields || options.keyColumns || "")
     .split(",")
@@ -3026,8 +3033,14 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
     });
   }
   if (action === "compareValues") {
-    const actual = runtimeComparisonValue(options.actual ?? options.source ?? options.leftValue, runtimeVariables);
-    const expected = runtimeComparisonValue(options.expected ?? options.expectedValue ?? options.rightValue, runtimeVariables);
+    const actual = runtimeComparisonValue(
+      firstDefinedRuntimeInput(options.actual, options.source, options.leftValue, step.actual, step.inputValue, step.value),
+      runtimeVariables,
+    );
+    const expected = runtimeComparisonValue(
+      firstDefinedRuntimeInput(options.expected, options.expectedValue, options.rightValue, step.expected, step.expectedValue),
+      runtimeVariables,
+    );
     const scalar = compareScalarValues(actual, expected, options);
     const output = {
       actual,
@@ -3046,8 +3059,14 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
     return output;
   }
   if (action === "compareLists") {
-    const actualValue = runtimeComparisonValue(options.actual ?? options.source, runtimeVariables);
-    const expectedValue = runtimeComparisonValue(options.expected, runtimeVariables);
+    const actualValue = runtimeComparisonValue(
+      firstDefinedRuntimeInput(options.actual, options.source, options.leftValue, step.actual, step.inputValue, step.value),
+      runtimeVariables,
+    );
+    const expectedValue = runtimeComparisonValue(
+      firstDefinedRuntimeInput(options.expected, options.expectedValue, options.rightValue, step.expected, step.expectedValue),
+      runtimeVariables,
+    );
     const output = compareDatasetValues(normalizeList(actualValue), normalizeList(expectedValue), {
       ...options,
       runtimeVariables,
@@ -3060,7 +3079,10 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
     return output;
   }
   if (action === "compareDatasets") {
-    const output = compareDatasetValues(options.actual ?? options.source, options.expected, {
+    const output = compareDatasetValues(
+      firstDefinedRuntimeInput(options.actual, options.source, options.leftValue, step.actual, step.inputValue, step.value),
+      firstDefinedRuntimeInput(options.expected, options.expectedValue, options.rightValue, step.expected, step.expectedValue),
+      {
       ...options,
       runtimeVariables,
     });

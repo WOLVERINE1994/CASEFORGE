@@ -154,7 +154,7 @@ test("scenario workspace supports ACCELQ-style test data and parameterized runs"
   assert.match(workspaceSource, /Failed cases/);
   assert.match(workspaceSource, /Priority/);
   assert.match(workspaceSource, /substituteStepsParameters\(executableSteps, parameterData, runtimeVariableNamesForSubstitution\)/);
-  assert.match(workspaceSource, /preserveNames\.has\(name\) \? match : data\[name\] \?\? ""/);
+  assert.match(workspaceSource, /preserveNames\.has\(name\) \|\| !Object\.prototype\.hasOwnProperty\.call\(data, name\)/);
   assert.match(workspaceSource, /const runtimeVariableNamesForSubstitution = useMemo/);
   assert.match(workspaceSource, /item\.source !== "scenarioParameter"/);
   assert.match(workspaceSource, /const runLabel = \[/);
