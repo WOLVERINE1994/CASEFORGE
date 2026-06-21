@@ -135,7 +135,7 @@ test("scenario workspace supports ACCELQ-style test data and parameterized runs"
   assert.match(workspaceSource, /Scenario Test Cases/);
   assert.match(workspaceSource, /Test Case Name \| detected params \| Expected Result \| Tags \| Priority \| Active/);
   assert.match(workspaceSource, /Data-driven value/);
-  assert.match(workspaceSource, /Bind this value to a reusable test data column/);
+  assert.match(workspaceSource, /Choose a previous command output, logic variable, or scenario parameter/);
   assert.match(workspaceSource, /const convertStepValueToParameter = async/);
   assert.match(workspaceSource, /Convert typed value to scenario parameter/);
   assert.match(workspaceSource, /Converted value to required scenario parameter/);
@@ -162,12 +162,14 @@ test("scenario workspace supports ACCELQ-style test data and parameterized runs"
 test("compare commands use actual as the top input and expected in the expected result section", () => {
   assert.match(workspaceSource, /function isCompareCommandAction\(action: string\)/);
   assert.match(workspaceSource, /action === "compareValues" \|\| action === "compareLists" \|\| action === "compareDatasets"/);
+  assert.match(workspaceSource, /function extractLogicDslVariables\(value: string\)/);
+  assert.match(workspaceSource, /source: "logicVariable"/);
   assert.match(workspaceSource, /function stepShowsLocatorDiagnostics\(step\?: AutomationStep \| null\)/);
   assert.match(workspaceSource, /if \(isCompareCommandAction\(action\)\) return false;/);
   assert.match(workspaceSource, /if \(isCompareCommandAction\(action\)\) \{\s*return definition\?\.parameters\.find\(\(parameter\) => parameter\.name === "actual"\);/);
   assert.match(workspaceSource, /actual: isCompareCommandAction\(selectedStepAction\) \? nextValue : step\.options\?\.actual/);
   assert.match(workspaceSource, /Actual variable/);
-  assert.match(workspaceSource, /Choose a previous command output or scenario parameter as the actual value/);
+  assert.match(workspaceSource, /Choose a previous command output, logic variable, or scenario parameter as the actual value/);
   assert.match(workspaceSource, /selectedStepShowsLocatorDiagnostics \? \(\s*<details/);
   assert.match(workspaceSource, /if \(parameter\.name === "expected" \|\| parameter\.name === "expectedText"\) \{/);
 });

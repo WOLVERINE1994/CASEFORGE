@@ -384,7 +384,7 @@ type ScenarioParameter = {
 type VariablePickerItem = {
   detail: string;
   name: string;
-  source: "commandOutput" | "scenarioParameter";
+  source: "commandOutput" | "logicVariable" | "scenarioParameter";
 };
 
 type LocatorLoopAction =
@@ -635,7 +635,7 @@ type LogicEditorSuggestion = {
   detail: string;
   insertText: string;
   label: string;
-  source: "commandOutput" | "scenarioParameter" | "builtin" | "locator" | "snippet";
+  source: "commandOutput" | "logicVariable" | "scenarioParameter" | "builtin" | "locator" | "snippet";
 };
 
 type LogicEditorSuggestState = {
@@ -3156,6 +3156,12 @@ function parameterToken(name: string) {
   return `{{${name}}}`;
 }
 
+function variablePickerSourcePriority(source: VariablePickerItem["source"]) {
+  if (source === "commandOutput") return 0;
+  if (source === "logicVariable") return 1;
+  return 2;
+}
+
 function logicVariableToken(name: string) {
   const clean = name.startsWith("$") ? name.slice(1) : name;
   return `{{$${clean}}}`;
@@ -3424,6 +3430,72 @@ function logicStringLiteral(value: string) {
   return JSON.stringify(String(value || ""));
 }
 
+function addLogicVariable(
+  variables: Map<string, string>,
+  name: string | undefined,
+  detail: string,
+) {
+  const clean = cleanLogicVariableName(String(name || ""), "");
+  if (!clean || clean.includes(".")) return;
+  if (!variables.has(clean)) variables.set(clean, detail);
+}
+
+function extractLogicDslVariables(value: string) {
+  const variables = new Map<string, string>();
+  const lines = String(value || "").split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("//")) continue;
+
+    const setMatch = line.match(/^set\s+([a-zA-Z_][\w.]*)\s*=\s*(.+)$/);
+    if (setMatch) {
+      addLogicVariable(
+        variables,
+        setMatch[1],
+        /^\[\s*\]$/.test(setMatch[2].trim()) ? "Logic list variable" : "Logic variable",
+      );
+      continue;
+    }
+
+    const addToListMatch = line.match(/^addToList\s+([a-zA-Z_][\w.]*)\b/);
+    if (addToListMatch) {
+      addLogicVariable(variables, addToListMatch[1], "Logic list variable");
+      continue;
+    }
+
+    const clearListMatch = line.match(/^clearList\s+([a-zA-Z_][\w.]*)\b/);
+    if (clearListMatch) {
+      addLogicVariable(variables, clearListMatch[1], "Logic list variable");
+      continue;
+    }
+
+    const webOutputMatch = line.match(/^(getText|getAttribute|getProperty)\b[\s\S]*\bas\s+([a-zA-Z_][\w.]*)\s*$/);
+    if (webOutputMatch) {
+      addLogicVariable(variables, webOutputMatch[2], `Logic output from ${webOutputMatch[1]}`);
+      continue;
+    }
+
+    const collectionMatch = line.match(
+      /^(countListItems|getListItem|joinList|sortList|uniqueList)\s+([a-zA-Z_][\w.]*)(?:[\s\S]*\bas\s+([a-zA-Z_][\w.]*))?\s*$/,
+    );
+    if (collectionMatch) {
+      const command = collectionMatch[1];
+      const source = collectionMatch[2];
+      const target = collectionMatch[3] || source;
+      const detail =
+        command === "countListItems"
+          ? "Logic count output"
+          : command === "joinList"
+            ? "Logic text output"
+            : command === "getListItem"
+              ? "Logic item output"
+              : "Logic list output";
+      addLogicVariable(variables, target, detail);
+    }
+  }
+  return Array.from(variables.entries()).map(([name, detail]) => ({ detail, name }));
+}
+
 function logicExpressionValue(value: string, fallback = "\"\"") {
   const text = textValue(value);
   return text || fallback;
@@ -3566,6 +3638,7 @@ function logicSuggestionTrigger(value: string, cursor: number): LogicEditorSugge
 
 function logicSuggestionSourceLabel(source: LogicEditorSuggestion["source"]) {
   if (source === "commandOutput") return "OUTPUT";
+  if (source === "logicVariable") return "LOGIC";
   if (source === "scenarioParameter") return "PARAM";
   if (source === "builtin") return "BUILTIN";
   if (source === "locator") return "LOCATOR";
@@ -3574,9 +3647,10 @@ function logicSuggestionSourceLabel(source: LogicEditorSuggestion["source"]) {
 
 function logicSuggestionSourcePriority(source: LogicEditorSuggestion["source"]) {
   if (source === "commandOutput") return 0;
-  if (source === "scenarioParameter") return 1;
-  if (source === "builtin") return 2;
-  if (source === "locator") return 3;
+  if (source === "logicVariable") return 1;
+  if (source === "scenarioParameter") return 2;
+  if (source === "builtin") return 3;
+  if (source === "locator") return 4;
   return 4;
 }
 
@@ -4760,26 +4834,41 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     ];
     for (const step of commandSteps) {
       const variableName = phaseOutputVariable(step);
-      if (!variableName || byName.has(variableName)) continue;
       const definition = commandDefinitionForAction(displayAction(step.action));
-      byName.set(variableName, {
-        detail: `Command output${definition?.label ? ` from ${definition.label}` : ""}`,
-        name: variableName,
-        source: "commandOutput",
-      });
+      if (variableName && !byName.has(variableName)) {
+        byName.set(variableName, {
+          detail: `Command output${definition?.label ? ` from ${definition.label}` : ""}`,
+          name: variableName,
+          source: "commandOutput",
+        });
+      }
+      if (!isLogicIdeCommand(displayAction(step.action))) continue;
+      for (const variable of extractLogicDslVariables(logicDslValue(step))) {
+        if (byName.has(variable.name)) continue;
+        byName.set(variable.name, {
+          detail: `${variable.detail}${definition?.label ? ` from ${definition.label}` : ""}`,
+          name: variable.name,
+          source: "logicVariable",
+        });
+      }
     }
-    return Array.from(byName.values()).sort((left, right) =>
-      left.name.localeCompare(right.name),
+    return Array.from(byName.values()).sort(
+      (left, right) =>
+        variablePickerSourcePriority(left.source) -
+          variablePickerSourcePriority(right.source) ||
+        left.name.localeCompare(right.name),
     );
   }, [actionStepCommands, scenarioParameters, visibleSteps]);
   const compareActualVariableItems = useMemo(
     () =>
       variablePickerItems
         .slice()
-        .sort((left, right) => {
-          if (left.source !== right.source) return left.source === "commandOutput" ? -1 : 1;
-          return left.name.localeCompare(right.name);
-        }),
+        .sort(
+          (left, right) =>
+            variablePickerSourcePriority(left.source) -
+              variablePickerSourcePriority(right.source) ||
+            left.name.localeCompare(right.name),
+        ),
     [variablePickerItems],
   );
   const selectedStepVariableItem = selectedStepParameterName
@@ -4787,11 +4876,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     : undefined;
   const selectedStepDataValueItems: VariablePickerItem[] = isCompareCommandAction(selectedStepAction)
     ? compareActualVariableItems
-    : scenarioParameters.map((parameter) => ({
-        detail: `Scenario parameter${parameter.type ? ` (${parameter.type})` : ""}`,
-        name: parameter.name,
-        source: "scenarioParameter",
-      }));
+    : variablePickerItems;
   const locatorLoopPreview = useMemo(
     () => buildLocatorLoopDsl(locatorLoopBuilder),
     [locatorLoopBuilder],
@@ -13412,7 +13497,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                         {selectedStepParameterName ? (
                           <p className="mt-1 min-w-0 break-words text-[11px] font-medium text-zinc-500 [overflow-wrap:anywhere] dark:text-zinc-400">
                             Uses {parameterToken(selectedStepParameterName)}
-                            {isCompareCommandAction(selectedStepAction) && selectedStepVariableItem
+                            {selectedStepVariableItem && selectedStepVariableItem.source !== "scenarioParameter"
+                              ? ` - ${selectedStepVariableItem.detail}`
+                              : isCompareCommandAction(selectedStepAction) && selectedStepVariableItem
                               ? ` - ${selectedStepVariableItem.detail}`
                               : selectedStepParameterPreview
                                 ? ` -> ${selectedStepParameterPreview}`
@@ -13421,14 +13508,14 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                         ) : selectedStepDataValueItems.length ? (
                           <p className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
                             {isCompareCommandAction(selectedStepAction)
-                              ? "Choose a previous command output or scenario parameter as the actual value."
-                              : "Bind this value to a reusable test data column for multiple rows/runs."}
+                              ? "Choose a previous command output, logic variable, or scenario parameter as the actual value."
+                              : "Choose a previous command output, logic variable, or scenario parameter."}
                           </p>
                         ) : (
                           <p className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
                             {isCompareCommandAction(selectedStepAction)
                               ? "Create a command that saves output first, then select that variable here."
-                              : "Add test data columns when the same script should run with different values."}
+                              : "Create a saved output or test data column, then select that variable here."}
                           </p>
                         )}
                       </div>
