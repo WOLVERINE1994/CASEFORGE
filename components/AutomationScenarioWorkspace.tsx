@@ -1632,6 +1632,7 @@ function commandOutputTypeLabel(definition?: AutomationCommandDefinition | null)
 }
 
 function commandHasAdvancedRuntimeInput(action: string) {
+  if (isCompareCommandAction(action)) return false;
   const parameter = primaryValueParameterForCommand(action);
   return Boolean(parameter && !commandSupportsTestData(action));
 }
@@ -11846,7 +11847,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.39
+            Download Companion 0.1.40
           </a>
           <button
             type="button"
@@ -14245,7 +14246,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                     Advanced runtime options
                   </summary>
                   <div className="mt-3 grid gap-3">
-                    {selectedCommandHasAdvancedRuntimeInput || selectedStepHasAdvancedRuntimeConfig ? (
+                    {selectedCommandHasAdvancedRuntimeInput ||
+                    (selectedStepHasAdvancedRuntimeConfig && !isCompareCommandAction(selectedStepAction)) ? (
                       <div className="grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-2">
                         <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
                           Value source

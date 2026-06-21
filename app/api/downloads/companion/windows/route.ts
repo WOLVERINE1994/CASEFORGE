@@ -1,5 +1,5 @@
 const windowsInstallerUrl =
-  "https://github.com/WOLVERINE1994/CASEFORGE/releases/download/companion-v0.1.39/CaseForge-Companion-Setup-0.1.39.exe";
+  "https://github.com/WOLVERINE1994/CASEFORGE/releases/download/companion-v0.1.40/CaseForge-Companion-Setup-0.1.40.exe";
 
 export function GET() {
   return Response.redirect(windowsInstallerUrl, 302);
