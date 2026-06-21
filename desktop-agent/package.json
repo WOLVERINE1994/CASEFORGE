@@ -1,6 +1,6 @@
 {
   "name": "@caseforge/desktop-agent",
-  "version": "0.1.38",
+  "version": "0.1.39",
   "private": true,
   "description": "Legacy CaseForge desktop bridge for optional local automation compatibility.",
   "type": "module",
