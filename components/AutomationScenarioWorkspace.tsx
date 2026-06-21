@@ -4000,47 +4000,65 @@ function testCaseMatchesRunScope(testCase: ScenarioTestCase, config: RunConfig) 
   return true;
 }
 
-function substituteTemplate(value: string | undefined, data: Record<string, string>) {
-  return String(value ?? "").replace(/\{\{\s*([a-zA-Z_][\w.-]*)\s*\}\}/g, (_match, name: string) =>
-    data[name] ?? "",
+function substituteTemplate(
+  value: string | undefined,
+  data: Record<string, string>,
+  preserveNames = new Set<string>(),
+) {
+  return String(value ?? "").replace(/\{\{\s*([a-zA-Z_][\w.-]*)\s*\}\}/g, (match, name: string) =>
+    preserveNames.has(name) ? match : data[name] ?? "",
   );
 }
 
-function substituteJavaScriptTemplate(value: string | undefined, data: Record<string, string>) {
+function substituteJavaScriptTemplate(
+  value: string | undefined,
+  data: Record<string, string>,
+  preserveNames = new Set<string>(),
+) {
   return String(value ?? "").replace(/\{\{\s*([a-zA-Z_][\w.-]*)\s*\}\}/g, (match, name: string) =>
-    Object.prototype.hasOwnProperty.call(data, name)
+    preserveNames.has(name)
+      ? match
+      : Object.prototype.hasOwnProperty.call(data, name)
       ? JSON.stringify(data[name] ?? "")
       : match,
   );
 }
 
-function substituteUnknown(value: unknown, data: Record<string, string>): unknown {
-  if (typeof value === "string") return substituteTemplate(value, data);
-  if (Array.isArray(value)) return value.map((item) => substituteUnknown(item, data));
+function substituteUnknown(
+  value: unknown,
+  data: Record<string, string>,
+  preserveNames = new Set<string>(),
+): unknown {
+  if (typeof value === "string") return substituteTemplate(value, data, preserveNames);
+  if (Array.isArray(value)) return value.map((item) => substituteUnknown(item, data, preserveNames));
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([key, item]) => [
         key,
-        substituteUnknown(item, data),
+        substituteUnknown(item, data, preserveNames),
       ]),
     );
   }
   return value;
 }
 
-function substituteStepParameters(step: AutomationStep, data: Record<string, string>): AutomationStep {
+function substituteStepParameters(
+  step: AutomationStep,
+  data: Record<string, string>,
+  preserveNames = new Set<string>(),
+): AutomationStep {
   if (displayAction(step.action) === "runJavaScriptSnippet") {
-    const options = substituteUnknown(step.options ?? {}, data) as Record<string, unknown>;
+    const options = substituteUnknown(step.options ?? {}, data, preserveNames) as Record<string, unknown>;
     return {
       ...step,
-      commandText: substituteTemplate(step.commandText, data),
-      description: substituteTemplate(step.description, data),
-      expectedValue: substituteTemplate(step.expectedValue, data),
-      inputValue: substituteJavaScriptTemplate(step.inputValue, data),
+      commandText: substituteTemplate(step.commandText, data, preserveNames),
+      description: substituteTemplate(step.description, data, preserveNames),
+      expectedValue: substituteTemplate(step.expectedValue, data, preserveNames),
+      inputValue: substituteJavaScriptTemplate(step.inputValue, data, preserveNames),
       locatorCandidates: Array.isArray(step.locatorCandidates)
         ? step.locatorCandidates.map((candidate) => ({
             ...candidate,
-            value: substituteTemplate(candidate.value, data),
+            value: substituteTemplate(candidate.value, data, preserveNames),
           }))
         : step.locatorCandidates,
       options: {
@@ -4048,30 +4066,35 @@ function substituteStepParameters(step: AutomationStep, data: Record<string, str
         script: substituteJavaScriptTemplate(
           typeof step.options?.script === "string" ? step.options.script : "",
           data,
+          preserveNames,
         ),
       },
-      target: substituteUnknown(step.target, data) as AutomationStep["target"],
+      target: substituteUnknown(step.target, data, preserveNames) as AutomationStep["target"],
     };
   }
   return {
     ...step,
-    commandText: substituteTemplate(step.commandText, data),
-    description: substituteTemplate(step.description, data),
-    expectedValue: substituteTemplate(step.expectedValue, data),
-    inputValue: substituteTemplate(step.inputValue, data),
+    commandText: substituteTemplate(step.commandText, data, preserveNames),
+    description: substituteTemplate(step.description, data, preserveNames),
+    expectedValue: substituteTemplate(step.expectedValue, data, preserveNames),
+    inputValue: substituteTemplate(step.inputValue, data, preserveNames),
     locatorCandidates: Array.isArray(step.locatorCandidates)
       ? step.locatorCandidates.map((candidate) => ({
           ...candidate,
-          value: substituteTemplate(candidate.value, data),
+          value: substituteTemplate(candidate.value, data, preserveNames),
         }))
       : step.locatorCandidates,
-    options: substituteUnknown(step.options ?? {}, data) as Record<string, unknown>,
-    target: substituteUnknown(step.target, data) as AutomationStep["target"],
+    options: substituteUnknown(step.options ?? {}, data, preserveNames) as Record<string, unknown>,
+    target: substituteUnknown(step.target, data, preserveNames) as AutomationStep["target"],
   };
 }
 
-function substituteStepsParameters(steps: AutomationStep[], data: Record<string, string>) {
-  return steps.map((step) => substituteStepParameters(step, data));
+function substituteStepsParameters(
+  steps: AutomationStep[],
+  data: Record<string, string>,
+  preserveNames = new Set<string>(),
+) {
+  return steps.map((step) => substituteStepParameters(step, data, preserveNames));
 }
 
 async function readJsonResponse<T>(response: Response, fallback: T): Promise<T> {
@@ -4844,7 +4867,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       }
       if (!isLogicIdeCommand(displayAction(step.action))) continue;
       for (const variable of extractLogicDslVariables(logicDslValue(step))) {
-        if (byName.has(variable.name)) continue;
+        const existing = byName.get(variable.name);
+        if (existing && existing.source !== "scenarioParameter") continue;
         byName.set(variable.name, {
           detail: `${variable.detail}${definition?.label ? ` from ${definition.label}` : ""}`,
           name: variable.name,
@@ -4877,6 +4901,15 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const selectedStepDataValueItems: VariablePickerItem[] = isCompareCommandAction(selectedStepAction)
     ? compareActualVariableItems
     : variablePickerItems;
+  const runtimeVariableNamesForSubstitution = useMemo(
+    () =>
+      new Set(
+        variablePickerItems
+          .filter((item) => item.source !== "scenarioParameter")
+          .map((item) => item.name),
+      ),
+    [variablePickerItems],
+  );
   const locatorLoopPreview = useMemo(
     () => buildLocatorLoopDsl(locatorLoopBuilder),
     [locatorLoopBuilder],
@@ -10117,8 +10150,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
 
       const { parameterData, testCase } = resumeRunParameterContext();
       const baseRunSteps = withScenarioInitSteps(
-        substituteStepsParameters(expanded.steps, parameterData),
-        substituteStepsParameters(scopedSteps, parameterData),
+        substituteStepsParameters(expanded.steps, parameterData, runtimeVariableNamesForSubstitution),
+        substituteStepsParameters(scopedSteps, parameterData, runtimeVariableNamesForSubstitution),
       );
       const expectedUrl = expectedUrlForPlayback(scopedSteps);
       const runSteps =
@@ -10918,8 +10951,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         }.`,
       );
       const { parameterData, testCase } = resumeRunParameterContext();
-      const parameterizedReplaySteps = substituteStepsParameters(replaySteps, parameterData);
-      const parameterizedResumeSteps = substituteStepsParameters(resumeSteps, parameterData);
+      const parameterizedReplaySteps = substituteStepsParameters(replaySteps, parameterData, runtimeVariableNamesForSubstitution);
+      const parameterizedResumeSteps = substituteStepsParameters(resumeSteps, parameterData, runtimeVariableNamesForSubstitution);
       if (testCase) appendLog(`Using test data: ${testCase.name}.`);
       const resumeStartUrl =
         firstNavigationUrl(parameterizedReplaySteps) ||
@@ -11106,11 +11139,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             environmentName: environment.name,
           };
           const parameterizedExecutableSteps = applyRunEnvironmentToSteps(
-            substituteStepsParameters(executableSteps, parameterData),
+            substituteStepsParameters(executableSteps, parameterData, runtimeVariableNamesForSubstitution),
             environment,
           );
           const parameterizedSummarySteps = applyRunEnvironmentToSteps(
-            substituteStepsParameters(scopedRunSteps, parameterData),
+            substituteStepsParameters(scopedRunSteps, parameterData, runtimeVariableNamesForSubstitution),
             environment,
           );
           const runLabel = [
@@ -11200,10 +11233,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         appendLog(`Running ${runTestData.testCases.length} test case${runTestData.testCases.length === 1 ? "" : "s"} for action.`);
         for (const testCase of runTestData.testCases) {
           const parameterData = dataForTestCase(testCase, runTestData.parameters);
-          const parameterizedActionSteps = substituteStepsParameters(actionSteps, parameterData);
-          const parameterizedSetupSteps = substituteStepsParameters(setupSourceSteps, parameterData);
+          const parameterizedActionSteps = substituteStepsParameters(actionSteps, parameterData, runtimeVariableNamesForSubstitution);
+          const parameterizedSetupSteps = substituteStepsParameters(setupSourceSteps, parameterData, runtimeVariableNamesForSubstitution);
           const executableActionSteps = withScenarioInitSteps(parameterizedActionSteps, parameterizedSetupSteps);
-          const parameterizedSummarySteps = substituteStepsParameters([runnableStep], parameterData);
+          const parameterizedSummarySteps = substituteStepsParameters([runnableStep], parameterData, runtimeVariableNamesForSubstitution);
           await startSessionRun({
             actionId: runnableStep.target?.value || null,
             closeOnComplete: false,
@@ -11218,10 +11251,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         }
       } else {
         const parameterData = defaultParameterData(runTestData.parameters);
-        const parameterizedActionSteps = substituteStepsParameters(actionSteps, parameterData);
-        const parameterizedSetupSteps = substituteStepsParameters(setupSourceSteps, parameterData);
+        const parameterizedActionSteps = substituteStepsParameters(actionSteps, parameterData, runtimeVariableNamesForSubstitution);
+        const parameterizedSetupSteps = substituteStepsParameters(setupSourceSteps, parameterData, runtimeVariableNamesForSubstitution);
         const executableActionSteps = withScenarioInitSteps(parameterizedActionSteps, parameterizedSetupSteps);
-        const parameterizedSummarySteps = substituteStepsParameters([runnableStep], parameterData);
+        const parameterizedSummarySteps = substituteStepsParameters([runnableStep], parameterData, runtimeVariableNamesForSubstitution);
         await startSessionRun({
           actionId: runnableStep.target?.value || null,
           closeOnComplete: false,
@@ -11366,8 +11399,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       const parameterData = activeTestCase
         ? dataForTestCase(activeTestCase, runTestData.parameters)
         : defaultParameterData(runTestData.parameters);
-      const parameterizedSteps = substituteStepsParameters(commandSteps, parameterData);
-      const parameterizedSummarySteps = substituteStepsParameters([runnableStep], parameterData);
+      const parameterizedSteps = substituteStepsParameters(commandSteps, parameterData, runtimeVariableNamesForSubstitution);
+      const parameterizedSummarySteps = substituteStepsParameters([runnableStep], parameterData, runtimeVariableNamesForSubstitution);
       const activeCompanionSession =
         isUsableBrokerSession(session) && isCompanionPreviewSession(session)
           ? session
@@ -11441,7 +11474,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         }
       } else {
         const setupSourceSteps = await runtimeScenarioSteps();
-        const parameterizedSetupSteps = substituteStepsParameters(setupSourceSteps, parameterData);
+        const parameterizedSetupSteps = substituteStepsParameters(setupSourceSteps, parameterData, runtimeVariableNamesForSubstitution);
         const executableSteps = withScenarioInitSteps(parameterizedSteps, parameterizedSetupSteps);
         const runResult = await startSessionRun({
           closeOnComplete: false,
@@ -11523,8 +11556,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       setFailedStepResult(null);
       const expanded = await expandActionSteps(resumeSteps);
       const { parameterData, testCase } = resumeRunParameterContext();
-      const parameterizedRunSteps = substituteStepsParameters(expanded.steps, parameterData);
-      const parameterizedSummarySteps = substituteStepsParameters(resumeSteps, parameterData);
+      const parameterizedRunSteps = substituteStepsParameters(expanded.steps, parameterData, runtimeVariableNamesForSubstitution);
+      const parameterizedSummarySteps = substituteStepsParameters(resumeSteps, parameterData, runtimeVariableNamesForSubstitution);
       await startSessionRun({
         closeOnComplete: false,
         keepSessionOpen: true,
@@ -11811,7 +11844,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.36
+            Download Companion 0.1.37
           </a>
           <button
             type="button"

@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.36";
+const AGENT_VERSION = "0.1.37";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -5317,6 +5317,7 @@ async function runPlaybackInActiveBrowser(body) {
       results.push({ index, output, status: "passed", stepId: step.id || null });
     }
     session.currentUrl = state.page?.url() || session.currentUrl;
+    session.runtimeVariables = runtimeVariables;
     session.status = previousStatus === "previewing" ? "previewing" : "recording";
     session.logs = ["Playback passed.", ...session.logs].slice(0, 80);
     session.updatedAt = Date.now();
@@ -5348,6 +5349,7 @@ async function runPlaybackInActiveBrowser(body) {
       });
     }
     session.currentUrl = state.page?.url() || session.currentUrl;
+    session.runtimeVariables = runtimeVariables;
     session.status = previousStatus === "previewing" ? "previewing" : "recording";
     session.logs = [`Playback failed: ${message}`, ...session.logs].slice(0, 80);
     session.updatedAt = Date.now();

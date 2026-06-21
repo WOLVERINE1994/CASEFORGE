@@ -129,7 +129,7 @@ test("scenario workspace supports ACCELQ-style test data and parameterized runs"
   assert.match(workspaceSource, /function inferParameterNamesFromSteps\(steps: AutomationStep\[\]\)/);
   assert.match(workspaceSource, /function parameterToken\(name: string\)/);
   assert.match(workspaceSource, /function exactParameterNameFromText\(value\?: string\)/);
-  assert.match(workspaceSource, /function substituteStepParameters\(step: AutomationStep, data: Record<string, string>\)/);
+  assert.match(workspaceSource, /function substituteStepParameters\(\s*step: AutomationStep,\s*data: Record<string, string>,\s*preserveNames = new Set<string>\(\),/);
   assert.match(workspaceSource, /automationParameters/);
   assert.match(workspaceSource, /testCases/);
   assert.match(workspaceSource, /Scenario Test Cases/);
@@ -153,7 +153,10 @@ test("scenario workspace supports ACCELQ-style test data and parameterized runs"
   assert.match(workspaceSource, /All active cases/);
   assert.match(workspaceSource, /Failed cases/);
   assert.match(workspaceSource, /Priority/);
-  assert.match(workspaceSource, /substituteStepsParameters\(executableSteps, parameterData\)/);
+  assert.match(workspaceSource, /substituteStepsParameters\(executableSteps, parameterData, runtimeVariableNamesForSubstitution\)/);
+  assert.match(workspaceSource, /preserveNames\.has\(name\) \? match : data\[name\] \?\? ""/);
+  assert.match(workspaceSource, /const runtimeVariableNamesForSubstitution = useMemo/);
+  assert.match(workspaceSource, /item\.source !== "scenarioParameter"/);
   assert.match(workspaceSource, /const runLabel = \[/);
   assert.match(workspaceSource, /scenarioName,/);
   assert.match(workspaceSource, /testCase\?\.name,/);
@@ -164,6 +167,7 @@ test("compare commands use actual as the top input and expected in the expected 
   assert.match(workspaceSource, /action === "compareValues" \|\| action === "compareLists" \|\| action === "compareDatasets"/);
   assert.match(workspaceSource, /function extractLogicDslVariables\(value: string\)/);
   assert.match(workspaceSource, /source: "logicVariable"/);
+  assert.match(workspaceSource, /existing && existing\.source !== "scenarioParameter"/);
   assert.match(workspaceSource, /function stepShowsLocatorDiagnostics\(step\?: AutomationStep \| null\)/);
   assert.match(workspaceSource, /if \(isCompareCommandAction\(action\)\) return false;/);
   assert.match(workspaceSource, /if \(isCompareCommandAction\(action\)\) \{\s*return definition\?\.parameters\.find\(\(parameter\) => parameter\.name === "actual"\);/);
@@ -172,6 +176,7 @@ test("compare commands use actual as the top input and expected in the expected 
   assert.match(workspaceSource, /Choose a previous command output, logic variable, or scenario parameter as the actual value/);
   assert.match(workspaceSource, /selectedStepShowsLocatorDiagnostics \? \(\s*<details/);
   assert.match(workspaceSource, /if \(parameter\.name === "expected" \|\| parameter\.name === "expectedText"\) \{/);
+  assert.match(localAgentSource, /session\.runtimeVariables = runtimeVariables;\s*session\.status = previousStatus/);
 });
 
 test("recording desktop sessions open maximized while custom devices keep explicit viewport", () => {
