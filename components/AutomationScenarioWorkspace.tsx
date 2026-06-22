@@ -1958,6 +1958,22 @@ function comparisonCommandDetailLines(output: unknown) {
   if (!output || typeof output !== "object" || Array.isArray(output)) return [];
   const record = output as Record<string, unknown>;
   const lines: string[] = [];
+  if (record.agentVersion) lines.push(`Companion version: ${textValue(record.agentVersion)}`);
+  if (record.actualSource) {
+    lines.push(
+      `Actual source: ${textValue(record.actualSource)}${
+        "actualInput" in record ? ` (${textValue(record.actualInput) || "blank"})` : ""
+      }`,
+    );
+  }
+  const runtimeVariableNames = Array.isArray(record.runtimeVariableNames)
+    ? record.runtimeVariableNames.map(String).filter(Boolean)
+    : [];
+  if (runtimeVariableNames.length) {
+    lines.push(`Runtime variables available: ${runtimeVariableNames.slice(0, 12).join(", ")}`);
+  } else if ("runtimeVariableNames" in record) {
+    lines.push("Runtime variables available: none");
+  }
   const mismatches = Array.isArray(record.mismatches) ? record.mismatches : [];
   for (const item of mismatches.slice(0, 8)) {
     const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
@@ -11847,7 +11863,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.42
+            Download Companion 0.1.43
           </a>
           <button
             type="button"

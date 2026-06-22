@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.42";
+const AGENT_VERSION = "0.1.43";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -2850,6 +2850,34 @@ function fallbackRuntimeActualVariable(runtimeVariables = {}) {
   return undefined;
 }
 
+function runtimeVariableNames(runtimeVariables = {}) {
+  if (!runtimeVariables || typeof runtimeVariables !== "object" || Array.isArray(runtimeVariables)) return [];
+  return Object.keys(runtimeVariables).filter((key) => !key.startsWith("loop.")).sort();
+}
+
+function comparisonActualCandidates(step = {}, options = {}, runtimeVariables = {}) {
+  return [
+    ["options.actual", options.actual],
+    ["options.source", options.source],
+    ["options.leftValue", options.leftValue],
+    ["options.valueReference", runtimeInputFromValueSource(options)],
+    ["options.parameterName", runtimeInputFromParameterName(options)],
+    ["step.actual", step.actual],
+    ["step.inputValue", step.inputValue],
+    ["step.value", step.value],
+    ["runtime.items", fallbackRuntimeActualVariable(runtimeVariables)],
+  ];
+}
+
+function resolveComparisonActualInput(step = {}, options = {}, runtimeVariables = {}) {
+  for (const [source, value] of comparisonActualCandidates(step, options, runtimeVariables)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === "string" && !value.trim()) continue;
+    return { input: value, source };
+  }
+  return { input: undefined, source: "not found" };
+}
+
 function comparisonKeyFields(options = {}) {
   return String(options.keyFields || options.keyColumns || "")
     .split(",")
@@ -3062,20 +3090,8 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
     });
   }
   if (action === "compareValues") {
-    const actual = runtimeComparisonValue(
-      firstNonBlankRuntimeInput(
-        options.actual,
-        options.source,
-        options.leftValue,
-        runtimeInputFromValueSource(options),
-        runtimeInputFromParameterName(options),
-        step.actual,
-        step.inputValue,
-        step.value,
-        fallbackRuntimeActualVariable(runtimeVariables),
-      ),
-      runtimeVariables,
-    );
+    const actualResolution = resolveComparisonActualInput(step, options, runtimeVariables);
+    const actual = runtimeComparisonValue(actualResolution.input, runtimeVariables);
     const expected = runtimeComparisonValue(
       firstDefinedRuntimeInput(options.expected, options.expectedValue, options.rightValue, step.expected, step.expectedValue),
       runtimeVariables,
@@ -3083,12 +3099,16 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
     const scalar = compareScalarValues(actual, expected, options);
     const output = {
       actual,
+      actualInput: actualResolution.input,
+      actualSource: actualResolution.source,
+      agentVersion: AGENT_VERSION,
       expected,
       failedCount: scalar.passed ? 0 : 1,
       mismatches: scalar.passed ? [] : [{ actual, expected, path: "", reason: "Value mismatch" }],
       operator: options.operator || options.matchType || "equals",
       passed: scalar.passed,
       passedCount: scalar.passed ? 1 : 0,
+      runtimeVariableNames: runtimeVariableNames(runtimeVariables),
     };
     if (!output.passed) {
       const error = new Error("Value comparison failed.");
@@ -3098,20 +3118,8 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
     return output;
   }
   if (action === "compareLists") {
-    const actualValue = runtimeComparisonValue(
-      firstNonBlankRuntimeInput(
-        options.actual,
-        options.source,
-        options.leftValue,
-        runtimeInputFromValueSource(options),
-        runtimeInputFromParameterName(options),
-        step.actual,
-        step.inputValue,
-        step.value,
-        fallbackRuntimeActualVariable(runtimeVariables),
-      ),
-      runtimeVariables,
-    );
+    const actualResolution = resolveComparisonActualInput(step, options, runtimeVariables);
+    const actualValue = runtimeComparisonValue(actualResolution.input, runtimeVariables);
     const expectedValue = runtimeComparisonValue(
       firstDefinedRuntimeInput(options.expected, options.expectedValue, options.rightValue, step.expected, step.expectedValue),
       runtimeVariables,
@@ -3120,6 +3128,10 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
       ...options,
       runtimeVariables,
     });
+    output.actualInput = actualResolution.input;
+    output.actualSource = actualResolution.source;
+    output.agentVersion = AGENT_VERSION;
+    output.runtimeVariableNames = runtimeVariableNames(runtimeVariables);
     if (!output.passed) {
       const error = new Error("List comparison failed.");
       error.output = output;
@@ -3128,23 +3140,18 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
     return output;
   }
   if (action === "compareDatasets") {
+    const actualResolution = resolveComparisonActualInput(step, options, runtimeVariables);
     const output = compareDatasetValues(
-      firstNonBlankRuntimeInput(
-        options.actual,
-        options.source,
-        options.leftValue,
-        runtimeInputFromValueSource(options),
-        runtimeInputFromParameterName(options),
-        step.actual,
-        step.inputValue,
-        step.value,
-        fallbackRuntimeActualVariable(runtimeVariables),
-      ),
+      actualResolution.input,
       firstDefinedRuntimeInput(options.expected, options.expectedValue, options.rightValue, step.expected, step.expectedValue),
       {
       ...options,
       runtimeVariables,
     });
+    output.actualInput = actualResolution.input;
+    output.actualSource = actualResolution.source;
+    output.agentVersion = AGENT_VERSION;
+    output.runtimeVariableNames = runtimeVariableNames(runtimeVariables);
     if (!output.passed) {
       const error = new Error("Dataset comparison failed.");
       error.output = output;
