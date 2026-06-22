@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.41";
+const AGENT_VERSION = "0.1.42";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -2839,6 +2839,17 @@ function runtimeInputFromValueSource(options = {}) {
   return source === "testData" ? `{{${reference}}}` : reference;
 }
 
+function runtimeInputFromParameterName(options = {}) {
+  const parameterName = String(options.parameterName || "").trim();
+  return parameterName || undefined;
+}
+
+function fallbackRuntimeActualVariable(runtimeVariables = {}) {
+  if (runtimeVariableValue(runtimeVariables, "items") !== undefined) return "items";
+  if (runtimeVariableValue(runtimeVariables, "actual") !== undefined) return "actual";
+  return undefined;
+}
+
 function comparisonKeyFields(options = {}) {
   return String(options.keyFields || options.keyColumns || "")
     .split(",")
@@ -3057,9 +3068,11 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
         options.source,
         options.leftValue,
         runtimeInputFromValueSource(options),
+        runtimeInputFromParameterName(options),
         step.actual,
         step.inputValue,
         step.value,
+        fallbackRuntimeActualVariable(runtimeVariables),
       ),
       runtimeVariables,
     );
@@ -3091,9 +3104,11 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
         options.source,
         options.leftValue,
         runtimeInputFromValueSource(options),
+        runtimeInputFromParameterName(options),
         step.actual,
         step.inputValue,
         step.value,
+        fallbackRuntimeActualVariable(runtimeVariables),
       ),
       runtimeVariables,
     );
@@ -3119,9 +3134,11 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
         options.source,
         options.leftValue,
         runtimeInputFromValueSource(options),
+        runtimeInputFromParameterName(options),
         step.actual,
         step.inputValue,
         step.value,
+        fallbackRuntimeActualVariable(runtimeVariables),
       ),
       firstDefinedRuntimeInput(options.expected, options.expectedValue, options.rightValue, step.expected, step.expectedValue),
       {
