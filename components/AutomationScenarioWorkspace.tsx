@@ -1819,6 +1819,11 @@ function commandOutputSummary(output: unknown) {
   }
 }
 
+function commandDetailValue(output: unknown) {
+  const text = commandOutputSummary(output);
+  return text.length > 600 ? `${text.slice(0, 597)}...` : text;
+}
+
 function javaScriptSnippetSummary(output: unknown) {
   if (output === undefined) return "undefined";
   if (output === null) return "null";
@@ -1974,10 +1979,22 @@ function comparisonCommandDetailLines(output: unknown) {
   } else if ("runtimeVariableNames" in record) {
     lines.push("Runtime variables available: none");
   }
+  if ("actualText" in record || "actual" in record) {
+    const actualText = textValue(record.actualText) || commandDetailValue(record.actual);
+    const actualType = textValue(record.actualType);
+    const actualCount = typeof record.actualCount === "number" ? `, ${record.actualCount} item${record.actualCount === 1 ? "" : "s"}` : "";
+    lines.push(`Actual resolved: ${actualText || "(empty)"}${actualType ? ` (${actualType}${actualCount})` : ""}`);
+  }
+  if ("expectedText" in record || "expected" in record) {
+    const expectedText = textValue(record.expectedText) || commandDetailValue(record.expected);
+    const expectedType = textValue(record.expectedType);
+    const expectedCount = typeof record.expectedCount === "number" ? `, ${record.expectedCount} item${record.expectedCount === 1 ? "" : "s"}` : "";
+    lines.push(`Expected resolved: ${expectedText || "(empty)"}${expectedType ? ` (${expectedType}${expectedCount})` : ""}`);
+  }
   const mismatches = Array.isArray(record.mismatches) ? record.mismatches : [];
   for (const item of mismatches.slice(0, 8)) {
     const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    lines.push(`Mismatch ${textValue(row.path) || "value"}: expected "${textValue(row.expected)}", actual "${textValue(row.actual)}"`);
+    lines.push(`Mismatch ${textValue(row.path) || "value"}: expected "${commandDetailValue(row.expected)}", actual "${commandDetailValue(row.actual)}"`);
   }
   const missing = Array.isArray(record.missingItems) ? record.missingItems : [];
   if (missing.length) lines.push(`Missing items: ${missing.length}`);
@@ -11863,7 +11880,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.43
+            Download Companion 0.1.44
           </a>
           <button
             type="button"

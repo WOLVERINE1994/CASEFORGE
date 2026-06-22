@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.43";
+const AGENT_VERSION = "0.1.44";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -2855,6 +2855,20 @@ function runtimeVariableNames(runtimeVariables = {}) {
   return Object.keys(runtimeVariables).filter((key) => !key.startsWith("loop.")).sort();
 }
 
+function runtimeValueType(value) {
+  if (Array.isArray(value)) return "list";
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  return typeof value;
+}
+
+function runtimeValueCount(value) {
+  if (Array.isArray(value)) return value.length;
+  if (value && typeof value === "object") return Object.keys(value).length;
+  if (typeof value === "string") return value.length;
+  return undefined;
+}
+
 function comparisonActualCandidates(step = {}, options = {}, runtimeVariables = {}) {
   return [
     ["options.actual", options.actual],
@@ -3099,10 +3113,16 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
     const scalar = compareScalarValues(actual, expected, options);
     const output = {
       actual,
+      actualCount: runtimeValueCount(actual),
       actualInput: actualResolution.input,
+      actualText: stringifyRuntimeValue(actual),
       actualSource: actualResolution.source,
+      actualType: runtimeValueType(actual),
       agentVersion: AGENT_VERSION,
       expected,
+      expectedCount: runtimeValueCount(expected),
+      expectedText: stringifyRuntimeValue(expected),
+      expectedType: runtimeValueType(expected),
       failedCount: scalar.passed ? 0 : 1,
       mismatches: scalar.passed ? [] : [{ actual, expected, path: "", reason: "Value mismatch" }],
       operator: options.operator || options.matchType || "equals",
@@ -3129,8 +3149,12 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
       runtimeVariables,
     });
     output.actualInput = actualResolution.input;
+    output.actualText = stringifyRuntimeValue(actualValue);
     output.actualSource = actualResolution.source;
+    output.actualType = runtimeValueType(actualValue);
     output.agentVersion = AGENT_VERSION;
+    output.expectedText = stringifyRuntimeValue(expectedValue);
+    output.expectedType = runtimeValueType(expectedValue);
     output.runtimeVariableNames = runtimeVariableNames(runtimeVariables);
     if (!output.passed) {
       const error = new Error("List comparison failed.");
@@ -3149,8 +3173,12 @@ async function executeCollectionCommand(page, step, runtimeVariables = {}) {
       runtimeVariables,
     });
     output.actualInput = actualResolution.input;
+    output.actualText = stringifyRuntimeValue(output.actual);
     output.actualSource = actualResolution.source;
+    output.actualType = runtimeValueType(output.actual);
     output.agentVersion = AGENT_VERSION;
+    output.expectedText = stringifyRuntimeValue(output.expected);
+    output.expectedType = runtimeValueType(output.expected);
     output.runtimeVariableNames = runtimeVariableNames(runtimeVariables);
     if (!output.passed) {
       const error = new Error("Dataset comparison failed.");
