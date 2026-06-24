@@ -11181,7 +11181,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     if ("basicAuthPassword" in summaryParameterData) {
       summaryParameterData.basicAuthPassword = "***";
     }
-    if (input.showLiveReport !== false) {
+    if (input.showLiveReport === true) {
       openLiveRunReport(input.runSteps, {
         browserMode: input.browserMode ?? runConfig.browserMode,
         device: input.deviceLabel,
@@ -11643,6 +11643,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             name: runLabel,
             parameterData,
             runSteps: parameterizedExecutableSteps,
+            showLiveReport: true,
             startUrl:
               firstNavigationUrl(parameterizedExecutableSteps) ||
               normalizeUrl(environment.baseUrl),
