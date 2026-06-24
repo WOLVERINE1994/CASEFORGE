@@ -420,6 +420,8 @@ type LiveRunReport = {
   title: string;
 };
 
+type SessionRunScope = "scenario" | "action" | "command" | "resume";
+
 type ScenarioParameter = {
   id: string;
   name: string;
@@ -5624,7 +5626,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       if (!updates.length && !reportStatus) return;
       const now = new Date().toISOString();
       setLiveRunReport((current) => {
-        if (!current) return current;
+        if (!current?.open) return current;
         const rows = current.rows.map((row) => {
           const update = updates.find((item) => {
             if (item.stepId && row.stepId && item.stepId === row.stepId) return true;
@@ -11171,6 +11173,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     name: string;
     parameterData?: Record<string, string>;
     runSteps: AutomationStep[];
+    runScope?: SessionRunScope;
     showLiveReport?: boolean;
     startUrl?: string;
     summarySteps: AutomationStep[];
@@ -11181,7 +11184,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     if ("basicAuthPassword" in summaryParameterData) {
       summaryParameterData.basicAuthPassword = "***";
     }
-    if (input.showLiveReport === true) {
+    const liveReportEnabled = input.runScope === "scenario" && input.showLiveReport === true;
+    if (liveReportEnabled) {
       openLiveRunReport(input.runSteps, {
         browserMode: input.browserMode ?? runConfig.browserMode,
         device: input.deviceLabel,
@@ -11189,6 +11193,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         status: "queued",
         title: input.name,
       });
+    } else {
+      setLiveRunReport(null);
     }
     if (input.forceNewSession && session?.sessionId && !isCompanionPreviewSession(session)) {
       await closeSession("Previous run session closed.");
@@ -11643,6 +11649,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             name: runLabel,
             parameterData,
             runSteps: parameterizedExecutableSteps,
+            runScope: "scenario",
             showLiveReport: true,
             startUrl:
               firstNavigationUrl(parameterizedExecutableSteps) ||
@@ -11724,6 +11731,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             name: `${actionName} / ${testCase.name}`,
             parameterData,
             runSteps: executableActionSteps,
+            runScope: "action",
+            showLiveReport: false,
             startUrl: firstNavigationUrl(executableActionSteps) || normalizeUrl(targetUrl),
             summarySteps: parameterizedSummarySteps,
             testCase,
@@ -11742,6 +11751,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           name: `${actionName} run`,
           parameterData,
           runSteps: executableActionSteps,
+          runScope: "action",
+          showLiveReport: false,
           startUrl: firstNavigationUrl(executableActionSteps) || normalizeUrl(targetUrl),
           summarySteps: parameterizedSummarySteps,
         });
@@ -11974,6 +11985,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           name: `${commandName} run`,
           parameterData,
           runSteps: executableSteps,
+          runScope: "command",
           showLiveReport: false,
           startUrl: firstNavigationUrl(executableSteps) || normalizeUrl(targetUrl),
           summarySteps,
@@ -12057,6 +12069,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         name: `Resume from step ${startIndex + 1}`,
         parameterData,
         runSteps: parameterizedRunSteps,
+        runScope: "resume",
+        showLiveReport: false,
         startUrl: firstNavigationUrl(parameterizedRunSteps) || normalizeUrl(targetUrl),
         summarySteps: parameterizedSummarySteps,
         testCase,
