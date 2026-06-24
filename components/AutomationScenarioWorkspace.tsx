@@ -703,10 +703,24 @@ const commandActionOptions = [
   ...AUTOMATION_COMMAND_CATALOG.filter((command) => command.visibleInDropdown !== false),
   actionCommandDefinition,
 ];
+function commandLibraryGroupLabel(command: AutomationCommandDefinition) {
+  const category = command.category || "";
+  if (category.startsWith("logic.")) return "Flow blocks";
+  if (category.startsWith("data.compare")) return "Compare data";
+  if (category.startsWith("data.collections")) return "Collections";
+  if (category.startsWith("data.tables")) return "Tables";
+  if (category.startsWith("browser.javascript")) return "JavaScript and tags";
+  if (category.startsWith("debug.")) return "Debug";
+  if (category.startsWith("browser.navigation")) return "Browser";
+  if (category.startsWith("browser.")) return "Browser actions";
+  if (category.startsWith("validation.")) return "Bulk validation";
+  if (command.action === "action") return "Reusable actions";
+  return command.domain || "Other";
+}
 const commandCatalogByDomain = AUTOMATION_COMMAND_CATALOG.reduce<Record<string, typeof AUTOMATION_COMMAND_CATALOG>>(
   (groups, command) => ({
     ...groups,
-    [command.domain]: [...(groups[command.domain] ?? []), command],
+    [commandLibraryGroupLabel(command)]: [...(groups[commandLibraryGroupLabel(command)] ?? []), command],
   }),
   {},
 );
@@ -1796,6 +1810,14 @@ function readableStepLabel(step: AutomationStep) {
     if (step.assertionType === "hidden") return `Verify ${targetName} is hidden`;
     return `Verify ${targetName} is visible`;
   }
+  const commandDefinition = commandDefinitionForAction(action);
+  if (isCompareCommandAction(action)) return commandDefinition?.label || "Compare values";
+  if (commandDefinition?.category.startsWith("data.collections.")) return commandDefinition.label;
+  if (action.includes("WebTable") || action === "getWebTableData" || action === "validateWebTable") {
+    return commandDefinition?.label || action;
+  }
+  if (action === "validateAccordionSections") return commandDefinition?.label || "Validate all accordion sections";
+  if (action === "runJavaScriptSnippet") return commandDefinition?.label || "Run JavaScript snippet";
   if (action === "action") return `Action: ${targetName}`;
   if (action === "wait") {
     const waitType = textValue(step.options?.waitType) || (step.target?.value ? "soft" : "hard");
@@ -2126,6 +2148,17 @@ function commandPhraseForStep(
   const outputVariable =
     phaseOutputVariable(step) || commandOutputDefaultName(commandDefinition);
   return outputVariable ? `${basePhrase} -> ${outputVariable}` : basePhrase;
+}
+
+function defaultCommandTextForStep(
+  step: AutomationStep,
+  definition?: AutomationCommandDefinition | null,
+) {
+  const action = displayAction(step.action);
+  const commandDefinition =
+    definition ?? (action === "action" ? actionCommandDefinition : commandDefinitionForAction(action));
+  if (commandDefinition) return commandPhraseForStep(step, commandDefinition);
+  return readableStepLabel(step);
 }
 
 function validateCommandPromptStep(step: AutomationStep) {
@@ -5380,7 +5413,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       liveCommandResults.reduce<Record<string, AutomationCommandDefinition[]>>(
         (groups, command) => ({
           ...groups,
-          [command.domain]: [...(groups[command.domain] ?? []), command],
+          [commandLibraryGroupLabel(command)]: [...(groups[commandLibraryGroupLabel(command)] ?? []), command],
         }),
         {},
       ),
@@ -5416,7 +5449,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       commandInsertResults.reduce<Record<string, AutomationCommandDefinition[]>>(
         (groups, command) => ({
           ...groups,
-          [command.domain]: [...(groups[command.domain] ?? []), command],
+          [commandLibraryGroupLabel(command)]: [...(groups[commandLibraryGroupLabel(command)] ?? []), command],
         }),
         {},
       ),
@@ -6317,7 +6350,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     const commandText =
       nextCommandRaw.commandText && nextCommandRaw.commandText !== currentCommand.commandText
         ? nextCommandRaw.commandText
-        : readableStepLabel(nextCommandRaw);
+        : defaultCommandTextForStep(nextCommandRaw);
     const nextCommand = withLocatorQuality({ ...nextCommandRaw, commandText });
     const nextCommands = commands.map((command) =>
       command.id === editor.stepId ? nextCommand : command,
@@ -6373,7 +6406,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         const commandText =
           nextStep.commandText && nextStep.commandText !== current.commandText
             ? nextStep.commandText
-            : readableStepLabel(nextStep);
+            : defaultCommandTextForStep(nextStep);
         return withLocatorQuality({ ...nextStep, commandText });
       });
       return;
@@ -6390,7 +6423,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         const commandText =
           nextStep.commandText && nextStep.commandText !== step.commandText
             ? nextStep.commandText
-            : readableStepLabel(nextStep);
+            : defaultCommandTextForStep(nextStep);
         return withLocatorQuality({ ...nextStep, commandText });
       }),
     );
@@ -10237,6 +10270,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           body: JSON.stringify({
             action: "run",
             cursor: companionCursorRef.current,
+            parameterData,
             runId: playbackRunId,
             sessionId: companionSessionId,
             steps: runSteps,
@@ -11110,13 +11144,18 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         [...selectedActionCommandKeys].map((key) => key.split(":")[0]).filter(Boolean),
       );
       const hasExplicitRunSelection = selectedStepIds.size > 0 || selectedActionStepIds.size > 0;
+      const selectedTopLevelIndexes = runSteps
+        .map((step, index) =>
+          selectedStepIds.has(step.id) || selectedActionStepIds.has(step.id) ? index : -1,
+        )
+        .filter((index) => index >= 0);
+      const selectedContextEndIndex = selectedTopLevelIndexes.length
+        ? Math.max(...selectedTopLevelIndexes)
+        : -1;
       const scopedRunSteps = hasExplicitRunSelection
-        ? runSteps.filter(
-            (step, index) =>
-              isScenarioInitStep(step, index) ||
-              selectedStepIds.has(step.id) ||
-              selectedActionStepIds.has(step.id),
-          )
+        ? selectedContextEndIndex >= 0
+          ? runSteps.slice(0, selectedContextEndIndex + 1)
+          : runSteps.filter((step, index) => isScenarioInitStep(step, index))
         : runSteps;
       if (hasExplicitRunSelection && actionCandidateSteps(scopedRunSteps).length === 0) {
         appendLog("Select at least one command or action to run.");
@@ -11193,10 +11232,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           appendLog(`Starting run ${runIndex}/${totalRuns}: ${runLabel}.`);
           await startSessionRun({
             browserMode: config.browserMode,
-            closeOnComplete: true,
+            closeOnComplete: false,
             deviceLabel,
             environment,
             forceNewSession: true,
+            keepSessionOpen: true,
             name: runLabel,
             parameterData,
             runSteps: parameterizedExecutableSteps,
@@ -11449,6 +11489,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           body: JSON.stringify({
             action: "run",
             cursor: companionCursorRef.current,
+            parameterData,
             runId: commandRunId,
             sessionId: activeCompanionSession.sessionId,
             steps: parameterizedSteps,
@@ -11510,8 +11551,18 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         }
       } else {
         const setupSourceSteps = await runtimeScenarioSteps();
-        const parameterizedSetupSteps = substituteStepsParameters(setupSourceSteps, parameterData, runtimeVariableNamesForSubstitution);
-        const executableSteps = withScenarioInitSteps(parameterizedSteps, parameterizedSetupSteps);
+        const contextSourceSteps = timelineContextStepsForStep(runnableStep, setupSourceSteps);
+        const contextRun = await expandActionSteps(contextSourceSteps);
+        const executableSteps = substituteStepsParameters(
+          contextRun.steps.length ? contextRun.steps : commandSteps,
+          parameterData,
+          runtimeVariableNamesForSubstitution,
+        );
+        const summarySteps = substituteStepsParameters(
+          contextSourceSteps.length ? contextSourceSteps : [runnableStep],
+          parameterData,
+          runtimeVariableNamesForSubstitution,
+        );
         const runResult = await startSessionRun({
           closeOnComplete: false,
           keepSessionOpen: true,
@@ -11519,7 +11570,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           parameterData,
           runSteps: executableSteps,
           startUrl: firstNavigationUrl(executableSteps) || normalizeUrl(targetUrl),
-          summarySteps: parameterizedSummarySteps,
+          summarySteps,
           testCase: activeTestCase,
         });
         setCommandRunStates((current) => ({
@@ -13667,10 +13718,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
                         <h4 className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                          Logic IDE
+                          Flow Builder
                         </h4>
                         <p className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                          Write CaseForge logic with variables, locators, and nested blocks.
+                          Start with a guided flow, then open Advanced Logic IDE only when needed.
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">
@@ -13824,90 +13875,97 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                         </pre>
                       </div>
                     ) : null}
-                    <div className="relative">
-                      <textarea
-                        ref={logicEditorTextareaRef}
-                        value={logicDslValue(selectedStep)}
-                        onBlur={() => window.setTimeout(() => setLogicEditorSuggest(null), 150)}
-                        onChange={(event) => {
-                          updateLogicDsl(selectedStep.id || "", event.target.value);
-                          updateLogicEditorSuggest(event.target.value, event.target.selectionStart);
-                        }}
-                        onClick={(event) => {
-                          const target = event.currentTarget;
-                          updateLogicEditorSuggest(target.value, target.selectionStart);
-                        }}
-                        onKeyUp={(event) => {
-                          const target = event.currentTarget;
-                          updateLogicEditorSuggest(target.value, target.selectionStart);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape") {
-                            setLogicEditorSuggest(null);
-                            return;
-                          }
-                          if (
-                            (event.key === "Enter" || event.key === "Tab") &&
-                            logicEditorSuggest &&
-                            visibleLogicEditorSuggestions[0]
-                          ) {
-                            event.preventDefault();
-                            insertLogicSuggestion(visibleLogicEditorSuggestions[0]);
-                          }
-                        }}
-                        spellCheck={false}
-                        className="min-h-[260px] w-full resize-y rounded-xl border border-zinc-200 bg-zinc-950 px-3 py-3 font-mono text-xs leading-5 text-zinc-50 outline-none focus:border-sky-400 dark:border-zinc-800"
-                      />
-                      {logicEditorSuggest && visibleLogicEditorSuggestions.length ? (
-                        <div className="absolute left-3 top-12 z-20 max-h-64 w-[min(360px,calc(100%-24px))] overflow-y-auto rounded-xl border border-zinc-200 bg-white p-1 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
-                          {visibleLogicEditorSuggestions.map((suggestion) => (
-                            <button
-                              key={`${suggestion.source}-${suggestion.label}-${suggestion.insertText}`}
-                              type="button"
-                              onMouseDown={(event) => {
+                    <details className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                      <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-[0.16em] text-zinc-600 dark:text-zinc-300 [&::-webkit-details-marker]:hidden">
+                        Advanced Logic IDE
+                      </summary>
+                      <div className="mt-3 grid gap-3">
+                        <div className="relative">
+                          <textarea
+                            ref={logicEditorTextareaRef}
+                            value={logicDslValue(selectedStep)}
+                            onBlur={() => window.setTimeout(() => setLogicEditorSuggest(null), 150)}
+                            onChange={(event) => {
+                              updateLogicDsl(selectedStep.id || "", event.target.value);
+                              updateLogicEditorSuggest(event.target.value, event.target.selectionStart);
+                            }}
+                            onClick={(event) => {
+                              const target = event.currentTarget;
+                              updateLogicEditorSuggest(target.value, target.selectionStart);
+                            }}
+                            onKeyUp={(event) => {
+                              const target = event.currentTarget;
+                              updateLogicEditorSuggest(target.value, target.selectionStart);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Escape") {
+                                setLogicEditorSuggest(null);
+                                return;
+                              }
+                              if (
+                                (event.key === "Enter" || event.key === "Tab") &&
+                                logicEditorSuggest &&
+                                visibleLogicEditorSuggestions[0]
+                              ) {
                                 event.preventDefault();
-                                insertLogicSuggestion(suggestion);
-                              }}
-                              className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-900"
-                            >
-                              <span className="min-w-0">
-                                <span className="block truncate font-mono">{suggestion.label}</span>
-                                <span className="block truncate text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                                  {suggestion.detail}
-                                </span>
-                              </span>
-                              <span className="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-500 dark:border-zinc-800">
-                                {logicSuggestionSourceLabel(suggestion.source)}
-                              </span>
-                            </button>
-                          ))}
+                                insertLogicSuggestion(visibleLogicEditorSuggestions[0]);
+                              }
+                            }}
+                            spellCheck={false}
+                            className="min-h-[260px] w-full resize-y rounded-xl border border-zinc-200 bg-zinc-950 px-3 py-3 font-mono text-xs leading-5 text-zinc-50 outline-none focus:border-sky-400 dark:border-zinc-800"
+                          />
+                          {logicEditorSuggest && visibleLogicEditorSuggestions.length ? (
+                            <div className="absolute left-3 top-12 z-20 max-h-64 w-[min(360px,calc(100%-24px))] overflow-y-auto rounded-xl border border-zinc-200 bg-white p-1 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+                              {visibleLogicEditorSuggestions.map((suggestion) => (
+                                <button
+                                  key={`${suggestion.source}-${suggestion.label}-${suggestion.insertText}`}
+                                  type="button"
+                                  onMouseDown={(event) => {
+                                    event.preventDefault();
+                                    insertLogicSuggestion(suggestion);
+                                  }}
+                                  className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-900"
+                                >
+                                  <span className="min-w-0">
+                                    <span className="block truncate font-mono">{suggestion.label}</span>
+                                    <span className="block truncate text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                                      {suggestion.detail}
+                                    </span>
+                                  </span>
+                                  <span className="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-500 dark:border-zinc-800">
+                                    {logicSuggestionSourceLabel(suggestion.source)}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
-                      ) : null}
-                    </div>
-                    <div
-                      className={`rounded-xl border p-3 text-xs font-semibold ${
-                        selectedLogicDslValidation.valid
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100"
-                          : "border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100"
-                      }`}
-                    >
-                      <p>
-                        {selectedLogicDslValidation.valid ? "Logic looks valid" : "Logic needs attention"}:{" "}
-                        {selectedLogicDslValidation.summary}
-                      </p>
-                      {selectedLogicDslValidation.issues.length ? (
-                        <ul className="mt-2 grid gap-1">
-                          {selectedLogicDslValidation.issues.slice(0, 5).map((issue) => (
-                            <li key={issue}>{issue}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-                    </div>
-                    <div className="grid gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-                      <p>if {logicVariableToken("env")} == "staging" {"{"} log "staging" {"}"}</p>
-                      <p>for item in {logicVariableToken("activeProducts")} {"{"} log item.name {"}"}</p>
-                      <p>click css("#submit")</p>
-                    </div>
+                        <div
+                          className={`rounded-xl border p-3 text-xs font-semibold ${
+                            selectedLogicDslValidation.valid
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100"
+                              : "border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100"
+                          }`}
+                        >
+                          <p>
+                            {selectedLogicDslValidation.valid ? "Logic looks valid" : "Logic needs attention"}:{" "}
+                            {selectedLogicDslValidation.summary}
+                          </p>
+                          {selectedLogicDslValidation.issues.length ? (
+                            <ul className="mt-2 grid gap-1">
+                              {selectedLogicDslValidation.issues.slice(0, 5).map((issue) => (
+                                <li key={issue}>{issue}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                        <div className="grid gap-2 rounded-xl border border-zinc-200 bg-white p-3 font-mono text-[11px] text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
+                          <p>if {logicVariableToken("env")} == "staging" {"{"} log "staging" {"}"}</p>
+                          <p>for item in {logicVariableToken("activeProducts")} {"{"} log item.name {"}"}</p>
+                          <p>click css("#submit")</p>
+                        </div>
+                      </div>
+                    </details>
                   </div>
                 ) : null}
                 {selectedCommandSchemaParameters.length && !selectedCommandUsesLogicIde ? (

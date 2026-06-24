@@ -693,7 +693,7 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     description: "Prints text or resolved variables to the Command Console while debugging a run.",
     runtimeHandler: "web.logMessage",
   }),
-  command("conditionalBlock", "If / Else If / Else condition block", [
+  command("conditionalBlock", "Add conditional flow", [
     param("conditionSource", "select", {
       defaultValue: "variable",
       options: [
@@ -737,6 +737,9 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     param("timeoutMs", "number", { defaultValue: 30000 }),
   ], {
     aliases: [
+      "If / Else If / Else condition block",
+      "If / else flow",
+      "Branch flow",
       "If condition",
       "Else if condition",
       "Else condition",
@@ -748,12 +751,12 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
       "Branch by resolution",
     ],
     category: "logic.conditions",
-    description: "Runs one nested command branch based on viewport, resolution, environment, URL, variable, element, or an advanced expression.",
+    description: "Builds a branch flow based on viewport, resolution, environment, URL, variable, element, or an advanced expression.",
     outputDefinition: flowControlOutput,
     runtimeHandler: "web.logic.conditionalBlock",
     stepKind: "ifElse",
   }),
-  command("loopBlock", "Loop / For each block", [
+  command("loopBlock", "Add repeat / for-each flow", [
     param("loopType", "select", {
       defaultValue: "repeatCount",
       options: [
@@ -799,6 +802,9 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
     param("timeoutMs", "number", { defaultValue: 30000 }),
   ], {
     aliases: [
+      "Loop / For each block",
+      "Loop flow",
+      "For each flow",
       "Repeat fixed count",
       "Repeat variable count",
       "For each item in list",
@@ -809,7 +815,7 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
       "Until condition",
     ],
     category: "logic.loops",
-    description: "Repeats nested commands by count, variable count, list, map/object, test data rows, web table rows, while, or until logic.",
+    description: "Builds a repeat or for-each flow for counts, lists, maps, test data rows, table rows, while, or until logic.",
     outputDefinition: loopControlOutput,
     runtimeHandler: "web.logic.loopBlock",
     stepKind: "loop",
