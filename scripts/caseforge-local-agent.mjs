@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.44";
+const AGENT_VERSION = "0.1.45";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -1359,6 +1359,17 @@ const closeRuntime = async () => {
   state.session = null;
 };
 
+function pushPlaybackEvent(session, event) {
+  if (!session) return;
+  const nextEvent = {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: new Date().toISOString(),
+    ...event,
+  };
+  session.playbackEvents = [...(Array.isArray(session.playbackEvents) ? session.playbackEvents : []), nextEvent].slice(-400);
+  session.updatedAt = Date.now();
+}
+
 const getRecorderSnapshot = (session, cursor = 0) => ({
   activeTabId: state.activeTabId,
   sessionId: session.id,
@@ -1369,6 +1380,8 @@ const getRecorderSnapshot = (session, cursor = 0) => ({
   url: session.currentUrl,
   commands: session.commands.slice(Number.isFinite(cursor) ? cursor : 0),
   logs: session.logs,
+  playbackEventCursor: Array.isArray(session.playbackEvents) ? session.playbackEvents.length : 0,
+  playbackEvents: Array.isArray(session.playbackEvents) ? session.playbackEvents : [],
   agent: {
     name: "CaseForge Companion",
     version: AGENT_VERSION,
@@ -5407,8 +5420,14 @@ async function runPlaybackInActiveBrowser(body) {
   session.playbackActive = true;
   const previousStatus = session.status;
   session.status = "playing";
+  session.playbackEvents = [];
   session.logs = [`Playback started with ${steps.length} command${steps.length === 1 ? "" : "s"}.`, ...session.logs];
   session.updatedAt = Date.now();
+  pushPlaybackEvent(session, {
+    runId: body?.runId || null,
+    stepCount: steps.length,
+    type: "run:start",
+  });
   const results = [];
   const runtimeVariables = {
     ...(body?.parameterData && typeof body.parameterData === "object" && !Array.isArray(body.parameterData)
@@ -5425,18 +5444,39 @@ async function runPlaybackInActiveBrowser(body) {
     for (const [index, step] of steps.entries()) {
       currentIndex = index;
       currentStep = step;
+      pushPlaybackEvent(session, {
+        action: step.action || null,
+        index,
+        label: step.commandText || step.description || step.action || `Command ${index + 1}`,
+        runId: body?.runId || null,
+        stepId: step.id || null,
+        type: "step:start",
+      });
       const activePlaybackPage = state.page || page;
       const output = await executeStepWithRuntimeVariables(activePlaybackPage, step, runtimeVariables, {
         index,
         runId: body?.runId || null,
       });
       results.push({ index, output, status: "passed", stepId: step.id || null });
+      pushPlaybackEvent(session, {
+        action: step.action || null,
+        index,
+        label: step.commandText || step.description || step.action || `Command ${index + 1}`,
+        output,
+        runId: body?.runId || null,
+        stepId: step.id || null,
+        type: "step:success",
+      });
     }
     session.currentUrl = state.page?.url() || session.currentUrl;
     session.runtimeVariables = runtimeVariables;
     session.status = previousStatus === "previewing" ? "previewing" : "recording";
     session.logs = ["Playback passed.", ...session.logs].slice(0, 80);
     session.updatedAt = Date.now();
+    pushPlaybackEvent(session, {
+      runId: body?.runId || null,
+      type: "run:success",
+    });
     return {
       status: 200,
       payload: {
@@ -5463,12 +5503,27 @@ async function runPlaybackInActiveBrowser(body) {
         status: "failed",
         stepId: currentStep.id || null,
       });
+      pushPlaybackEvent(session, {
+        action: currentStep.action || null,
+        error: message,
+        index: currentIndex,
+        label: currentStep.commandText || currentStep.description || currentStep.action || `Command ${currentIndex + 1}`,
+        output: failedOutput,
+        runId: body?.runId || null,
+        stepId: currentStep.id || null,
+        type: "step:failed",
+      });
     }
     session.currentUrl = state.page?.url() || session.currentUrl;
     session.runtimeVariables = runtimeVariables;
     session.status = previousStatus === "previewing" ? "previewing" : "recording";
     session.logs = [`Playback failed: ${message}`, ...session.logs].slice(0, 80);
     session.updatedAt = Date.now();
+    pushPlaybackEvent(session, {
+      error: message,
+      runId: body?.runId || null,
+      type: "run:failed",
+    });
     return {
       status: 500,
       payload: {

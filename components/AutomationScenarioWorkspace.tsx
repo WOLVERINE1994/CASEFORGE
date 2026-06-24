@@ -294,6 +294,20 @@ type CompanionStepResult = {
   stepId?: string | null;
 };
 
+type CompanionPlaybackEvent = {
+  action?: string | null;
+  error?: string;
+  id?: string;
+  index?: number;
+  label?: string;
+  output?: unknown;
+  runId?: string | null;
+  stepCount?: number;
+  stepId?: string | null;
+  timestamp?: string;
+  type?: string;
+};
+
 type CompanionBrowserResponse = {
   activeTabId?: string | null;
   error?: string;
@@ -309,6 +323,8 @@ type CompanionBrowserResponse = {
   url?: string;
   commands?: CompanionCommand[];
   logs?: string[];
+  playbackEventCursor?: number;
+  playbackEvents?: CompanionPlaybackEvent[];
   tabs?: CompanionPreviewTab[];
   agent?: {
     name?: string;
@@ -4541,6 +4557,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [testCaseDrafts, setTestCaseDrafts] = useState<ScenarioTestCase[]>([]);
   const targetInitializedForScenario = useRef<string | null>(null);
   const companionCursorRef = useRef(0);
+  const companionPlaybackEventIdsRef = useRef<Set<string>>(new Set());
   const ignoredRecorderStepIdsRef = useRef<Set<string>>(new Set());
   const runModalDismissedRef = useRef(false);
   const timelineStepRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -5769,6 +5786,104 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       if (!sawFailure) updateLiveRunReportRows(steps, [], "passed");
     },
     [appendLog, commandConsoleLabel, setCommandStatus, updateLiveRunReportRows],
+  );
+
+  const applyCompanionPlaybackEvents = useCallback(
+    (steps: AutomationStep[], events: CompanionPlaybackEvent[] | undefined, runId: string | null) => {
+      if (!events?.length) return;
+      for (const event of events) {
+        if (runId && event.runId && event.runId !== runId) continue;
+        const eventKey = event.id || `${event.type}:${event.runId || ""}:${event.index ?? ""}:${event.stepId || ""}:${event.timestamp || ""}`;
+        if (companionPlaybackEventIdsRef.current.has(eventKey)) continue;
+        companionPlaybackEventIdsRef.current.add(eventKey);
+        const index = typeof event.index === "number" ? event.index : -1;
+        const step =
+          (event.stepId ? steps.find((item) => item.id === event.stepId) : null) ??
+          (index >= 0 ? steps[index] : undefined);
+        const outputLine = commandConsoleOutputLineForStep(step, event.output);
+        const detailLines = commandConsoleDetailLinesForStep(step, event.output);
+        if (event.type === "run:start") {
+          updateLiveRunReportRows(steps, [], "running");
+          continue;
+        }
+        if (event.type === "run:success") {
+          updateLiveRunReportRows(steps, [], "passed");
+          continue;
+        }
+        if (event.type === "run:failed") {
+          updateLiveRunReportRows(steps, [], "failed");
+          continue;
+        }
+        if (event.type === "step:start") {
+          updateLiveRunReportRows(steps, [{
+            index,
+            message: "Running",
+            runId,
+            status: "running",
+            stepId: event.stepId ?? step?.id ?? null,
+          }], "running");
+          if (step) setCommandStatus(step, "running", "Running", runId);
+          continue;
+        }
+        if (event.type === "step:success") {
+          updateLiveRunReportRows(steps, [{
+            details: detailLines,
+            index,
+            message: "Passed",
+            outputSummary: outputLine,
+            runId,
+            status: "passed",
+            stepId: event.stepId ?? step?.id ?? null,
+          }]);
+          if (step) setCommandStatus(step, "passed", "Passed", runId);
+          continue;
+        }
+        if (event.type === "step:failed") {
+          updateLiveRunReportRows(steps, [{
+            details: detailLines,
+            index,
+            message: event.error || "Command failed.",
+            outputSummary: outputLine,
+            runId,
+            status: "failed",
+            stepId: event.stepId ?? step?.id ?? null,
+          }], "failed");
+          if (step) setCommandStatus(step, "failed", event.error || "Failed", runId);
+        }
+      }
+    },
+    [setCommandStatus, updateLiveRunReportRows],
+  );
+
+  const startCompanionPlaybackEventPolling = useCallback(
+    (sessionId: string, runId: string | null, steps: AutomationStep[]) => {
+      if (!sessionId) return () => undefined;
+      let stopped = false;
+      const poll = () => {
+        if (stopped) return;
+        const params = new URLSearchParams({ sessionId });
+        void companionBrowserRequest(undefined, params)
+          .then((data) => {
+            companionCursorRef.current = data.cursor ?? companionCursorRef.current;
+            applyCompanionPlaybackEvents(steps, data.playbackEvents, runId);
+            if (data.url) {
+              setSession((current) =>
+                isCompanionPreviewSession(current)
+                  ? companionSessionMetadata(data, data.url || current?.currentUrl || targetUrl)
+                  : current,
+              );
+            }
+          })
+          .catch(() => undefined);
+      };
+      poll();
+      const intervalId = window.setInterval(poll, 350);
+      return () => {
+        stopped = true;
+        window.clearInterval(intervalId);
+      };
+    },
+    [applyCompanionPlaybackEvents, targetUrl],
   );
 
   useEffect(() => {
@@ -11164,6 +11279,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     logCommandRunStarted(input.runSteps, data.run.id);
     let runPassed = false;
     let stepResults: StepExecutionResult[] = [];
+    companionPlaybackEventIdsRef.current = new Set();
+    const stopCompanionProgressPolling = startCompanionPlaybackEventPolling(
+      companionSessionId,
+      data.run.id,
+      input.runSteps,
+    );
     try {
       const playbackResponse = await fetch(`${localAgentUrl}/automation/browser`, {
         body: JSON.stringify({
@@ -11186,6 +11307,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         method: "POST",
       });
       const runData = await readJsonResponse<CompanionBrowserResponse>(playbackResponse, {});
+      applyCompanionPlaybackEvents(input.runSteps, runData.playbackEvents, data.run.id);
       companionCursorRef.current = runData.cursor ?? companionCursorRef.current;
       setSession(companionSessionMetadata(runData, runData.url || startUrl));
       setLivePreviewTick(Date.now());
@@ -11240,6 +11362,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       setRunStatus("failed");
       throw error;
     } finally {
+      stopCompanionProgressPolling();
       const persistedHealingEvents: HealingReviewEvent[] = [];
       const failedResult = stepResults.find((result) => result.status === "failed");
       if (failedResult) setFailedStepResult(failedResult);
@@ -12207,7 +12330,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.44
+            Download Companion 0.1.45
           </a>
           <button
             type="button"
