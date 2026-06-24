@@ -10526,6 +10526,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     options: { navigateToExpected?: boolean; skipStateGuard?: boolean } = {},
   ) => {
     setPlaybackConsoleOpen(true);
+    setLiveRunReport((current) => current ? { ...current, open: false } : current);
     try {
       const scopedSteps = playbackStepsForScope(scope, anchorStep);
       const executableScope = actionCandidateSteps(scopedSteps);
@@ -11170,6 +11171,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     name: string;
     parameterData?: Record<string, string>;
     runSteps: AutomationStep[];
+    showLiveReport?: boolean;
     startUrl?: string;
     summarySteps: AutomationStep[];
     testCase?: ScenarioTestCase | null;
@@ -11179,13 +11181,15 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     if ("basicAuthPassword" in summaryParameterData) {
       summaryParameterData.basicAuthPassword = "***";
     }
-    openLiveRunReport(input.runSteps, {
-      browserMode: input.browserMode ?? runConfig.browserMode,
-      device: input.deviceLabel,
-      environment: input.environment?.name,
-      status: "queued",
-      title: input.name,
-    });
+    if (input.showLiveReport !== false) {
+      openLiveRunReport(input.runSteps, {
+        browserMode: input.browserMode ?? runConfig.browserMode,
+        device: input.deviceLabel,
+        environment: input.environment?.name,
+        status: "queued",
+        title: input.name,
+      });
+    }
     if (input.forceNewSession && session?.sessionId && !isCompanionPreviewSession(session)) {
       await closeSession("Previous run session closed.");
     }
@@ -11775,6 +11779,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
 
   const runSingleCommand = async (step: AutomationStep) => {
     setBusy(true);
+    setLiveRunReport((current) => current ? { ...current, open: false } : current);
     try {
       if (!(await saveOpenCommandPromptDraft())) return;
       const runTestData = activeRunTestData();
@@ -11968,6 +11973,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           name: `${commandName} run`,
           parameterData,
           runSteps: executableSteps,
+          showLiveReport: false,
           startUrl: firstNavigationUrl(executableSteps) || normalizeUrl(targetUrl),
           summarySteps,
           testCase: activeTestCase,
