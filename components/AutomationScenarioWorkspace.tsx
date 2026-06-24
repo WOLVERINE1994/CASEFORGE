@@ -373,6 +373,37 @@ type CommandRunState = {
   updatedAt: string;
 };
 
+type LiveRunReportRowStatus = "queued" | "running" | "passed" | "failed" | "skipped";
+
+type LiveRunReportRow = {
+  action: string;
+  details: string[];
+  endedAt?: string;
+  index: number;
+  label: string;
+  message?: string;
+  outputSummary?: string;
+  parentActionId?: string | null;
+  parentActionName?: string | null;
+  runId?: string | null;
+  startedAt?: string;
+  status: LiveRunReportRowStatus;
+  stepId?: string | null;
+};
+
+type LiveRunReport = {
+  browserMode?: string;
+  completedAt?: string;
+  device?: string;
+  environment?: string;
+  open: boolean;
+  rows: LiveRunReportRow[];
+  runId?: string | null;
+  startedAt: string;
+  status: "queued" | "running" | "passed" | "failed" | "cancelled";
+  title: string;
+};
+
 type ScenarioParameter = {
   id: string;
   name: string;
@@ -2970,6 +3001,11 @@ function companionOfflineMessage(error: unknown) {
   return message || "CaseForge Companion could not complete the request.";
 }
 
+function isInactiveCompanionSessionError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /browser session is not active|companion browser session is not active/i.test(message);
+}
+
 async function companionBrowserRequest(
   init?: RequestInit,
   query?: URLSearchParams,
@@ -4424,6 +4460,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [runModalOpen, setRunModalOpen] = useState(false);
   const [runModalError, setRunModalError] = useState("");
   const [runModalMode, setRunModalMode] = useState<"record" | "run">("run");
+  const [liveRunReport, setLiveRunReport] = useState<LiveRunReport | null>(null);
   const [runConfig, setRunConfig] = useState<RunConfig>(() =>
     defaultRunConfig(targetUrl),
   );
@@ -4505,6 +4542,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const targetInitializedForScenario = useRef<string | null>(null);
   const companionCursorRef = useRef(0);
   const ignoredRecorderStepIdsRef = useRef<Set<string>>(new Set());
+  const runModalDismissedRef = useRef(false);
   const timelineStepRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const actionCommandRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const commandParameterTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
@@ -5509,6 +5547,97 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     [],
   );
 
+  const liveRunRowForStep = useCallback(
+    (step: AutomationStep, index: number, runId?: string | null): LiveRunReportRow => ({
+      action: displayAction(step.action),
+      details: [],
+      index,
+      label: commandConsoleLabel(step, index),
+      parentActionId: textValue(step.options?.sourceActionId) || null,
+      parentActionName: textValue(step.options?.sourceActionName) || null,
+      runId: runId ?? null,
+      status: "queued",
+      stepId: step.id ?? null,
+    }),
+    [commandConsoleLabel],
+  );
+
+  const openLiveRunReport = useCallback(
+    (
+      steps: AutomationStep[],
+      metadata: {
+        browserMode?: string;
+        device?: string;
+        environment?: string;
+        runId?: string | null;
+        status?: LiveRunReport["status"];
+        title: string;
+      },
+    ) => {
+      const now = new Date().toISOString();
+      setLiveRunReport({
+        browserMode: metadata.browserMode,
+        device: metadata.device,
+        environment: metadata.environment,
+        open: true,
+        rows: steps.map((step, index) => liveRunRowForStep(step, index, metadata.runId)),
+        runId: metadata.runId ?? null,
+        startedAt: now,
+        status: metadata.status ?? "queued",
+        title: metadata.title,
+      });
+    },
+    [liveRunRowForStep],
+  );
+
+  const updateLiveRunReportRows = useCallback(
+    (
+      steps: AutomationStep[],
+      updates: Array<{
+        details?: string[];
+        index?: number;
+        message?: string;
+        outputSummary?: string;
+        runId?: string | null;
+        status: LiveRunReportRowStatus;
+        stepId?: string | null;
+      }>,
+      reportStatus?: LiveRunReport["status"],
+    ) => {
+      if (!updates.length && !reportStatus) return;
+      const now = new Date().toISOString();
+      setLiveRunReport((current) => {
+        if (!current) return current;
+        const rows = current.rows.map((row) => {
+          const update = updates.find((item) => {
+            if (item.stepId && row.stepId && item.stepId === row.stepId) return true;
+            return typeof item.index === "number" && item.index === row.index;
+          });
+          if (!update) return row;
+          return {
+            ...row,
+            details: update.details ?? row.details,
+            endedAt: ["passed", "failed", "skipped"].includes(update.status) ? now : row.endedAt,
+            message: update.message ?? row.message,
+            outputSummary: update.outputSummary ?? row.outputSummary,
+            runId: update.runId ?? row.runId,
+            startedAt: update.status === "running" ? row.startedAt ?? now : row.startedAt,
+            status: update.status,
+          };
+        });
+        return {
+          ...current,
+          completedAt: reportStatus === "passed" || reportStatus === "failed" || reportStatus === "cancelled"
+            ? now
+            : current.completedAt,
+          rows,
+          status: reportStatus ?? current.status,
+        };
+      });
+    },
+    [],
+  );
+
   const setCommandStatus = useCallback(
     (
       step: AutomationStep | undefined,
@@ -5534,18 +5663,40 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
 
   const logCommandRunStarted = useCallback(
     (steps: AutomationStep[], runId: string | null, prefix = "Running command") => {
+      updateLiveRunReportRows(
+        steps,
+        steps.map((step, index) => ({
+          index,
+          message: "Running",
+          runId,
+          status: "running" as const,
+          stepId: step.id ?? null,
+        })),
+        "running",
+      );
       steps.forEach((step, index) => {
         const label = commandConsoleLabel(step, index);
         setCommandStatus(step, "running", "Running", runId);
         appendLog(`${prefix} ${index + 1}/${steps.length}: ${label}`);
       });
     },
-    [appendLog, commandConsoleLabel, setCommandStatus],
+    [appendLog, commandConsoleLabel, setCommandStatus, updateLiveRunReportRows],
   );
 
   const applyCompanionCommandResults = useCallback(
     (steps: AutomationStep[], results: CompanionStepResult[] | undefined, runId: string | null) => {
       if (!results?.length) {
+        updateLiveRunReportRows(
+          steps,
+          steps.map((step, index) => ({
+            index,
+            message: "Passed",
+            runId,
+            status: "passed" as const,
+            stepId: step.id ?? null,
+          })),
+          "passed",
+        );
         steps.forEach((step, index) => {
           const label = commandConsoleLabel(step, index);
           setCommandStatus(step, "passed", "Passed", runId);
@@ -5554,6 +5705,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         return;
       }
 
+      let sawFailure = false;
       for (const result of results) {
         const index = typeof result.index === "number" ? result.index : -1;
         const step =
@@ -5567,27 +5719,56 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           : `Command ${displayIndex || "?"}`;
 
         if (result.status === "failed") {
+          sawFailure = true;
           const error = result.error || "Command failed.";
+          const outputLine = commandConsoleOutputLineForStep(step, result.output);
+          const detailLines = commandConsoleDetailLinesForStep(step, result.output);
+          updateLiveRunReportRows(
+            steps,
+            [{
+              details: detailLines,
+              index,
+              message: error,
+              outputSummary: outputLine,
+              runId,
+              status: "failed",
+              stepId: result.stepId ?? step?.id ?? null,
+            }],
+            "failed",
+          );
           setCommandStatus(step, "failed", error, runId);
           appendLog(`Command ${displayIndex || "?"}/${steps.length} failed: ${label}. ${error}`);
-          const outputLine = commandConsoleOutputLineForStep(step, result.output);
           if (outputLine) appendLog(outputLine);
-          for (const detailLine of commandConsoleDetailLinesForStep(step, result.output)) {
+          for (const detailLine of detailLines) {
             appendLog(detailLine);
           }
           continue;
         }
 
+        const outputLine = commandConsoleOutputLineForStep(step, result.output);
+        const detailLines = commandConsoleDetailLinesForStep(step, result.output);
+        updateLiveRunReportRows(
+          steps,
+          [{
+            details: detailLines,
+            index,
+            message: "Passed",
+            outputSummary: outputLine,
+            runId,
+            status: "passed",
+            stepId: result.stepId ?? step?.id ?? null,
+          }],
+        );
         setCommandStatus(step, "passed", "Passed", runId);
         appendLog(`Command ${displayIndex || "?"}/${steps.length} passed: ${label}`);
-        const outputLine = commandConsoleOutputLineForStep(step, result.output);
         if (outputLine) appendLog(outputLine);
-        for (const detailLine of commandConsoleDetailLinesForStep(step, result.output)) {
+        for (const detailLine of detailLines) {
           appendLog(detailLine);
         }
       }
+      if (!sawFailure) updateLiveRunReportRows(steps, [], "passed");
     },
-    [appendLog, commandConsoleLabel, setCommandStatus],
+    [appendLog, commandConsoleLabel, setCommandStatus, updateLiveRunReportRows],
   );
 
   useEffect(() => {
@@ -6772,6 +6953,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   };
 
   const openRuntimeModal = (mode: "record" | "run") => {
+    runModalDismissedRef.current = false;
     setRunModalMode(mode);
     setRunConfig((current) => {
       const firstEnvironment = environmentDraftFromUrl(targetUrl);
@@ -6797,6 +6979,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     });
     setRunModalError("");
     setRunModalOpen(true);
+  };
+
+  const dismissRunModal = () => {
+    runModalDismissedRef.current = true;
+    setRunModalError("");
+    setRunModalOpen(false);
   };
 
   const openRunModal = () => openRuntimeModal("run");
@@ -9363,6 +9551,55 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     }
   };
 
+  const jumpToLiveReportCommand = async (row: LiveRunReportRow) => {
+    if (!row.stepId) return;
+    const topLevelStep = visibleSteps.find((step) => step.id === row.stepId);
+    if (topLevelStep) {
+      setLiveRunReport((current) => current ? { ...current, open: false } : current);
+      setActionCommandEditor(null);
+      setSelectedStepIds(new Set([topLevelStep.id]));
+      setTimelineSelectionAnchorId(topLevelStep.id);
+      setSelectedStepId(topLevelStep.id);
+      setDrawerOpen(true);
+      window.requestAnimationFrame(() => {
+        timelineStepRefs.current[topLevelStep.id]?.scrollIntoView({ block: "center", behavior: "smooth" });
+        timelineStepRefs.current[topLevelStep.id]?.focus();
+      });
+      return;
+    }
+
+    const parentAction = visibleSteps.find(
+      (step) =>
+        step.action === "action" &&
+        (step.target?.value === row.parentActionId ||
+          step.id === row.parentActionId ||
+          step.target?.displayName === row.parentActionName ||
+          step.commandText === row.parentActionName),
+    );
+    if (!parentAction?.target?.value) {
+      appendLog("Could not locate the command in the current timeline.");
+      return;
+    }
+
+    setLiveRunReport((current) => current ? { ...current, open: false } : current);
+    setExpandedActionStepIds((current) => new Set(current).add(parentAction.id));
+    await loadActionStepCommands(parentAction);
+    const selectionKey = actionCommandSelectionKey(parentAction.id, row.stepId);
+    setSelectedActionCommandKeys(new Set([selectionKey]));
+    setActionCommandSelectionAnchorKey(selectionKey);
+    setActionCommandEditor({
+      actionId: parentAction.target.value,
+      actionStepId: parentAction.id,
+      stepId: row.stepId,
+    });
+    setSelectedStepId(row.stepId);
+    setDrawerOpen(true);
+    window.requestAnimationFrame(() => {
+      actionCommandRefs.current[selectionKey]?.scrollIntoView({ block: "center", behavior: "smooth" });
+      actionCommandRefs.current[selectionKey]?.focus();
+    });
+  };
+
   const openTimelineStep = (step: AutomationStep) => {
     setActionCommandEditor(null);
     setSelectedStepId(step.id);
@@ -9946,6 +10183,13 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         }
         const stepId = typeof event.data?.stepId === "string" ? event.data.stepId : "";
         if (event.type === "step:start") {
+          updateLiveRunReportRows([], [{
+            index: typeof event.data?.index === "number" ? event.data.index : undefined,
+            message: "Running",
+            runId,
+            status: "running",
+            stepId,
+          }]);
           if (stepId) {
             setCommandRunStates((current) => ({
               ...current,
@@ -9988,6 +10232,13 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 : "Step failed.";
           const suggestion =
             typeof event.data?.suggestion === "string" ? event.data.suggestion : result?.suggestion || "";
+          updateLiveRunReportRows([], [{
+            index: typeof event.data?.index === "number" ? event.data.index : undefined,
+            message: error,
+            runId,
+            status: "failed",
+            stepId,
+          }], "failed");
           appendLog(`Step ${index} failed: ${error}${suggestion ? ` ${suggestion}` : ""}`);
         }
         if (event.type === "step.healed" || event.type === "step:self_healed") {
@@ -10022,6 +10273,13 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         if (event.type === "step:success") {
           const result = stepResultFromEvent(event);
           const successStepId = result?.stepId || stepId;
+          updateLiveRunReportRows([], [{
+            index: typeof event.data?.index === "number" ? event.data.index : undefined,
+            message: "Passed",
+            runId,
+            status: "passed",
+            stepId: successStepId,
+          }]);
           if (successStepId) {
             setCommandRunStates((current) => ({
               ...current,
@@ -10042,10 +10300,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       });
       if (terminalEvent?.type === "run:success") {
         setRunStatus("completed");
+        updateLiveRunReportRows([], [], "passed");
         return;
       }
       if (terminalEvent?.type === "run:failed") {
         setRunStatus("failed");
+        updateLiveRunReportRows([], [], "failed");
         const error =
           typeof terminalEvent.data?.error === "string"
             ? terminalEvent.data.error
@@ -10055,7 +10315,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       await new Promise<void>((resolve) => window.setTimeout(resolve, 500));
     }
     throw new Error("Replay timed out before recording could resume.");
-  }, [appendLog]);
+  }, [appendLog, updateLiveRunReportRows]);
 
   const refreshPlaybackState = useCallback(async () => {
     const [jobsResponse, configResponse] = await Promise.all([
@@ -10804,6 +11064,13 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     if ("basicAuthPassword" in summaryParameterData) {
       summaryParameterData.basicAuthPassword = "***";
     }
+    openLiveRunReport(input.runSteps, {
+      browserMode: input.browserMode ?? runConfig.browserMode,
+      device: input.deviceLabel,
+      environment: input.environment?.name,
+      status: "queued",
+      title: input.name,
+    });
     if (input.forceNewSession && session?.sessionId && !isCompanionPreviewSession(session)) {
       await closeSession("Previous run session closed.");
     }
@@ -10950,6 +11217,15 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       runPassed = true;
       setRunStatus("completed");
     } catch (error) {
+      if (runModalDismissedRef.current && isInactiveCompanionSessionError(error)) {
+        setSession(null);
+        setRecordingSessionId(null);
+        setRecording(false);
+        setRecordingPaused(false);
+        setRunStatus("idle");
+        stepResults = [];
+        return { runId: data.run.id, sessionId: "", status: "failed" };
+      }
       const failedResult: StepExecutionResult = {
         endedAt: new Date().toISOString(),
         errorMessage: error instanceof Error ? error.message : "Run failed in CaseForge Companion.",
@@ -15632,7 +15908,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
               </div>
               <button
                 type="button"
-                onClick={() => setRunModalOpen(false)}
+                onClick={dismissRunModal}
                 className="rounded-lg px-2 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
               >
                 Close
@@ -15947,7 +16223,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             <div className="flex justify-end gap-2 border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
               <button
                 type="button"
-                onClick={() => setRunModalOpen(false)}
+                onClick={dismissRunModal}
                 className="rounded-xl border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-700 dark:border-zinc-800 dark:text-zinc-200"
               >
                 Cancel
@@ -15972,6 +16248,148 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {liveRunReport?.open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6">
+          <section
+            className="grid max-h-[90vh] w-full max-w-5xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[16px] border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Live run report"
+          >
+            <div className="border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">
+                    Live Run Report
+                  </p>
+                  <h3 className="mt-1 truncate text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+                    {liveRunReport.title}
+                  </h3>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    {[liveRunReport.environment, liveRunReport.device, liveRunReport.browserMode]
+                      .filter(Boolean)
+                      .join(" | ") || "Current runtime context"}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${
+                      liveRunReport.status === "passed"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
+                        : liveRunReport.status === "failed"
+                          ? "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200"
+                          : liveRunReport.status === "running"
+                            ? "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200"
+                            : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                    }`}
+                  >
+                    {liveRunReport.status}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setLiveRunReport((current) => current ? { ...current, open: false } : current)}
+                    className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-4">
+                {(["queued", "running", "passed", "failed"] as LiveRunReportRowStatus[]).map((status) => {
+                  const count = liveRunReport.rows.filter((row) => row.status === status).length;
+                  return (
+                    <div
+                      key={status}
+                      className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900"
+                    >
+                      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-500">
+                        {status}
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+                        {count}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="min-h-0 overflow-y-auto p-4">
+              <div className="grid gap-2">
+                {liveRunReport.rows.map((row) => (
+                  <div
+                    key={`${row.stepId || row.index}-${row.index}`}
+                    className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-zinc-100 px-2 text-xs font-bold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+                            {row.index + 1}
+                          </span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] ${
+                              row.status === "passed"
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
+                                : row.status === "failed"
+                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200"
+                                  : row.status === "running"
+                                    ? "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200"
+                                    : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                            }`}
+                          >
+                            {row.status}
+                          </span>
+                          {row.parentActionName ? (
+                            <span className="rounded-full border border-zinc-200 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                              {row.parentActionName}
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-2 break-words text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                          {row.label}
+                        </p>
+                        {row.message ? (
+                          <p className={`mt-1 break-words text-xs font-medium ${row.status === "failed" ? "text-rose-700 dark:text-rose-200" : "text-zinc-500 dark:text-zinc-400"}`}>
+                            {row.message}
+                          </p>
+                        ) : null}
+                        {row.outputSummary ? (
+                          <p className="mt-1 break-words font-mono text-[11px] text-zinc-600 dark:text-zinc-300">
+                            {row.outputSummary}
+                          </p>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void jumpToLiveReportCommand(row)}
+                        disabled={!row.stepId}
+                        className="shrink-0 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                      >
+                        Go to command
+                      </button>
+                    </div>
+                    {row.details.length ? (
+                      <details className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-900">
+                        <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-700 dark:text-zinc-200 [&::-webkit-details-marker]:hidden">
+                          Details
+                        </summary>
+                        <div className="mt-2 grid gap-1 font-mono text-[11px] leading-5 text-zinc-700 dark:text-zinc-300">
+                          {row.details.map((detail, detailIndex) => (
+                            <p key={`${row.stepId}-${detailIndex}`} className="break-words">
+                              {detail}
+                            </p>
+                          ))}
+                        </div>
+                      </details>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
         </div>
       ) : null}
 
