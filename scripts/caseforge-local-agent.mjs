@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 
 const PORT = Number(process.env.CASEFORGE_AGENT_PORT || "4873");
 const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
-const AGENT_VERSION = "0.1.45";
+const AGENT_VERSION = "0.1.46";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
 
@@ -2843,6 +2843,22 @@ function firstNonBlankRuntimeInput(...values) {
   return undefined;
 }
 
+function preservedRuntimeInputOptions(options = {}) {
+  return {
+    actual: options.actual,
+    expected: options.expected,
+    expectedValue: options.expectedValue,
+    expression: options.expression,
+    leftValue: options.leftValue,
+    parameterName: options.parameterName,
+    rightValue: options.rightValue,
+    source: options.source,
+    valueReference: options.valueReference,
+    valueSource: options.valueSource,
+    valueType: options.valueType,
+  };
+}
+
 function runtimeInputFromValueSource(options = {}) {
   const source = String(options.valueSource || options.valueType || "").trim();
   const reference = String(options.valueReference || "").trim();
@@ -5165,12 +5181,7 @@ async function executeStepWithRuntimeVariables(page, step, runtimeVariables, con
       ...resolveRuntimeValue(step, runtimeVariables),
       options: {
         ...resolveRuntimeValue(step.options || {}, runtimeVariables),
-        actual: step.options?.actual,
-        expected: step.options?.expected,
-        expectedValue: step.options?.expectedValue,
-        leftValue: step.options?.leftValue,
-        rightValue: step.options?.rightValue,
-        source: step.options?.source,
+        ...preservedRuntimeInputOptions(step.options || {}),
       },
     };
     const output = await executeCollectionCommand(page, executableStep, runtimeVariables);
