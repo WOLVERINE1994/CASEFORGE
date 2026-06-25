@@ -5725,6 +5725,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       }
 
       let sawFailure = false;
+      const resolvedStepIds = new Set<string>();
+      const resolvedIndexes = new Set<number>();
       for (const result of results) {
         const index = typeof result.index === "number" ? result.index : -1;
         const step =
@@ -5732,6 +5734,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             ? steps.find((item) => item.id === result.stepId)
             : null) ??
           (index >= 0 ? steps[index] : undefined);
+        if (result.stepId) resolvedStepIds.add(result.stepId);
+        if (step?.id) resolvedStepIds.add(step.id);
+        if (index >= 0) resolvedIndexes.add(index);
         const displayIndex = index >= 0 ? index + 1 : step ? steps.indexOf(step) + 1 : 0;
         const label = step
           ? commandConsoleLabel(step, Math.max(0, displayIndex - 1))
@@ -5785,7 +5790,29 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           appendLog(detailLine);
         }
       }
-      if (!sawFailure) updateLiveRunReportRows(steps, [], "passed");
+      if (sawFailure) {
+        const unresolvedUpdates = steps
+          .map((step, index) => ({ step, index }))
+          .filter(({ step, index }) => !resolvedIndexes.has(index) && !(step.id && resolvedStepIds.has(step.id)))
+          .map(({ step, index }) => {
+            setCommandStatus(step, "failed", "Not run because an earlier command failed.", runId);
+            return {
+              index,
+              message: "Not run because an earlier command failed.",
+              runId,
+              status: "skipped" as const,
+              stepId: step.id ?? null,
+            };
+          });
+        if (unresolvedUpdates.length) {
+          updateLiveRunReportRows(steps, unresolvedUpdates);
+          appendLog(
+            `${unresolvedUpdates.length} command${unresolvedUpdates.length === 1 ? "" : "s"} not run because an earlier command failed.`,
+          );
+        }
+      } else {
+        updateLiveRunReportRows(steps, [], "passed");
+      }
     },
     [appendLog, commandConsoleLabel, setCommandStatus, updateLiveRunReportRows],
   );
@@ -11368,6 +11395,25 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         stepId: input.runSteps[stepResults.length]?.id ?? null,
       };
       stepResults = [...stepResults, failedResult];
+      const runId = data.run?.id ?? null;
+      const rawFailedIndex = typeof failedResult.index === "number" ? failedResult.index : stepResults.length - 1;
+      const failedStepIndex = Math.max(0, Math.min(rawFailedIndex, input.runSteps.length - 1));
+      const failedStep = input.runSteps[failedStepIndex];
+      setCommandStatus(failedStep, "failed", failedResult.errorMessage || "Run failed.", runId);
+      input.runSteps.slice(failedStepIndex + 1).forEach((step) => {
+        setCommandStatus(step, "failed", "Not run because an earlier command failed.", runId);
+      });
+      updateLiveRunReportRows(
+        input.runSteps,
+        input.runSteps.slice(failedStepIndex + 1).map((step, offset) => ({
+          index: failedStepIndex + offset + 1,
+          message: "Not run because an earlier command failed.",
+          runId,
+          status: "skipped" as const,
+          stepId: step.id ?? null,
+        })),
+        "failed",
+      );
       setFailedStepResult(failedResult);
       setRunStatus("failed");
       throw error;
