@@ -11,14 +11,13 @@ export default function HomePage() {
       <section className="mx-auto grid min-h-[calc(100vh-10rem)] w-full max-w-6xl items-center gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div>
           <p className="inline-flex rounded-full border border-cyan-200/20 bg-cyan-200/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-100">
-            CaseForge Platform
+            CaseForge
           </p>
           <h1 className="mt-6 max-w-3xl text-4xl font-semibold tracking-tight sm:text-6xl">
-            Manage your AI QA workspace.
+            Generate test cases and automate them.
           </h1>
           <p className="mt-5 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
-            Access your project library, generated test cases, review sessions,
-            automation runs, reports, and team settings from one secured workspace.
+            Turn requirements into structured AI-generated test cases, then build and run browser automation from the same focused workspace.
           </p>
           {hasClerkClientConfig ? (
             <HomeAuthActions />
@@ -46,10 +45,10 @@ export default function HomePage() {
           </p>
           <div className="mt-4 space-y-3">
             {[
-              "Project library and generated case history",
-              "Reviewer sessions, team settings, and audit actions",
-              "Automation, execution reporting, and release readiness",
-              "Supabase Postgres data prepared for Vercel deployment",
+              "AI test case generation from requirements and user stories",
+              "Focused project workspaces for generated QA coverage",
+              "Browser automation authoring with Live Preview",
+              "Companion-powered real browser execution",
             ].map((item) => (
               <div
                 key={item}

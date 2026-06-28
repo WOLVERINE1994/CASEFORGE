@@ -5,9 +5,6 @@ import type { SharedIssueRecord } from "../../../components/ProjectIssueStateCon
 import ProjectRouteChrome from "../../../components/ProjectRouteChrome";
 import { ProjectRouteMetricsProvider } from "../../../components/ProjectRouteMetricsContext";
 import { readProjectShellByRef } from "../../../utils/project-store";
-import {
-  listProjectIssuesForUi,
-} from "../../../services/issue-service";
 
 export const dynamic = "force-dynamic";
 
@@ -24,14 +21,8 @@ export default async function ProjectRouteLayout({
 }: ProjectRouteLayoutProps) {
   const { projectKey } = await params;
   const project = await readProjectShellByRef(projectKey);
-  let initialIssues: SharedIssueRecord[] = [];
-
-  try {
-    initialIssues = await listProjectIssuesForUi(projectKey);
-  } catch (error) {
-    console.error("PROJECT LAYOUT ISSUE COUNT ERROR:", error);
-  }
-  const issueCount = initialIssues.length;
+  const initialIssues: SharedIssueRecord[] = [];
+  const issueCount = 0;
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.14),_transparent_24%),radial-gradient(circle_at_top_right,_rgba(124,58,237,0.14),_transparent_22%),radial-gradient(circle_at_bottom_left,_rgba(6,182,212,0.08),_transparent_26%),linear-gradient(180deg,_#08101d_0%,_#0b1220_48%,_#0f172a_100%)] text-slate-100">
