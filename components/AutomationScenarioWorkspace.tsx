@@ -711,6 +711,7 @@ const localAgentUrl =
 const companionDownloadUrl =
   process.env.NEXT_PUBLIC_COMPANION_DOWNLOAD_URL ||
   "/downloads/companion";
+const COMPANION_VERSION = "0.1.46";
 const privateConnectorEnabled =
   process.env.NEXT_PUBLIC_AUTOMATION_PRIVATE_CONNECTOR_ENABLED === "true";
 const legacyDesktopBridgeEnabled =
@@ -12397,7 +12398,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             rel="noreferrer"
             className="rounded-lg border !border-zinc-950 !bg-zinc-950 px-3 py-1.5 text-center text-sm font-semibold !text-white transition hover:!bg-white hover:!text-zinc-950 dark:!border-zinc-950 dark:!bg-zinc-950 dark:!text-white dark:hover:!bg-white dark:hover:!text-zinc-950"
           >
-            Download Companion 0.1.45
+            Download Companion {COMPANION_VERSION}
           </a>
           <button
             type="button"
