@@ -1,5 +1,6 @@
 import Link from "next/link";
 import AppSidebar from "../../components/AppSidebar";
+import DeleteProjectButton from "../../components/DeleteProjectButton";
 import ResponsiveShell from "../../components/ResponsiveShell";
 import { readProjects } from "../../utils/project-store";
 
@@ -68,13 +69,19 @@ export default async function ProjectsPage() {
                 className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
               >
                 <div className="flex min-w-0 flex-col gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
-                      {project.projectKey?.trim() || "Project"}
-                    </p>
-                    <h2 className="mt-1 break-words text-xl font-semibold text-zinc-950 dark:text-zinc-50">
-                      {project.name || "Untitled workspace"}
-                    </h2>
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
+                        {project.projectKey?.trim() || "Project"}
+                      </p>
+                      <h2 className="mt-1 break-words text-xl font-semibold text-zinc-950 dark:text-zinc-50">
+                        {project.name || "Untitled workspace"}
+                      </h2>
+                    </div>
+                    <DeleteProjectButton
+                      projectId={project.id}
+                      projectName={project.name || "Untitled workspace"}
+                    />
                   </div>
                   <div className="flex flex-wrap gap-2 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
                     <span className="rounded-full border border-zinc-200 px-2.5 py-1 dark:border-zinc-800">

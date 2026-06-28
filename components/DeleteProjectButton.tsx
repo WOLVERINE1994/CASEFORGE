@@ -18,7 +18,7 @@ export default function DeleteProjectButton({
 
   const deleteProject = async () => {
     const confirmed = window.confirm(
-      `Delete "${projectName}" from the saved project library?`
+      `Delete "${projectName}"?\n\nThis removes the saved project, generated cases, and automation scenarios stored inside it. This cannot be undone.`
     );
 
     if (!confirmed) {
