@@ -171,8 +171,8 @@ export default function ProjectSidebar({
                   active={active}
                   className={`${
                     active
-                      ? "border-sky-400/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.2),rgba(79,70,229,0.18),rgba(124,58,237,0.2))] text-slate-50 shadow-[0_18px_34px_-28px_rgba(79,70,229,0.85)]"
-                      : "border-transparent bg-transparent text-slate-300 hover:border-slate-700 hover:bg-slate-800/70"
+                      ? "!border-slate-100 !bg-slate-950 !text-white shadow-sm ring-1 ring-cyan-300/40"
+                      : "!border-slate-200 !bg-white !text-slate-950 hover:!border-cyan-500 hover:!bg-slate-50"
                   }`}
                   icon={<NavIcon kind={item.kind} />}
                   label={item.label}

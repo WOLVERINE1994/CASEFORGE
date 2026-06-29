@@ -49,8 +49,8 @@ function NavIcon({ kind }: { kind: AppNavKind }) {
 const navItemClassName = (active: boolean) =>
   `relative ${
     active
-      ? "border-emerald-200 bg-emerald-50 text-emerald-950 shadow-sm ring-1 ring-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100 dark:ring-emerald-500/10"
-      : "border-transparent bg-transparent text-zinc-700 hover:border-zinc-200 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:border-zinc-700 dark:hover:bg-zinc-950"
+      ? "!border-slate-950 !bg-slate-950 !text-white shadow-sm ring-1 ring-emerald-300/50 dark:!border-slate-100 dark:!bg-slate-100 dark:!text-slate-950"
+      : "!border-zinc-200 !bg-white !text-zinc-950 hover:!border-slate-950 hover:!bg-zinc-50 dark:!border-zinc-700 dark:!bg-zinc-950 dark:!text-zinc-50 dark:hover:!border-zinc-200 dark:hover:!bg-zinc-900"
   }`;
 
 const readAppSidebarState = () => {
@@ -156,12 +156,12 @@ export default function AppSidebar({ projectCount = 0 }: AppSidebarProps) {
                   badge={typeof item.count === "number" ? item.count : undefined}
                   badgeClassName={
                     item.active
-                      ? "bg-white text-emerald-800 dark:bg-zinc-950 dark:text-emerald-200"
-                      : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                      ? "!bg-white !text-slate-950 dark:!bg-slate-950 dark:!text-white"
+                      : "!bg-zinc-100 !text-zinc-700 dark:!bg-zinc-800 dark:!text-zinc-200"
                   }
                 >
                   {item.active ? (
-                    <span className="absolute inset-y-2 left-1.5 w-1 rounded-full bg-emerald-500 dark:bg-emerald-300" />
+                    <span className="absolute inset-y-2 left-1.5 w-1 rounded-full bg-emerald-400 dark:bg-emerald-500" />
                   ) : null}
                 </SafeNavItem>
               ))}
