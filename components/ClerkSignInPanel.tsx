@@ -29,6 +29,27 @@ export default function ClerkSignInPanel() {
   const [submitting, setSubmitting] = useState(false);
   const busy = submitting || fetchStatus === "fetching";
 
+  const handleOAuth = async (strategy: "oauth_google" | "oauth_linkedin_oidc") => {
+    if (!signIn || busy) return;
+
+    setError("");
+    setSubmitting(true);
+
+    try {
+      const result = await signIn.sso({
+        strategy,
+        redirectUrl: `${window.location.origin}/sign-in/sso-callback`,
+        redirectCallbackUrl: `${window.location.origin}/projects`,
+      });
+      if (result.error) {
+        throw result.error;
+      }
+    } catch (caughtError) {
+      setError(authErrorMessage(caughtError));
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!signIn) return;
@@ -75,7 +96,38 @@ export default function ClerkSignInPanel() {
         Use your workspace email and password to continue.
       </p>
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+      <div className="mt-6 grid gap-3">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => handleOAuth("oauth_google")}
+          className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <span className="grid size-5 place-items-center rounded-full bg-white text-base font-black text-rose-600">
+            G
+          </span>
+          Continue with Google
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => handleOAuth("oauth_linkedin_oidc")}
+          className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <span className="grid size-5 place-items-center rounded bg-[#0A66C2] text-xs font-black text-white">
+            in
+          </span>
+          Continue with LinkedIn
+        </button>
+      </div>
+
+      <div className="mt-5 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
+        <span className="h-px flex-1 bg-slate-200" />
+        <span>Email</span>
+        <span className="h-px flex-1 bg-slate-200" />
+      </div>
+
+      <form onSubmit={handleSubmit} className="mt-5 space-y-4">
         <label className="block">
           <span className="text-sm font-semibold text-slate-700">Email</span>
           <input
