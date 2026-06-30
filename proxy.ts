@@ -22,14 +22,6 @@ const hasClerkServerConfig =
   Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) &&
   Boolean(process.env.CLERK_SECRET_KEY);
 
-const requireAuth = process.env.CASEFORGE_REQUIRE_AUTH === "true";
-const allowPublicWorkspace =
-  !requireAuth ||
-  process.env.CASEFORGE_PUBLIC_WORKSPACE === "true" ||
-    process.env.NODE_ENV === "development" ||
-    (process.env.VERCEL === "1" &&
-      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.startsWith("pk_test_"));
-
 const legacyProjectSections = new Set([
   "activity",
   "board",
@@ -72,20 +64,6 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
   const redirect = focusedWorkspaceRedirect(request);
   if (redirect) return redirect;
 
-  const pathname = request.nextUrl.pathname;
-  const isPublicWorkspaceRoute =
-    pathname.startsWith("/projects") ||
-    pathname.startsWith("/api/projects") ||
-    pathname.startsWith("/api/generate") ||
-    pathname.startsWith("/api/generate-change-impact-cases") ||
-    pathname.startsWith("/api/fill-coverage-gap") ||
-    pathname.startsWith("/api/fill-bug-prediction") ||
-    pathname.startsWith("/api/automation");
-
-  if (allowPublicWorkspace && isPublicWorkspaceRoute) {
-    return;
-  }
-
   if (isProtectedRoute(request)) {
     await auth.protect({
       unauthenticatedUrl: new URL("/sign-in", request.url).toString(),
@@ -95,13 +73,14 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
 });
 
 export default hasClerkServerConfig
-  ? requireAuth
-    ? clerkProxy
-    : function publicWorkspaceProxy(request: NextRequest) {
-        return focusedWorkspaceRedirect(request) ?? NextResponse.next();
-      }
+  ? clerkProxy
   : function missingClerkServerConfigProxy(request: NextRequest) {
-      return focusedWorkspaceRedirect(request) ?? NextResponse.next();
+      const redirect = focusedWorkspaceRedirect(request);
+      if (redirect) return redirect;
+      if (isProtectedRoute(request)) {
+        return NextResponse.redirect(new URL("/sign-in", request.url));
+      }
+      return NextResponse.next();
     };
 
 export const config = {

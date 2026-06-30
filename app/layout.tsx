@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { createRequire } from "module";
 import CaseForgeBrand from "../components/CaseForgeBrand";
 import { isClerkAuthActive } from "../lib/auth-mode";
 import "./globals.css";
+
+const require = createRequire(import.meta.url);
 
 export const metadata: Metadata = {
   title: "caseForge",
@@ -44,10 +47,9 @@ export default async function RootLayout({
   );
 
   if (useClerkProvider) {
-    const runtimeImport = new Function("specifier", "return import(specifier)") as (
-      specifier: string,
-    ) => Promise<{ ClerkProvider: React.ComponentType<React.PropsWithChildren<Record<string, unknown>>> }>;
-    const { ClerkProvider } = await runtimeImport(["@clerk", "nextjs"].join("/"));
+    const { ClerkProvider } = require("@clerk/nextjs") as {
+      ClerkProvider: React.ComponentType<React.PropsWithChildren<Record<string, unknown>>>;
+    };
 
     return (
       <html lang="en" className="dark" suppressHydrationWarning>
