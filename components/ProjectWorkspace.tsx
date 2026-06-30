@@ -4713,9 +4713,70 @@ export default function ProjectWorkspace({
 
       setGeneratingAutomationRowIds((current) => [...current, rowId]);
       try {
+        const projectRouteRef = !currentProjectId && !initialProjectRef
+          ? ""
+          : encodeURIComponent(projectKey.trim() || currentProjectId || initialProjectRef || "");
+        if (!projectRouteRef) {
+          showWorkspaceNotice(
+            "error",
+            "Save this workspace as a project before generating automation drafts."
+          );
+          return;
+        }
+
+        showWorkspaceNotice("info", `Generating an automation draft for ${row.id}...`);
+        const response = await fetch(
+          `/api/automation/projects/${projectRouteRef}/generate-from-cases`,
+          {
+            body: JSON.stringify({
+              cases: [row],
+              requirement: input,
+            }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+          }
+        );
+        const data = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          scenarios?: Array<{ id: string; name?: string; metadata?: Record<string, unknown> }>;
+          provider?: string;
+          model?: string;
+          usedFallback?: boolean;
+        };
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to generate automation.");
+        }
+        const scenario = data.scenarios?.[0];
+        if (!scenario?.id) {
+          throw new Error("The AI provider did not return an automation scenario.");
+        }
+
+        setRows((currentRows) =>
+          currentRows.map((entry) =>
+            entry.id === row.id
+              ? {
+                  ...entry,
+                  automationStatus: "candidate",
+                  updatedAt: Date.now(),
+                }
+              : entry
+          )
+        );
+        addAuditEntry(
+          "Automation draft generated",
+          `${row.id} was converted into an AI-generated automation draft using ${data.provider || "AI"} ${data.model || ""}.`
+        );
         showWorkspaceNotice(
-          "info",
-          `Automation has been removed. ${row.id} remains available as a manual test case.`
+          "success",
+          data.usedFallback
+            ? `Created a fallback automation draft for ${row.id}. Review locators and test data before running.`
+            : `Created an AI automation draft for ${row.id}. Review it before running.`,
+          [
+            {
+              href: `/projects/${projectRouteRef}/automation/scenarios/${encodeURIComponent(scenario.id)}`,
+              label: "Review draft",
+            },
+          ]
         );
       } catch (error) {
         showWorkspaceNotice(
@@ -4728,7 +4789,15 @@ export default function ProjectWorkspace({
         setGeneratingAutomationRowIds((current) => current.filter((entry) => entry !== rowId));
       }
     },
-    [rows]
+    [
+      addAuditEntry,
+      currentProjectId,
+      initialProjectRef,
+      input,
+      projectKey,
+      rows,
+      showWorkspaceNotice,
+    ]
   );
 
   const generateAutomationForSelectedRows = useCallback(async () => {
@@ -4737,16 +4806,126 @@ export default function ProjectWorkspace({
       return;
     }
 
-    if (selectedRowIds.length > 1) {
+    const selectedRows = rows.filter((row) => selectedRowIds.includes(row.id));
+    if (!selectedRows.length) {
+      showWorkspaceNotice("error", "Selected cases are no longer available.");
+      return;
+    }
+
+    if (selectedRows.length === 1) {
+      await generateAutomationForRow(selectedRows[0].id);
+      return;
+    }
+
+    const projectRouteRef = !currentProjectId && !initialProjectRef
+      ? ""
+      : encodeURIComponent(projectKey.trim() || currentProjectId || initialProjectRef || "");
+    if (!projectRouteRef) {
       showWorkspaceNotice(
-        "info",
-        "Automation has been removed. Selected cases remain available in Test Management."
+        "error",
+        "Save this workspace as a project before generating automation drafts."
       );
       return;
     }
 
-    await generateAutomationForRow(selectedRowIds[0]);
-  }, [generateAutomationForRow, selectedRowIds]);
+    setGeneratingAutomationRowIds((current) =>
+      Array.from(new Set([...current, ...selectedRows.map((row) => row.id)]))
+    );
+    try {
+      showWorkspaceNotice("info", `Generating automation drafts for ${selectedRows.length} cases...`);
+      const response = await fetch(
+        `/api/automation/projects/${projectRouteRef}/generate-from-cases`,
+        {
+          body: JSON.stringify({
+            cases: selectedRows,
+            requirement: input,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        }
+      );
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        scenarios?: Array<{ id: string; name?: string; metadata?: Record<string, unknown> }>;
+        provider?: string;
+        model?: string;
+        usedFallback?: boolean;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to generate automation.");
+      }
+      const generatedCount = data.scenarios?.length ?? 0;
+      if (!generatedCount) {
+        throw new Error("The AI provider did not return automation scenarios.");
+      }
+
+      const generatedCaseIds = new Set(
+        (data.scenarios ?? [])
+          .map((scenario) => String(scenario.metadata?.sourceCaseId || ""))
+          .filter(Boolean)
+      );
+      setRows((currentRows) =>
+        currentRows.map((entry) =>
+          generatedCaseIds.has(entry.id)
+            ? {
+                ...entry,
+                automationStatus: "candidate",
+                updatedAt: Date.now(),
+              }
+            : entry
+        )
+      );
+      addAuditEntry(
+        "Automation drafts generated",
+        `${generatedCount} manual cases were converted into AI-generated automation drafts using ${data.provider || "AI"} ${data.model || ""}.`
+      );
+      const firstScenario = data.scenarios?.[0];
+      showWorkspaceNotice(
+        "success",
+        data.usedFallback
+          ? `Created ${generatedCount} automation draft${generatedCount === 1 ? "" : "s"} with fallback support. Review locators before running.`
+          : `Created ${generatedCount} AI automation draft${generatedCount === 1 ? "" : "s"} for review.`,
+        firstScenario?.id
+          ? [
+              {
+                href: `/projects/${projectRouteRef}/automation/scenarios/${encodeURIComponent(firstScenario.id)}`,
+                label: "Review first draft",
+              },
+              {
+                href: `/projects/${projectRouteRef}/automation/scenarios`,
+                label: "View all drafts",
+              },
+            ]
+          : [
+              {
+                href: `/projects/${projectRouteRef}/automation/scenarios`,
+                label: "View drafts",
+              },
+            ]
+      );
+    } catch (error) {
+      showWorkspaceNotice(
+        "error",
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "Failed to generate automation."
+      );
+    } finally {
+      setGeneratingAutomationRowIds((current) =>
+        current.filter((rowId) => !selectedRows.some((row) => row.id === rowId))
+      );
+    }
+  }, [
+    addAuditEntry,
+    currentProjectId,
+    generateAutomationForRow,
+    initialProjectRef,
+    input,
+    projectKey,
+    rows,
+    selectedRowIds,
+    showWorkspaceNotice,
+  ]);
 
   const runAutomationForRow = useCallback(
     async (
