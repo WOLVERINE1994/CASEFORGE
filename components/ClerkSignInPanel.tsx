@@ -24,6 +24,22 @@ function isAlreadySignedInError(error: unknown) {
   return authErrorMessage(error).toLowerCase().includes("already signed in");
 }
 
+async function withTimeout<T>(promise: Promise<T>, message: string) {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), 15000);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 export default function ClerkSignInPanel() {
   const router = useRouter();
   const auth = useAuth();
@@ -75,26 +91,73 @@ export default function ClerkSignInPanel() {
     setSubmitting(true);
 
     try {
-      const result = await signIn.create({
-        identifier: email.trim(),
-        password,
-      });
+      if (!auth.isLoaded) {
+        setError("Authentication is still loading. Try again in a moment.");
+        return;
+      }
+
+      if (auth.isSignedIn) {
+        router.replace("/projects");
+        router.refresh();
+        return;
+      }
+
+      await signIn.reset();
+      const result = await withTimeout(
+        signIn.password({
+          identifier: email.trim(),
+          password,
+        }),
+        "Sign in is taking longer than expected. Refresh and try again.",
+      );
       if (result.error) {
         throw result.error;
       }
 
-      if (signIn.status === "complete") {
-        const finalizeResult = await signIn.finalize();
+      if (signIn.status === "complete" || signIn.createdSessionId) {
+        const finalizeResult = await withTimeout(
+          signIn.finalize(),
+          "Session creation is taking longer than expected. Refresh and try again.",
+        );
         if (finalizeResult.error) {
           throw finalizeResult.error;
         }
-        router.push("/projects");
+        router.replace("/projects");
+        router.refresh();
+        return;
+      }
+
+      const fallbackResult = await withTimeout(
+        signIn.create({
+          identifier: email.trim(),
+          password,
+        }),
+        "Sign in is taking longer than expected. Refresh and try again.",
+      );
+      if (fallbackResult.error) {
+        throw fallbackResult.error;
+      }
+
+      if (signIn.createdSessionId) {
+        const finalizeResult = await withTimeout(
+          signIn.finalize(),
+          "Session creation is taking longer than expected. Refresh and try again.",
+        );
+        if (finalizeResult.error) {
+          throw finalizeResult.error;
+        }
+        router.replace("/projects");
         router.refresh();
         return;
       }
 
       setError("Additional verification is required for this account. Complete it in Clerk, then try again.");
     } catch (caughtError) {
+      if (isAlreadySignedInError(caughtError)) {
+        router.replace("/projects");
+        router.refresh();
+        return;
+      }
       setError(authErrorMessage(caughtError));
     } finally {
       setSubmitting(false);
