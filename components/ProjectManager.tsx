@@ -16,7 +16,7 @@ type Props = {
   setTeamName: (v: string) => void;
   setProjectName: (v: string) => void;
   saveProjectNow: () => void;
-  saveStatus: "idle" | "saving" | "saved" | "error";
+  saveStatus: "idle" | "saving" | "saved" | "local" | "error";
   lastSavedText: string;
   autosaveEnabled: boolean;
   setAutosaveEnabled: (value: boolean) => void;
@@ -52,12 +52,14 @@ export default function ProjectManager({
   const sortedProjects = [...projects].sort(
     (a, b) => b.updatedAt - a.updatedAt
   );
-  const isSaveDisabled = !projectName.trim();
+  const isSaveDisabled = !projectName.trim() || saveStatus === "saving";
   const statusTone =
     saveStatus === "saving"
       ? "text-amber-700 dark:text-amber-300"
       : saveStatus === "saved"
       ? "text-emerald-700 dark:text-emerald-300"
+      : saveStatus === "local"
+      ? "text-sky-700 dark:text-sky-300"
       : saveStatus === "error"
       ? "text-rose-700 dark:text-rose-300"
       : "text-zinc-500 dark:text-zinc-400";
@@ -98,7 +100,7 @@ export default function ProjectManager({
                 disabled={isSaveDisabled}
                 className="rounded-2xl bg-[linear-gradient(135deg,_#059669_0%,_#0f766e_100%)] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_35px_-20px_rgba(5,150,105,0.65)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100"
               >
-                Save Project
+                {saveStatus === "saving" ? "Saving..." : "Save Project"}
               </button>
             </div>
 
@@ -108,6 +110,8 @@ export default function ProjectManager({
                   ? "Saving project..."
                   : saveStatus === "saved"
                   ? "All changes saved"
+                  : saveStatus === "local"
+                  ? "Saved locally. Sync runs in the background."
                   : saveStatus === "error"
                   ? "Save failed. Try again."
                   : autosaveEnabled

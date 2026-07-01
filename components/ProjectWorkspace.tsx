@@ -125,6 +125,8 @@ import {
 const STORAGE_KEY = "tc_projects_v1";
 const DRAFT_STORAGE_KEY = "tc_workspace_draft_v1";
 
+type WorkspaceSaveStatus = "idle" | "saving" | "saved" | "local" | "error";
+
 const buildDefaultAutomationReuseLibrary = (projectId: string) => ({
   blocks: [],
   selectorPresets: [],
@@ -706,8 +708,10 @@ export default function ProjectWorkspace({
     null
   );
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] =
-    useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [manualSaveStatus, setManualSaveStatus] =
+    useState<WorkspaceSaveStatus>("idle");
+  const [autosaveStatus, setAutosaveStatus] =
+    useState<WorkspaceSaveStatus>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
   const [hasLoadedProjects, setHasLoadedProjects] = useState(false);
@@ -1600,7 +1604,7 @@ export default function ProjectWorkspace({
       } catch (error) {
         console.error("Failed to load projects:", error);
         if (!cancelled) {
-          setSaveStatus("error");
+          setAutosaveStatus("error");
         }
       } finally {
         if (!cancelled) {
@@ -3202,16 +3206,16 @@ export default function ProjectWorkspace({
     }
 
     if (!projectName.trim()) {
-      setSaveStatus("idle");
+      setAutosaveStatus("idle");
       return;
     }
 
     if (!autosaveEnabled) {
-      setSaveStatus("idle");
+      setAutosaveStatus("idle");
       return;
     }
 
-    setSaveStatus("saving");
+    setAutosaveStatus("saving");
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -3243,7 +3247,7 @@ export default function ProjectWorkspace({
           setResolvedProjectId(resolvedProject.id);
           projectDataState?.setProject(resolvedProject);
           setLastSavedAt(resolvedProject.updatedAt);
-          setSaveStatus("saved");
+          setAutosaveStatus("saved");
         } catch (error) {
           console.error("Autosave project error:", error);
           try {
@@ -3259,7 +3263,7 @@ export default function ProjectWorkspace({
             setResolvedProjectId(resolvedProject.id);
             projectDataState?.setProject(resolvedProject);
             setLastSavedAt(resolvedProject.updatedAt);
-            setSaveStatus("saved");
+            setAutosaveStatus("local");
 
             if (!didShowBrowserFallbackNoticeRef.current) {
               didShowBrowserFallbackNoticeRef.current = true;
@@ -3270,7 +3274,7 @@ export default function ProjectWorkspace({
             }
           } catch (fallbackError) {
             console.error("Browser autosave fallback error:", fallbackError);
-            setSaveStatus("error");
+            setAutosaveStatus("error");
             showWorkspaceNotice(
               "error",
               fallbackError instanceof Error && fallbackError.message.trim()
@@ -3320,7 +3324,7 @@ export default function ProjectWorkspace({
     }
 
     try {
-      setSaveStatus("saving");
+      setManualSaveStatus("saving");
 
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
@@ -3339,7 +3343,8 @@ export default function ProjectWorkspace({
       setResolvedProjectId(localResolvedProject.id);
       projectDataState?.setProject(localResolvedProject);
       setLastSavedAt(localResolvedProject.updatedAt);
-      setSaveStatus("saved");
+      setManualSaveStatus("local");
+      setAutosaveStatus("saving");
       showWorkspaceNotice(
         "info",
         `"${localResolvedProject.name}" was saved in this browser. Syncing the project library...`
@@ -3354,14 +3359,16 @@ export default function ProjectWorkspace({
         setResolvedProjectId(resolvedProject.id);
         projectDataState?.setProject(resolvedProject);
         setLastSavedAt(resolvedProject.updatedAt);
-        setSaveStatus("saved");
+        setManualSaveStatus("saved");
+        setAutosaveStatus("saved");
         showWorkspaceNotice(
           "success",
           `"${resolvedProject.name}" was saved to the project library.`
         );
       } catch (syncError) {
         console.error("Project library sync error:", syncError);
-        setSaveStatus("saved");
+        setAutosaveStatus("local");
+        setManualSaveStatus("local");
         showWorkspaceNotice(
           "info",
           `"${localResolvedProject.name}" is saved in this browser. Project library sync is currently unavailable.`
@@ -3382,14 +3389,14 @@ export default function ProjectWorkspace({
         setResolvedProjectId(resolvedProject.id);
         projectDataState?.setProject(resolvedProject);
         setLastSavedAt(resolvedProject.updatedAt);
-        setSaveStatus("saved");
+        setManualSaveStatus("local");
         showWorkspaceNotice(
           "info",
           `"${resolvedProject.name}" was saved in this browser because the project API is blocked by Clerk.`
         );
       } catch (fallbackError) {
         console.error("Browser save fallback error:", fallbackError);
-        setSaveStatus("error");
+        setManualSaveStatus("error");
         showWorkspaceNotice(
           "error",
           fallbackError instanceof Error && fallbackError.message.trim()
@@ -3477,7 +3484,8 @@ export default function ProjectWorkspace({
         project.lastGeneratedChangeImpactSignature ?? null
       );
       setLastSavedAt(project.updatedAt);
-      setSaveStatus("saved");
+      setManualSaveStatus("saved");
+      setAutosaveStatus("saved");
       projectDataState?.setProject(project);
       showWorkspaceNotice(
         "success",
@@ -3573,7 +3581,8 @@ export default function ProjectWorkspace({
     setIsGeneratingChangeImpactCases(false);
     setLastGeneratedChangeImpactSignature(null);
     setLastSavedAt(null);
-    setSaveStatus("idle");
+    setManualSaveStatus("idle");
+    setAutosaveStatus("idle");
     projectDataState?.setProject(null);
   };
 
@@ -8027,12 +8036,14 @@ export default function ProjectWorkspace({
     ? "Disabled until project is named"
     : !autosaveEnabled
     ? "Autosave turned off"
-    : saveStatus === "saving"
-    ? "Autosaving changes"
-    : saveStatus === "saved"
-    ? "Synced to local workspace"
-    : saveStatus === "error"
-    ? "Save failed"
+    : autosaveStatus === "saving"
+    ? "Syncing project library"
+    : autosaveStatus === "saved"
+    ? "Saved locally and synced"
+    : autosaveStatus === "local"
+    ? "Saved locally; sync pending"
+    : autosaveStatus === "error"
+    ? "Saved locally; sync unavailable"
     : "Monitoring changes";
   const lastSavedText = lastSavedAt
     ? hasMounted
@@ -8044,10 +8055,12 @@ export default function ProjectWorkspace({
     ? "Generating test cases"
     : regeneratingIndex !== null
     ? "Refreshing selected test case"
-    : saveStatus === "saving"
-    ? "Autosaving workspace"
-    : saveStatus === "error"
-    ? "Save error"
+    : autosaveStatus === "saving"
+    ? "Syncing workspace"
+    : autosaveStatus === "local"
+    ? "Saved locally"
+    : autosaveStatus === "error"
+    ? "Saved locally"
     : !projectName.trim()
     ? "Name this workspace to enable autosave"
     : !autosaveEnabled
@@ -8062,10 +8075,12 @@ export default function ProjectWorkspace({
     ? "The generator is building a fresh set of cases from the current requirement."
     : regeneratingIndex !== null
     ? "One row is being refreshed while the rest of the workspace stays editable."
-    : saveStatus === "saving"
-    ? "Recent edits are being persisted automatically to this project."
-    : saveStatus === "error"
-    ? "The last save attempt did not complete. Try Save Project again."
+    : autosaveStatus === "saving"
+    ? "Recent edits are saved locally and the project library is syncing in the background."
+    : autosaveStatus === "local"
+    ? "Your edits are saved in this browser. Project library sync will retry when available."
+    : autosaveStatus === "error"
+    ? "Your edits are saved in this browser. Project library sync is currently unavailable."
     : !projectName.trim()
     ? "Add a project name so the workspace can save automatically."
     : !autosaveEnabled
@@ -8438,7 +8453,7 @@ export default function ProjectWorkspace({
               setTeamName={setTeamName}
               setProjectName={setProjectName}
               saveProjectNow={saveProjectNow}
-              saveStatus={saveStatus}
+              saveStatus={manualSaveStatus}
               lastSavedText={lastSavedText}
               autosaveEnabled={autosaveEnabled}
               setAutosaveEnabled={setAutosaveEnabled}
