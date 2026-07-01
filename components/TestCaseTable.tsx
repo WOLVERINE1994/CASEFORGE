@@ -1898,6 +1898,16 @@ export default function TestCaseTable({
                               ? "Improve Weak Draft"
                               : "Refine Draft"}
                           </button>
+                          {onGenerateAutomation ? (
+                            <button
+                              type="button"
+                              onClick={() => void onGenerateAutomation(row.id)}
+                              disabled={isGeneratingAutomation}
+                              className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
+                            >
+                              {isGeneratingAutomation ? "Opening..." : "Automate"}
+                            </button>
+                          ) : null}
                           <button
                             onClick={() => deleteRow(index)}
                             className="rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-500/30 dark:bg-zinc-950 dark:text-rose-300 dark:hover:bg-rose-500/10"
@@ -1939,6 +1949,17 @@ export default function TestCaseTable({
                             This draft is ready for reviewer handoff.
                           </p>
                         )}
+
+                        {onGenerateAutomation ? (
+                          <button
+                            type="button"
+                            onClick={() => void onGenerateAutomation(row.id)}
+                            disabled={isGeneratingAutomation}
+                            className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
+                          >
+                            {isGeneratingAutomation ? "Opening..." : "Automate"}
+                          </button>
+                        ) : null}
 
                         <button
                           onClick={() => deleteRow(index)}
