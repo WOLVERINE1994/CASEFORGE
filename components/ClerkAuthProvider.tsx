@@ -13,6 +13,7 @@ export default function ClerkAuthProvider({
     <ClerkProvider
       dynamic
       publishableKey={publishableKey}
+      proxyUrl="/__clerk"
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
       signInFallbackRedirectUrl="/projects"
