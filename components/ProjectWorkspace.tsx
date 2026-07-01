@@ -527,21 +527,40 @@ const matchesReviewerNotification = (
 const fetchWithRetry = async (
   input: string,
   init?: RequestInit,
-  retries = 1
+  retries = 1,
+  timeoutMs = 45000
 ) => {
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = init?.signal ? null : new AbortController();
+    const timeoutId = controller
+      ? window.setTimeout(() => controller.abort(), timeoutMs)
+      : null;
+
     try {
-      return await fetch(input, init);
+      return await fetch(input, {
+        ...init,
+        signal: init?.signal ?? controller?.signal,
+      });
     } catch (error) {
       lastError = error;
 
-      if (!(error instanceof TypeError) || attempt === retries) {
+      if (
+        !(
+          error instanceof TypeError ||
+          (error instanceof DOMException && error.name === "AbortError")
+        ) ||
+        attempt === retries
+      ) {
         throw error;
       }
 
       await wait(350 * (attempt + 1));
+    } finally {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
     }
   }
 
@@ -1652,7 +1671,8 @@ export default function ProjectWorkspace({
               },
               body: JSON.stringify({ projects: updatedProjects }),
             },
-            2
+            0,
+            40000
           );
         } catch (error) {
           if (process.env.NODE_ENV !== "production") {
