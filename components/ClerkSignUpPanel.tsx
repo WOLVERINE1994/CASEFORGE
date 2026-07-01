@@ -134,14 +134,14 @@ export default function ClerkSignUpPanel() {
   };
 
   return (
-    <section className="w-full max-w-md rounded-[24px] border border-cyan-200/20 bg-white p-6 text-slate-950 shadow-[0_28px_70px_-45px_rgba(2,6,23,0.95)]">
-      <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">
+    <section className="w-full max-w-md rounded-[24px] border border-white/10 bg-white/[0.055] p-6 text-slate-50 shadow-[0_28px_70px_-45px_rgba(2,6,23,0.95)] backdrop-blur">
+      <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-100">
         Secure Signup
       </p>
       <h1 className="mt-3 text-2xl font-semibold tracking-tight">
         Create your CaseForge account
       </h1>
-      <p className="mt-2 text-sm leading-6 text-slate-600">
+      <p className="mt-2 text-sm leading-6 text-slate-300">
         Set up your workspace login with email and password.
       </p>
 
@@ -152,7 +152,7 @@ export default function ClerkSignUpPanel() {
               type="button"
               disabled={busy}
               onClick={() => handleOAuth("oauth_google")}
-              className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-slate-950/45 px-4 text-sm font-bold text-slate-100 transition hover:border-cyan-200/30 hover:bg-cyan-200/10 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <span className="grid size-5 place-items-center rounded-full bg-white text-base font-black text-rose-600">
                 G
@@ -163,7 +163,7 @@ export default function ClerkSignUpPanel() {
               type="button"
               disabled={busy}
               onClick={() => handleOAuth("oauth_linkedin_oidc")}
-              className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-slate-950/45 px-4 text-sm font-bold text-slate-100 transition hover:border-cyan-200/30 hover:bg-cyan-200/10 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <span className="grid size-5 place-items-center rounded bg-[#0A66C2] text-xs font-black text-white">
                 in
@@ -173,9 +173,9 @@ export default function ClerkSignUpPanel() {
           </div>
 
           <div className="mt-5 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
-            <span className="h-px flex-1 bg-slate-200" />
+            <span className="h-px flex-1 bg-white/10" />
             <span>Email</span>
-            <span className="h-px flex-1 bg-slate-200" />
+            <span className="h-px flex-1 bg-white/10" />
           </div>
         </>
       ) : null}
@@ -183,20 +183,20 @@ export default function ClerkSignUpPanel() {
       {pendingVerification ? (
         <form onSubmit={handleVerify} className="mt-6 space-y-4">
           <label className="block">
-            <span className="text-sm font-semibold text-slate-700">Verification code</span>
+            <span className="text-sm font-semibold text-slate-200">Verification code</span>
             <input
               type="text"
               value={code}
               onChange={(event) => setCode(event.target.value)}
               autoComplete="one-time-code"
               required
-              className="mt-2 h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+              className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-sm font-medium text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-cyan-200/50 focus:ring-4 focus:ring-cyan-200/10"
               placeholder="Enter email code"
             />
           </label>
 
           {error ? (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+            <div className="rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-100">
               {error}
             </div>
           ) : null}
@@ -204,7 +204,7 @@ export default function ClerkSignUpPanel() {
           <button
             type="submit"
             disabled={busy}
-            className="flex h-12 w-full items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex h-12 w-full items-center justify-center rounded-xl bg-[linear-gradient(135deg,_#06b6d4_0%,_#2563eb_52%,_#7c3aed_100%)] px-4 text-sm font-extrabold text-white shadow-[0_18px_45px_-25px_rgba(37,99,235,0.9)] transition hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy ? "Verifying..." : "Verify and Continue"}
           </button>
@@ -213,44 +213,44 @@ export default function ClerkSignUpPanel() {
         <form onSubmit={handleCreate} className="mt-5 space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="text-sm font-semibold text-slate-700">First name</span>
+              <span className="text-sm font-semibold text-slate-200">First name</span>
               <input
                 type="text"
                 value={firstName}
                 onChange={(event) => setFirstName(event.target.value)}
                 autoComplete="given-name"
-                className="mt-2 h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-sm font-medium text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-cyan-200/50 focus:ring-4 focus:ring-cyan-200/10"
                 placeholder="First"
               />
             </label>
             <label className="block">
-              <span className="text-sm font-semibold text-slate-700">Last name</span>
+              <span className="text-sm font-semibold text-slate-200">Last name</span>
               <input
                 type="text"
                 value={lastName}
                 onChange={(event) => setLastName(event.target.value)}
                 autoComplete="family-name"
-                className="mt-2 h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-sm font-medium text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-cyan-200/50 focus:ring-4 focus:ring-cyan-200/10"
                 placeholder="Last"
               />
             </label>
           </div>
 
           <label className="block">
-            <span className="text-sm font-semibold text-slate-700">Email</span>
+            <span className="text-sm font-semibold text-slate-200">Email</span>
             <input
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               autoComplete="email"
               required
-              className="mt-2 h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+              className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-sm font-medium text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-cyan-200/50 focus:ring-4 focus:ring-cyan-200/10"
               placeholder="you@example.com"
             />
           </label>
 
           <label className="block">
-            <span className="text-sm font-semibold text-slate-700">Password</span>
+            <span className="text-sm font-semibold text-slate-200">Password</span>
             <input
               type="password"
               value={password}
@@ -258,13 +258,13 @@ export default function ClerkSignUpPanel() {
               autoComplete="new-password"
               minLength={8}
               required
-              className="mt-2 h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+              className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-sm font-medium text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-cyan-200/50 focus:ring-4 focus:ring-cyan-200/10"
               placeholder="Create password"
             />
           </label>
 
           {error ? (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+            <div className="rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-100">
               {error}
             </div>
           ) : null}
@@ -272,16 +272,16 @@ export default function ClerkSignUpPanel() {
           <button
             type="submit"
             disabled={busy}
-            className="flex h-12 w-full items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex h-12 w-full items-center justify-center rounded-xl bg-[linear-gradient(135deg,_#06b6d4_0%,_#2563eb_52%,_#7c3aed_100%)] px-4 text-sm font-extrabold text-white shadow-[0_18px_45px_-25px_rgba(37,99,235,0.9)] transition hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy ? "Creating account..." : "Create Account"}
           </button>
         </form>
       )}
 
-      <p className="mt-5 text-center text-sm text-slate-600">
+      <p className="mt-5 text-center text-sm text-slate-300">
         Already have an account?{" "}
-        <Link href="/sign-in" className="font-bold text-emerald-700 hover:text-emerald-800">
+        <Link href="/sign-in" className="font-bold text-cyan-100 hover:text-white">
           Sign in
         </Link>
       </p>
