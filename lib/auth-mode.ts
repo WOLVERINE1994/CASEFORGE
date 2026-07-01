@@ -2,13 +2,9 @@ type ClerkAuthStatus = {
   active: boolean;
   hasPublishableKey: boolean;
   hasSecretKey: boolean;
-  isProduction: boolean;
   usesTestPublishableKey: boolean;
   usesTestSecretKey: boolean;
-  reason:
-    | "active"
-    | "missingKeys"
-    | "productionUsesDevelopmentKeys";
+  reason: "active" | "missingKeys";
 };
 
 export function getClerkAuthStatus(): ClerkAuthStatus {
@@ -16,7 +12,6 @@ export function getClerkAuthStatus(): ClerkAuthStatus {
   const secretKey = process.env.CLERK_SECRET_KEY || "";
   const hasPublishableKey = Boolean(publishableKey);
   const hasSecretKey = Boolean(secretKey);
-  const isProduction = process.env.VERCEL_ENV === "production";
   const usesTestPublishableKey = publishableKey.startsWith("pk_test_");
   const usesTestSecretKey = secretKey.startsWith("sk_test_");
 
@@ -25,22 +20,9 @@ export function getClerkAuthStatus(): ClerkAuthStatus {
       active: false,
       hasPublishableKey,
       hasSecretKey,
-      isProduction,
       usesTestPublishableKey,
       usesTestSecretKey,
       reason: "missingKeys",
-    };
-  }
-
-  if (isProduction && (usesTestPublishableKey || usesTestSecretKey)) {
-    return {
-      active: false,
-      hasPublishableKey,
-      hasSecretKey,
-      isProduction,
-      usesTestPublishableKey,
-      usesTestSecretKey,
-      reason: "productionUsesDevelopmentKeys",
     };
   }
 
@@ -48,7 +30,6 @@ export function getClerkAuthStatus(): ClerkAuthStatus {
     active: true,
     hasPublishableKey,
     hasSecretKey,
-    isProduction,
     usesTestPublishableKey,
     usesTestSecretKey,
     reason: "active",
