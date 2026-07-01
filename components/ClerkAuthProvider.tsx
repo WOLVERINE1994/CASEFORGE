@@ -11,6 +11,7 @@ export default function ClerkAuthProvider({
 }) {
   return (
     <ClerkProvider
+      dynamic
       publishableKey={publishableKey}
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
