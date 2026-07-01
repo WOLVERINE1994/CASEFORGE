@@ -1,17 +1,24 @@
 import Link from "next/link";
+import { getClerkAuthStatus } from "../lib/auth-mode";
 
 type AuthSetupNoticeProps = {
   action: "sign in" | "sign up";
 };
 
 export default function AuthSetupNotice({ action }: AuthSetupNoticeProps) {
-  const hasPublishableKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
-  const title = hasPublishableKey
-    ? "Authentication is disabled here."
-    : "Clerk setup needed";
-  const message = hasPublishableKey
-    ? "This workspace is running in public/local mode, so you can continue directly to the project workspace without signing in."
-    : "Add NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY in Vercel for Production, then redeploy the latest main branch.";
+  const authStatus = getClerkAuthStatus();
+  const isProductionKeyMismatch =
+    authStatus.reason === "productionUsesDevelopmentKeys";
+  const title = isProductionKeyMismatch
+    ? "Clerk live keys needed"
+    : authStatus.hasPublishableKey
+      ? "Authentication is disabled here."
+      : "Clerk setup needed";
+  const message = isProductionKeyMismatch
+    ? "Vercel Production is using Clerk development keys. Replace NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY with pk_live and sk_live values from Clerk, then redeploy."
+    : authStatus.hasPublishableKey
+      ? "This workspace is running in public/local mode, so you can continue directly to the project workspace without signing in."
+      : "Add NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY in Vercel for Production, then redeploy the latest main branch.";
 
   return (
     <main className="flex min-h-[calc(100vh-4.5rem)] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.16),_transparent_30%),linear-gradient(180deg,_#08101d_0%,_#0b1220_54%,_#111827_100%)] px-4 py-12 text-slate-50">
@@ -25,7 +32,7 @@ export default function AuthSetupNotice({ action }: AuthSetupNoticeProps) {
         <p className="mt-3 text-sm leading-6 text-amber-50/80">
           {message}
         </p>
-        {hasPublishableKey ? (
+        {authStatus.hasPublishableKey && !isProductionKeyMismatch ? (
           <Link
             href="/projects"
             className="mt-5 inline-flex rounded-xl bg-cyan-200 px-4 py-2 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-100"

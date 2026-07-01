@@ -1,6 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { isClerkAuthActive } from "./lib/auth-mode";
 
 const isProtectedRoute = createRouteMatcher([
   "/projects(.*)",
@@ -18,9 +19,7 @@ const isProtectedRoute = createRouteMatcher([
   "/api/session(.*)",
 ]);
 
-const hasClerkServerConfig =
-  Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) &&
-  Boolean(process.env.CLERK_SECRET_KEY);
+const hasClerkServerConfig = isClerkAuthActive();
 
 const legacyProjectSections = new Set([
   "activity",
