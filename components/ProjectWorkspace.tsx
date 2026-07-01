@@ -1672,7 +1672,7 @@ export default function ProjectWorkspace({
               body: JSON.stringify({ projects: updatedProjects }),
             },
             0,
-            40000
+            12000
           );
         } catch (error) {
           if (process.env.NODE_ENV !== "production") {
@@ -3331,19 +3331,42 @@ export default function ProjectWorkspace({
         trimmedName
       );
 
-      const savedProjects = await persistProjects(updatedProjects);
-      const resolvedProject =
-        savedProjects.find((project) => project.id === updatedProject.id) ??
+      const localProjects = saveProjectsToBrowserFallback(updatedProjects);
+      const localResolvedProject =
+        localProjects.find((project) => project.id === updatedProject.id) ??
         updatedProject;
 
-      setResolvedProjectId(resolvedProject.id);
-      projectDataState?.setProject(resolvedProject);
-      setLastSavedAt(resolvedProject.updatedAt);
+      setResolvedProjectId(localResolvedProject.id);
+      projectDataState?.setProject(localResolvedProject);
+      setLastSavedAt(localResolvedProject.updatedAt);
       setSaveStatus("saved");
       showWorkspaceNotice(
-        "success",
-        `"${resolvedProject.name}" was saved to the project library.`
+        "info",
+        `"${localResolvedProject.name}" was saved in this browser. Syncing the project library...`
       );
+
+      try {
+        const savedProjects = await persistProjects(updatedProjects);
+        const resolvedProject =
+          savedProjects.find((project) => project.id === updatedProject.id) ??
+          localResolvedProject;
+
+        setResolvedProjectId(resolvedProject.id);
+        projectDataState?.setProject(resolvedProject);
+        setLastSavedAt(resolvedProject.updatedAt);
+        setSaveStatus("saved");
+        showWorkspaceNotice(
+          "success",
+          `"${resolvedProject.name}" was saved to the project library.`
+        );
+      } catch (syncError) {
+        console.error("Project library sync error:", syncError);
+        setSaveStatus("saved");
+        showWorkspaceNotice(
+          "info",
+          `"${localResolvedProject.name}" is saved in this browser. Project library sync is currently unavailable.`
+        );
+      }
     } catch (error) {
       console.error("Save project error:", error);
       try {
