@@ -59,25 +59,17 @@ function focusedWorkspaceRedirect(request: NextRequest) {
   return null;
 }
 
-const clerkProxy = clerkMiddleware(
-  async (auth, request) => {
-    const redirect = focusedWorkspaceRedirect(request);
-    if (redirect) return redirect;
+const clerkProxy = clerkMiddleware(async (auth, request) => {
+  const redirect = focusedWorkspaceRedirect(request);
+  if (redirect) return redirect;
 
-    if (isProtectedRoute(request)) {
-      await auth.protect({
-        unauthenticatedUrl: new URL("/sign-in", request.url).toString(),
-        unauthorizedUrl: new URL("/sign-in", request.url).toString(),
-      });
-    }
-  },
-  {
-    frontendApiProxy: {
-      enabled: true,
-      path: "/__clerk",
-    },
-  },
-);
+  if (isProtectedRoute(request)) {
+    await auth.protect({
+      unauthenticatedUrl: new URL("/sign-in", request.url).toString(),
+      unauthorizedUrl: new URL("/sign-in", request.url).toString(),
+    });
+  }
+});
 
 export default hasClerkServerConfig
   ? clerkProxy
@@ -94,7 +86,6 @@ export const config = {
   matcher: [
     "/projects(.*)",
     "/settings(.*)",
-    "/__clerk(.*)",
     "/api/:path*",
     "/trpc/:path*",
   ],
