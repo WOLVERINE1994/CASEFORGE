@@ -4765,9 +4765,51 @@ export default function ProjectWorkspace({
 
       setGeneratingAutomationRowIds((current) => [...current, rowId]);
       try {
-        const projectRouteRef = !currentProjectId && !initialProjectRef
-          ? ""
-          : encodeURIComponent(projectKey.trim() || currentProjectId || initialProjectRef || "");
+        const trimmedProjectName = projectName.trim();
+        if (!trimmedProjectName) {
+          showWorkspaceNotice(
+            "error",
+            "Name and save this workspace before generating automation drafts."
+          );
+          return;
+        }
+
+        showWorkspaceNotice("info", `Preparing ${row.id} for automation...`);
+
+        const { updatedProject, updatedProjects } = upsertProject(
+          projectsRef.current,
+          trimmedProjectName
+        );
+        const localProjects = saveProjectsToBrowserFallback(updatedProjects);
+        const localProject =
+          localProjects.find((project) => project.id === updatedProject.id) ??
+          updatedProject;
+
+        setResolvedProjectId(localProject.id);
+        setManualSaveStatus("local");
+        setAutosaveStatus("saving");
+
+        try {
+          const syncedProjects = await persistProjects(updatedProjects);
+          const syncedProject =
+            syncedProjects.find((project) => project.id === updatedProject.id) ??
+            localProject;
+
+          setResolvedProjectId(syncedProject.id);
+          setManualSaveStatus("saved");
+          setAutosaveStatus("saved");
+          setLastSavedAt(syncedProject.updatedAt);
+        } catch (syncError) {
+          console.error("Automation project sync error:", syncError);
+          setAutosaveStatus("local");
+          showWorkspaceNotice(
+            "error",
+            "Automation needs the project library sync to complete first. The project is saved locally, but the server project is not available yet."
+          );
+          return;
+        }
+
+        const projectRouteRef = encodeURIComponent(localProject.id);
         if (!projectRouteRef) {
           showWorkspaceNotice(
             "error",
@@ -4830,6 +4872,9 @@ export default function ProjectWorkspace({
             },
           ]
         );
+        router.push(
+          `/projects/${projectRouteRef}/automation/scenarios/${encodeURIComponent(scenario.id)}`
+        );
       } catch (error) {
         showWorkspaceNotice(
           "error",
@@ -4843,12 +4888,14 @@ export default function ProjectWorkspace({
     },
     [
       addAuditEntry,
-      currentProjectId,
-      initialProjectRef,
       input,
-      projectKey,
+      persistProjects,
+      projectName,
       rows,
+      router,
+      saveProjectsToBrowserFallback,
       showWorkspaceNotice,
+      upsertProject,
     ]
   );
 
