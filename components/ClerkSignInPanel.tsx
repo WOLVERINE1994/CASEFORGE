@@ -1,6 +1,6 @@
 "use client";
 
-import { useSignIn } from "@clerk/nextjs";
+import { useAuth, useSignIn } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
@@ -20,8 +20,13 @@ function authErrorMessage(error: unknown) {
   );
 }
 
+function isAlreadySignedInError(error: unknown) {
+  return authErrorMessage(error).toLowerCase().includes("already signed in");
+}
+
 export default function ClerkSignInPanel() {
   const router = useRouter();
+  const auth = useAuth();
   const { fetchStatus, signIn } = useSignIn();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -36,6 +41,13 @@ export default function ClerkSignInPanel() {
     setSubmitting(true);
 
     try {
+      if (auth.isLoaded && auth.isSignedIn) {
+        router.replace("/projects");
+        router.refresh();
+        return;
+      }
+
+      await signIn.reset();
       const result = await signIn.sso({
         strategy,
         redirectUrl: `${window.location.origin}/sign-in/sso-callback`,
@@ -45,6 +57,11 @@ export default function ClerkSignInPanel() {
         throw result.error;
       }
     } catch (caughtError) {
+      if (isAlreadySignedInError(caughtError)) {
+        router.replace("/projects");
+        router.refresh();
+        return;
+      }
       setError(authErrorMessage(caughtError));
       setSubmitting(false);
     }
