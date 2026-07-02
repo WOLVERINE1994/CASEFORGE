@@ -593,12 +593,12 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 }
 
 .cf-modal-detail[open] {
-  z-index: 75;
+  z-index: auto;
 }
 
 .cf-modal-detail[open] > summary {
-  position: relative;
-  z-index: 76;
+  position: static;
+  z-index: auto;
 }
 
 .cf-modal-detail[open]::before {
