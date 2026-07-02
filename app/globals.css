@@ -599,11 +599,16 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 }
 
 .cf-modal-detail[open] {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
   transform: none !important;
   z-index: auto;
 }
 
 .cf-modal-detail[open] > summary {
+  opacity: 0;
+  pointer-events: none;
   position: static;
   z-index: auto;
 }
