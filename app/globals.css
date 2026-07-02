@@ -446,7 +446,7 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
   display: grid !important;
   min-height: 2.85rem !important;
   padding: 0.34rem 0.44rem !important;
-  grid-template-columns: 2.15rem minmax(0, 1fr) auto;
+  grid-template-columns: 2.15rem minmax(0, 1fr);
   grid-template-rows: auto;
   gap: 0.54rem !important;
   align-items: center !important;
@@ -491,9 +491,7 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 }
 
 .cf-modal-detail > summary > :last-child {
-  grid-column: 3;
-  grid-row: 1;
-  justify-content: flex-start !important;
+  display: none !important;
 }
 
 .cf-modal-detail > summary > div:last-child span:not(:last-child) {
