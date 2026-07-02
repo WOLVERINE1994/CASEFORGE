@@ -401,26 +401,63 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 .cf-modal-detail {
   display: inline-block;
   position: relative;
-  width: min(100%, 24rem);
-  margin: 0.375rem;
+  width: min(100%, 23rem);
+  margin: 0.45rem;
   vertical-align: top;
   overflow: visible !important;
-  border-radius: 20px !important;
+  border-radius: 24px !important;
+  border-color: color-mix(in srgb, var(--cf-modal-accent, #0f766e) 28%, rgba(226, 232, 240, 0.92)) !important;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92)),
+    radial-gradient(circle at 12% 10%, var(--cf-modal-soft, rgba(20, 184, 166, 0.14)), transparent 34%) !important;
+  box-shadow: 0 22px 52px -40px rgba(2, 6, 23, 0.55) !important;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.cf-modal-detail:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--cf-modal-accent, #0f766e) 58%, rgba(226, 232, 240, 0.9)) !important;
+  box-shadow: 0 26px 62px -38px color-mix(in srgb, var(--cf-modal-accent, #0f766e) 26%, rgba(2, 6, 23, 0.46)) !important;
 }
 
 .cf-modal-detail > summary {
-  display: flex !important;
-  min-height: 9rem !important;
+  display: grid !important;
+  min-height: 8.25rem !important;
   padding: 1rem !important;
-  gap: 0.75rem !important;
+  grid-template-columns: 3.25rem minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 0.75rem 0.9rem !important;
   align-items: flex-start !important;
-  justify-content: space-between !important;
   border-radius: inherit !important;
+  color: #020617 !important;
+}
+
+.cf-modal-detail > summary::before {
+  content: var(--cf-modal-logo, "CF");
+  display: grid;
+  width: 3.05rem;
+  height: 3.05rem;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--cf-modal-accent, #0f766e) 28%, rgba(226, 232, 240, 0.9));
+  border-radius: 1rem;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.35)),
+    var(--cf-modal-soft, rgba(20, 184, 166, 0.14));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 12px 28px -24px var(--cf-modal-accent, #0f766e);
+  color: var(--cf-modal-accent, #0f766e);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
 }
 
 .cf-modal-detail > summary h2,
 .cf-modal-detail > summary h3 {
-  margin-top: 0.25rem !important;
+  margin-top: 0.2rem !important;
   font-size: 1rem !important;
   line-height: 1.35 !important;
 }
@@ -430,15 +467,101 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 }
 
 .cf-modal-detail > summary > div:first-child {
+  grid-column: 2;
+  grid-row: 1;
   max-width: 100% !important;
 }
 
-.cf-modal-detail > summary > div:last-child {
+.cf-modal-detail > summary > :last-child {
+  grid-column: 2;
+  grid-row: 2;
   justify-content: flex-start !important;
+}
+
+.cf-modal-detail > summary > div:last-child span:not(:last-child) {
+  display: none !important;
 }
 
 .cf-modal-detail > summary span {
   white-space: nowrap;
+}
+
+.cf-modal-detail > summary > span,
+.cf-modal-detail > summary > div:last-child span {
+  border-color: color-mix(in srgb, var(--cf-modal-accent, #0f766e) 26%, rgba(226, 232, 240, 0.9)) !important;
+  background: color-mix(in srgb, var(--cf-modal-soft, rgba(20, 184, 166, 0.14)) 70%, #ffffff) !important;
+  color: color-mix(in srgb, var(--cf-modal-accent, #0f766e) 78%, #020617) !important;
+}
+
+.cf-modal-detail > summary > span::after,
+.cf-modal-detail > summary > div:last-child span:last-child::after {
+  content: " ->";
+}
+
+.cf-modal-value {
+  --cf-modal-accent: #7c3aed;
+  --cf-modal-soft: #f3e8ff;
+  --cf-modal-logo: "VP";
+}
+
+.cf-modal-telemetry {
+  --cf-modal-accent: #0f766e;
+  --cf-modal-soft: #ccfbf1;
+  --cf-modal-logo: "LL";
+}
+
+.cf-modal-setup {
+  --cf-modal-accent: #0369a1;
+  --cf-modal-soft: #e0f2fe;
+  --cf-modal-logo: "SET";
+}
+
+.cf-modal-imports {
+  --cf-modal-accent: #b45309;
+  --cf-modal-soft: #fef3c7;
+  --cf-modal-logo: "SRC";
+}
+
+.cf-modal-navigation {
+  --cf-modal-accent: #4f46e5;
+  --cf-modal-soft: #e0e7ff;
+  --cf-modal-logo: "NAV";
+}
+
+.cf-modal-guidance {
+  --cf-modal-accent: #059669;
+  --cf-modal-soft: #d1fae5;
+  --cf-modal-logo: "REQ";
+}
+
+.cf-modal-qa {
+  --cf-modal-accent: #9333ea;
+  --cf-modal-soft: #f3e8ff;
+  --cf-modal-logo: "QA";
+}
+
+.cf-modal-readiness {
+  --cf-modal-accent: #0284c7;
+  --cf-modal-soft: #e0f2fe;
+  --cf-modal-logo: "BOT";
+}
+
+.cf-modal-traceability {
+  --cf-modal-accent: #0d9488;
+  --cf-modal-soft: #ccfbf1;
+  --cf-modal-logo: "MAP";
+}
+
+.cf-modal-gaps {
+  --cf-modal-accent: #d97706;
+  --cf-modal-soft: #fef3c7;
+  --cf-modal-logo: "GAP";
+}
+
+.cf-modal-bulk {
+  --cf-modal-accent: #e11d48;
+  --cf-modal-soft: #ffe4e6;
+  --cf-modal-logo: "BULK";
 }
 
 .cf-modal-detail[open] {
@@ -483,6 +606,28 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
   border-color: rgba(63, 63, 70, 0.9);
   background: rgba(24, 24, 27, 0.98);
   color: #f8fafc;
+}
+
+.dark .cf-modal-detail {
+  background:
+    linear-gradient(135deg, rgba(24, 24, 27, 0.96), rgba(9, 9, 11, 0.92)),
+    radial-gradient(circle at 12% 10%, color-mix(in srgb, var(--cf-modal-accent, #0f766e) 22%, transparent), transparent 36%) !important;
+}
+
+.dark .cf-modal-detail > summary {
+  color: #f8fafc !important;
+}
+
+.dark .cf-modal-detail > summary::before {
+  background:
+    linear-gradient(135deg, rgba(39, 39, 42, 0.82), rgba(9, 9, 11, 0.56)),
+    color-mix(in srgb, var(--cf-modal-accent, #0f766e) 18%, transparent);
+}
+
+.dark .cf-modal-detail > summary > span,
+.dark .cf-modal-detail > summary > div:last-child span {
+  background: color-mix(in srgb, var(--cf-modal-accent, #0f766e) 16%, #09090b) !important;
+  color: color-mix(in srgb, var(--cf-modal-accent, #0f766e) 32%, #ffffff) !important;
 }
 
 @media (max-width: 640px) {
