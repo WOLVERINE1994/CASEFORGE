@@ -8527,9 +8527,6 @@ export default function ProjectWorkspace({
                 Review how requirement, generation, review, automation, and reporting connect.
               </p>
             </div>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-              Open
-            </span>
           </summary>
           <div className="cf-modal-panel">
             <ModalCloseButton />
@@ -8559,9 +8556,6 @@ export default function ProjectWorkspace({
               </span>
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                 Downstream failures {generationQualitySignals.downstreamFailureCorrelation}%
-              </span>
-              <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-                Open
               </span>
             </div>
           </summary>
@@ -8652,9 +8646,6 @@ export default function ProjectWorkspace({
                 Open this only when you need project naming, autosave controls, or imported source artifacts.
               </p>
             </div>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
-              Open
-            </span>
           </summary>
           <div className="cf-modal-panel space-y-6">
             <ModalCloseButton />
@@ -8697,9 +8688,6 @@ export default function ProjectWorkspace({
                 Bring in Jira, docs, support notes, API contracts, or other source artifacts when needed.
               </p>
             </div>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
-              Open
-            </span>
           </summary>
           <div className="cf-modal-panel">
             <ModalCloseButton />
@@ -8924,9 +8912,6 @@ export default function ProjectWorkspace({
                 Open board, cases, or issues after you finish generating and reviewing the first draft.
               </p>
             </div>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
-              Open
-            </span>
           </summary>
           <div className="cf-modal-panel">
             <ModalCloseButton />
@@ -9024,9 +9009,6 @@ export default function ProjectWorkspace({
                     Open risk, criteria, and ambiguity helpers only when the requirement needs refinement.
                   </p>
                 </div>
-                <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
-                  Open
-                </span>
               </summary>
               <div className="cf-modal-panel space-y-6">
                 <ModalCloseButton />
@@ -9064,9 +9046,6 @@ export default function ProjectWorkspace({
                     These tools are still available, but they are secondary to generating and reviewing the first draft.
                   </p>
                 </div>
-                <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
-                  Open
-                </span>
               </summary>
               <div className="cf-modal-panel space-y-6">
                 <ModalCloseButton />
@@ -12312,9 +12291,6 @@ export default function ProjectWorkspace({
                     <span className="rounded-full border border-sky-300 bg-white/80 px-3 py-1.5 text-xs font-semibold text-sky-800 dark:border-sky-500/30 dark:bg-zinc-950/60 dark:text-sky-200">
                       Readiness {automationReadinessScore}%
                     </span>
-                    <span className="rounded-full border border-sky-300 bg-white/80 px-3 py-1.5 text-xs font-semibold text-sky-800 dark:border-sky-500/30 dark:bg-zinc-950/60 dark:text-sky-200">
-                      Open
-                    </span>
                   </div>
                 </summary>
                 <div className="cf-modal-panel">
@@ -12577,9 +12553,6 @@ export default function ProjectWorkspace({
                     </span>
                     <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                       {traceabilityAnalysis.uncoveredSentences.length} uncovered
-                    </span>
-                    <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 transition group-open:-translate-y-0.5 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
-                      Open
                     </span>
                   </div>
                 </summary>
@@ -12931,9 +12904,6 @@ export default function ProjectWorkspace({
                     <span className="rounded-full border border-amber-200/80 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
                       {uncoveredRequirementInsights.filter((item) => item.severity === "high").length} high severity
                     </span>
-                    <span className="rounded-full border border-amber-200/80 bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700 transition group-open:-translate-y-0.5 dark:border-amber-500/20 dark:bg-zinc-950/70 dark:text-amber-300">
-                      Open
-                    </span>
                   </div>
                 </summary>
                 <div className="cf-modal-panel">
@@ -13033,9 +13003,6 @@ export default function ProjectWorkspace({
                     >
                       Clear
                     </button>
-                    <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 transition group-open:-translate-y-0.5 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
-                      Open
-                    </span>
                   </div>
                 </summary>
                 <div className="cf-modal-panel">
