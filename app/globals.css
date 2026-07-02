@@ -307,6 +307,32 @@ a[href][class*="rounded"][class*="bg-amber-50"]:not([data-no-hover-swap]):focus-
   color: inherit !important;
 }
 
+button[class*="text-rose"]:not(:disabled):not([data-no-hover-swap]):hover,
+button[class*="text-rose"]:not(:disabled):not([data-no-hover-swap]):focus-visible,
+button[class*="text-red"]:not(:disabled):not([data-no-hover-swap]):hover,
+button[class*="text-red"]:not(:disabled):not([data-no-hover-swap]):focus-visible,
+a[href][class*="text-rose"]:not([data-no-hover-swap]):hover,
+a[href][class*="text-rose"]:not([data-no-hover-swap]):focus-visible,
+a[href][class*="text-red"]:not([data-no-hover-swap]):hover,
+a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible {
+  border-color: #020617 !important;
+  background: #f8fafc !important;
+  background-image: none !important;
+  color: #020617 !important;
+  filter: none !important;
+}
+
+button[class*="text-rose"]:not(:disabled):not([data-no-hover-swap]):hover *,
+button[class*="text-rose"]:not(:disabled):not([data-no-hover-swap]):focus-visible *,
+button[class*="text-red"]:not(:disabled):not([data-no-hover-swap]):hover *,
+button[class*="text-red"]:not(:disabled):not([data-no-hover-swap]):focus-visible *,
+a[href][class*="text-rose"]:not([data-no-hover-swap]):hover *,
+a[href][class*="text-rose"]:not([data-no-hover-swap]):focus-visible *,
+a[href][class*="text-red"]:not([data-no-hover-swap]):hover *,
+a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
+  color: inherit !important;
+}
+
 .cf-ai-badge {
   border: 1px solid rgba(6, 182, 212, 0.35);
   background: rgba(8, 145, 178, 0.14);
