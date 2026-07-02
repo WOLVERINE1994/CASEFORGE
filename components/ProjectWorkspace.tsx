@@ -8527,7 +8527,7 @@ export default function ProjectWorkspace({
               </p>
             </div>
             <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-              Open modal
+              Open
             </span>
           </summary>
           <div className="cf-modal-panel">
@@ -8540,7 +8540,7 @@ export default function ProjectWorkspace({
           <summary className="flex cursor-pointer list-none flex-col gap-4 px-5 py-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
-                Secondary Telemetry
+                Metrics
               </p>
               <h3 className="mt-2 text-lg font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
                 Learning loop metrics
@@ -8560,7 +8560,7 @@ export default function ProjectWorkspace({
                 Downstream failures {generationQualitySignals.downstreamFailureCorrelation}%
               </span>
               <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-                Open modal
+                Open
               </span>
             </div>
           </summary>
@@ -8642,7 +8642,7 @@ export default function ProjectWorkspace({
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
-                Secondary Setup
+                Setup
               </p>
               <h2 className="mt-1 text-lg font-semibold text-zinc-950 dark:text-zinc-50">
                 Project settings and source imports
@@ -8652,7 +8652,7 @@ export default function ProjectWorkspace({
               </p>
             </div>
             <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
-              Open modal
+              Open
             </span>
           </summary>
           <div className="cf-modal-panel space-y-6">
@@ -8687,7 +8687,7 @@ export default function ProjectWorkspace({
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
-                Source-Of-Truth Imports
+                Imports
               </p>
               <h2 className="mt-1 text-lg font-semibold text-zinc-950 dark:text-zinc-50">
                 Import requirement context
@@ -8697,7 +8697,7 @@ export default function ProjectWorkspace({
               </p>
             </div>
             <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
-              Open modal
+              Open
             </span>
           </summary>
           <div className="cf-modal-panel">
@@ -8912,7 +8912,7 @@ export default function ProjectWorkspace({
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
-                Secondary Navigation
+                Navigation
               </p>
               <h2 className="mt-1 text-lg font-semibold text-zinc-950 dark:text-zinc-50">
                 Planning shortcuts
@@ -8922,7 +8922,7 @@ export default function ProjectWorkspace({
               </p>
             </div>
             <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
-              Open modal
+              Open
             </span>
           </summary>
           <div className="cf-modal-panel">
@@ -9012,7 +9012,7 @@ export default function ProjectWorkspace({
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
-                    Secondary Guidance
+                    Guidance
                   </p>
                   <h2 className="mt-1 text-lg font-semibold text-zinc-950 dark:text-zinc-50">
                     Improve the requirement before generating
@@ -9022,7 +9022,7 @@ export default function ProjectWorkspace({
                   </p>
                 </div>
                 <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
-                  {advancedRequirementSignalCount} signal{advancedRequirementSignalCount === 1 ? "" : "s"}
+                  Open
                 </span>
               </summary>
               <div className="cf-modal-panel space-y-6">
@@ -9052,7 +9052,7 @@ export default function ProjectWorkspace({
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
-                    Advanced QA Tools
+                    QA Tools
                   </p>
                   <h2 className="mt-1 text-lg font-semibold text-zinc-950 dark:text-zinc-50">
                     Coverage, quality, change impact, and reporting
@@ -9062,7 +9062,7 @@ export default function ProjectWorkspace({
                   </p>
                 </div>
                 <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
-                  {advancedToolSignalCount} signal{advancedToolSignalCount === 1 ? "" : "s"}
+                  Open
                 </span>
               </summary>
               <div className="cf-modal-panel space-y-6">
@@ -12294,7 +12294,7 @@ export default function ProjectWorkspace({
                 <summary className="flex cursor-pointer list-none flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
                   <div className="max-w-3xl">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700 dark:text-sky-300">
-                      Automation Readiness
+                      Automation
                     </p>
                     <h3 className="mt-2 text-lg font-semibold text-sky-950 dark:text-sky-50">
                       Configure automation generation
@@ -12308,7 +12308,7 @@ export default function ProjectWorkspace({
                       Readiness {automationReadinessScore}%
                     </span>
                     <span className="rounded-full border border-sky-300 bg-white/80 px-3 py-1.5 text-xs font-semibold text-sky-800 dark:border-sky-500/30 dark:bg-zinc-950/60 dark:text-sky-200">
-                      Open modal
+                      Open
                     </span>
                   </div>
                 </summary>
@@ -12560,7 +12560,7 @@ export default function ProjectWorkspace({
                 <summary className="flex cursor-pointer list-none flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                      Traceability And Coverage
+                      Traceability
                     </p>
                     <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
                       Requirement mapping, coverage health, and hotspot risk stay here when you need deeper QA analysis.
@@ -12574,7 +12574,7 @@ export default function ProjectWorkspace({
                       {traceabilityAnalysis.uncoveredSentences.length} uncovered
                     </span>
                     <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 transition group-open:-translate-y-0.5 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
-                      Open modal
+                      Open
                     </span>
                   </div>
                 </summary>
@@ -12916,7 +12916,7 @@ export default function ProjectWorkspace({
                 <summary className="flex cursor-pointer list-none flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">
-                      Uncovered Requirement Sentences
+                      Gaps
                     </p>
                     <p className="mt-1 text-sm text-amber-900/80 dark:text-amber-200/80">
                       Review these before you leave the draft. They mark requirement statements that still do not have clear mapped case coverage.
@@ -12927,7 +12927,7 @@ export default function ProjectWorkspace({
                       {uncoveredRequirementInsights.filter((item) => item.severity === "high").length} high severity
                     </span>
                     <span className="rounded-full border border-amber-200/80 bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700 transition group-open:-translate-y-0.5 dark:border-amber-500/20 dark:bg-zinc-950/70 dark:text-amber-300">
-                      Open modal
+                      Open
                     </span>
                   </div>
                 </summary>
@@ -13029,7 +13029,7 @@ export default function ProjectWorkspace({
                       Clear
                     </button>
                     <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 transition group-open:-translate-y-0.5 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
-                      Open modal
+                      Open
                     </span>
                   </div>
                 </summary>
