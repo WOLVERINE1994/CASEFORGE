@@ -446,6 +446,7 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 
 .cf-modal-detail > summary {
   display: grid !important;
+  list-style: none !important;
   min-height: 2.85rem !important;
   padding: 0.34rem 0.76rem 0.34rem 0.44rem !important;
   grid-template-columns: 2.15rem minmax(0, 1fr);
@@ -454,6 +455,14 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
   align-items: center !important;
   border-radius: inherit !important;
   color: #020617 !important;
+}
+
+.cf-modal-detail > summary::-webkit-details-marker {
+  display: none;
+}
+
+.cf-modal-detail > summary::marker {
+  content: "";
 }
 
 .cf-modal-detail > summary::before {
@@ -492,11 +501,7 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
   min-width: 0 !important;
 }
 
-.cf-modal-detail > summary > :last-child {
-  display: none;
-}
-
-.cf-modal-detail > summary > div:last-child span:not(:last-child) {
+.cf-modal-detail > summary > div:last-child:not(:first-child) span:not(:last-child) {
   display: none !important;
 }
 
@@ -602,13 +607,11 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
   border-color: transparent !important;
   background: transparent !important;
   box-shadow: none !important;
-  min-width: 0;
   transform: none !important;
   z-index: auto;
 }
 
 .cf-modal-detail[open] > summary {
-  opacity: 0;
   pointer-events: none;
   position: static;
   z-index: auto;
@@ -617,16 +620,6 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 .cf-modal-detail[open]::before {
   content: "";
   display: none;
-}
-
-.cf-modal-detail[open]::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 9998;
-  display: block;
-  background: rgba(2, 6, 23, 0.72);
-  backdrop-filter: blur(10px);
 }
 
 .cf-modal-detail > .cf-modal-panel {
@@ -647,7 +640,9 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
   border-radius: 24px;
   background: rgba(248, 250, 252, 0.98);
   padding: 1.25rem;
-  box-shadow: 0 32px 90px -48px rgba(2, 6, 23, 0.85);
+  box-shadow:
+    0 0 0 100vmax rgba(2, 6, 23, 0.72),
+    0 32px 90px -48px rgba(2, 6, 23, 0.85);
   color: #020617;
   scrollbar-gutter: stable;
 }
