@@ -9,10 +9,10 @@ import {
 import Link from "next/link";
 
 const signInClassName =
-  "rounded-xl border border-cyan-200/25 bg-cyan-200/10 px-3.5 py-2 text-sm font-semibold text-cyan-50 transition hover:border-cyan-100/45 hover:bg-cyan-200/15 sm:px-4";
+  "cf-readable-on-dark rounded-xl border border-cyan-200/25 bg-cyan-200/10 px-3.5 py-2 text-sm font-semibold text-cyan-50 transition hover:border-cyan-100/45 hover:bg-cyan-200/15 sm:px-4";
 
 const signUpClassName =
-  "rounded-xl bg-cyan-200 px-3.5 py-2 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-100 sm:px-4";
+  "cf-readable-on-light rounded-xl bg-cyan-200 px-3.5 py-2 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-100 sm:px-4";
 
 export default function AuthNav() {
   return (

@@ -386,6 +386,84 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
   color: inherit !important;
 }
 
+.cf-readable-on-light,
+.cf-readable-on-light *,
+.cf-hover-invert-light:not(:hover):not(:focus-visible),
+.cf-hover-invert-light:not(:hover):not(:focus-visible) * {
+  color: #020617 !important;
+}
+
+.cf-readable-on-dark,
+.cf-readable-on-dark * {
+  color: #f8fafc !important;
+}
+
+button[class~="bg-white"]:not([data-no-hover-swap]),
+button[class~="bg-zinc-50"]:not([data-no-hover-swap]),
+button[class~="bg-slate-50"]:not([data-no-hover-swap]),
+button[class~="bg-emerald-50"]:not([data-no-hover-swap]),
+button[class~="bg-sky-50"]:not([data-no-hover-swap]),
+button[class~="bg-cyan-50"]:not([data-no-hover-swap]),
+button[class~="bg-cyan-100"]:not([data-no-hover-swap]),
+button[class~="bg-cyan-200"]:not([data-no-hover-swap]),
+button[class~="bg-amber-50"]:not([data-no-hover-swap]),
+button[class~="bg-rose-50"]:not([data-no-hover-swap]),
+button[class~="bg-violet-50"]:not([data-no-hover-swap]),
+[role="button"][class~="bg-white"]:not([data-no-hover-swap]),
+[role="button"][class~="bg-zinc-50"]:not([data-no-hover-swap]),
+[role="button"][class~="bg-slate-50"]:not([data-no-hover-swap]),
+[role="button"][class~="bg-emerald-50"]:not([data-no-hover-swap]),
+[role="button"][class~="bg-sky-50"]:not([data-no-hover-swap]),
+[role="button"][class~="bg-cyan-50"]:not([data-no-hover-swap]),
+[role="button"][class~="bg-cyan-100"]:not([data-no-hover-swap]),
+[role="button"][class~="bg-cyan-200"]:not([data-no-hover-swap]),
+a[href][class~="bg-white"]:not([data-no-hover-swap]),
+a[href][class~="bg-zinc-50"]:not([data-no-hover-swap]),
+a[href][class~="bg-slate-50"]:not([data-no-hover-swap]),
+a[href][class~="bg-emerald-50"]:not([data-no-hover-swap]),
+a[href][class~="bg-sky-50"]:not([data-no-hover-swap]),
+a[href][class~="bg-cyan-50"]:not([data-no-hover-swap]),
+a[href][class~="bg-cyan-100"]:not([data-no-hover-swap]),
+a[href][class~="bg-cyan-200"]:not([data-no-hover-swap]),
+a[href][class~="bg-amber-50"]:not([data-no-hover-swap]),
+a[href][class~="bg-rose-50"]:not([data-no-hover-swap]),
+a[href][class~="bg-violet-50"]:not([data-no-hover-swap]) {
+  color: #020617 !important;
+}
+
+button[class~="bg-white"]:not([data-no-hover-swap]) *,
+button[class~="bg-zinc-50"]:not([data-no-hover-swap]) *,
+button[class~="bg-slate-50"]:not([data-no-hover-swap]) *,
+button[class~="bg-emerald-50"]:not([data-no-hover-swap]) *,
+button[class~="bg-sky-50"]:not([data-no-hover-swap]) *,
+button[class~="bg-cyan-50"]:not([data-no-hover-swap]) *,
+button[class~="bg-cyan-100"]:not([data-no-hover-swap]) *,
+button[class~="bg-cyan-200"]:not([data-no-hover-swap]) *,
+button[class~="bg-amber-50"]:not([data-no-hover-swap]) *,
+button[class~="bg-rose-50"]:not([data-no-hover-swap]) *,
+button[class~="bg-violet-50"]:not([data-no-hover-swap]) *,
+[role="button"][class~="bg-white"]:not([data-no-hover-swap]) *,
+[role="button"][class~="bg-zinc-50"]:not([data-no-hover-swap]) *,
+[role="button"][class~="bg-slate-50"]:not([data-no-hover-swap]) *,
+[role="button"][class~="bg-emerald-50"]:not([data-no-hover-swap]) *,
+[role="button"][class~="bg-sky-50"]:not([data-no-hover-swap]) *,
+[role="button"][class~="bg-cyan-50"]:not([data-no-hover-swap]) *,
+[role="button"][class~="bg-cyan-100"]:not([data-no-hover-swap]) *,
+[role="button"][class~="bg-cyan-200"]:not([data-no-hover-swap]) *,
+a[href][class~="bg-white"]:not([data-no-hover-swap]) *,
+a[href][class~="bg-zinc-50"]:not([data-no-hover-swap]) *,
+a[href][class~="bg-slate-50"]:not([data-no-hover-swap]) *,
+a[href][class~="bg-emerald-50"]:not([data-no-hover-swap]) *,
+a[href][class~="bg-sky-50"]:not([data-no-hover-swap]) *,
+a[href][class~="bg-cyan-50"]:not([data-no-hover-swap]) *,
+a[href][class~="bg-cyan-100"]:not([data-no-hover-swap]) *,
+a[href][class~="bg-cyan-200"]:not([data-no-hover-swap]) *,
+a[href][class~="bg-amber-50"]:not([data-no-hover-swap]) *,
+a[href][class~="bg-rose-50"]:not([data-no-hover-swap]) *,
+a[href][class~="bg-violet-50"]:not([data-no-hover-swap]) * {
+  color: inherit !important;
+}
+
 .cf-ai-badge {
   border: 1px solid rgba(6, 182, 212, 0.35);
   background: rgba(8, 145, 178, 0.14);
