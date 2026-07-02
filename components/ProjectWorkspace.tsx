@@ -704,7 +704,7 @@ export default function ProjectWorkspace({
     useState("");
   const [automationGenerationContext, setAutomationGenerationContext] =
     useState<AutomationGenerationContext>(() => defaultAutomationGenerationContext());
-  const [generatingAutomationRowIds, setGeneratingAutomationRowIds] = useState<string[]>([]);
+  const [, setGeneratingAutomationRowIds] = useState<string[]>([]);
   const [generationFeedbackLog, setGenerationFeedbackLog] = useState<
     NonNullable<Project["generationFeedbackLog"]>
   >([]);
@@ -13130,8 +13130,6 @@ export default function ProjectWorkspace({
               onApplyGenerationFeedback={applyGenerationFeedback}
               onRunAutomation={runAutomationForRow}
               onCreateAutomationIssue={createAutomationIssueForRow}
-              onGenerateAutomation={generateAutomationForRow}
-              generatingAutomationRowIds={generatingAutomationRowIds}
               deleteRow={deleteFilteredRow}
               regenerateRow={regenerateFilteredRow}
               regeneratingIndex={
