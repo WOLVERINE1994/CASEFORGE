@@ -398,6 +398,58 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
   color: #f8fafc !important;
 }
 
+.cf-modal-detail {
+  position: relative;
+}
+
+.cf-modal-detail > summary {
+  min-height: 4.75rem;
+}
+
+.cf-modal-detail[open]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(2, 6, 23, 0.68);
+  backdrop-filter: blur(10px);
+}
+
+.cf-modal-detail > .cf-modal-panel {
+  display: none;
+}
+
+.cf-modal-detail[open] > .cf-modal-panel {
+  position: fixed;
+  inset: 4vh max(1rem, calc((100vw - min(1120px, calc(100vw - 2rem))) / 2));
+  z-index: 80;
+  display: block;
+  max-height: 92vh;
+  overflow-y: auto;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 24px;
+  background: rgba(248, 250, 252, 0.98);
+  padding: 1.25rem;
+  box-shadow: 0 32px 90px -48px rgba(2, 6, 23, 0.85);
+  color: #020617;
+  scrollbar-gutter: stable;
+}
+
+.dark .cf-modal-detail[open] > .cf-modal-panel {
+  border-color: rgba(63, 63, 70, 0.9);
+  background: rgba(24, 24, 27, 0.98);
+  color: #f8fafc;
+}
+
+@media (max-width: 640px) {
+  .cf-modal-detail[open] > .cf-modal-panel {
+    inset: 1rem;
+    max-height: calc(100vh - 2rem);
+    border-radius: 18px;
+    padding: 1rem;
+  }
+}
+
 button[class~="bg-white"]:not([data-no-hover-swap]),
 button[class~="bg-zinc-50"]:not([data-no-hover-swap]),
 button[class~="bg-slate-50"]:not([data-no-hover-swap]),

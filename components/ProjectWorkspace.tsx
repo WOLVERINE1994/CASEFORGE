@@ -128,6 +128,23 @@ const DRAFT_STORAGE_KEY = "tc_workspace_draft_v1";
 
 type WorkspaceSaveStatus = "idle" | "saving" | "saved" | "local" | "error";
 
+function ModalCloseButton() {
+  return (
+    <div className="mb-4 flex justify-end">
+      <button
+        type="button"
+        onClick={(event) => {
+          const details = event.currentTarget.closest("details");
+          details?.removeAttribute("open");
+        }}
+        className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
+      >
+        Close
+      </button>
+    </div>
+  );
+}
+
 const defaultAutomationGenerationContext = (): AutomationGenerationContext => ({
   authMode: "none",
   baseUrl: "",
@@ -8496,9 +8513,30 @@ export default function ProjectWorkspace({
           </div>
         </section>
 
-        <WorkflowValuePath {...workflowValuePath} />
+        <details className="cf-modal-detail group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] dark:border-zinc-800 dark:bg-zinc-900/92">
+          <summary className="flex cursor-pointer list-none flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                Value Path
+              </p>
+              <h3 className="mt-2 text-lg font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+                Open workflow value path
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                Review how requirement, generation, review, automation, and reporting connect.
+              </p>
+            </div>
+            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+              Open modal
+            </span>
+          </summary>
+          <div className="cf-modal-panel">
+            <ModalCloseButton />
+            <WorkflowValuePath {...workflowValuePath} />
+          </div>
+        </details>
 
-        <details className="group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] dark:border-zinc-800 dark:bg-zinc-900/92">
+        <details className="cf-modal-detail group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] dark:border-zinc-800 dark:bg-zinc-900/92">
           <summary className="flex cursor-pointer list-none flex-col gap-4 px-5 py-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
@@ -8522,12 +8560,14 @@ export default function ProjectWorkspace({
                 Downstream failures {generationQualitySignals.downstreamFailureCorrelation}%
               </span>
               <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-                Expand
+                Open modal
               </span>
             </div>
           </summary>
 
-          <div className="grid gap-3 border-t border-zinc-200/80 px-5 py-5 sm:grid-cols-2 2xl:grid-cols-6 dark:border-zinc-800">
+          <div className="cf-modal-panel">
+            <ModalCloseButton />
+          <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-6">
             <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/85 px-4 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
                 AI Drafts
@@ -8595,9 +8635,10 @@ export default function ProjectWorkspace({
               </p>
             </div>
           </div>
+          </div>
         </details>
 
-        <details className="group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
+        <details className="cf-modal-detail group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
@@ -8611,10 +8652,11 @@ export default function ProjectWorkspace({
               </p>
             </div>
             <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
-              Expand
+              Open modal
             </span>
           </summary>
-          <div className="space-y-6 border-t border-zinc-200/80 px-6 py-6 dark:border-zinc-800">
+          <div className="cf-modal-panel space-y-6">
+            <ModalCloseButton />
             <ProjectManager
               currentProjectId={currentProjectId}
               projectName={projectName}
@@ -8638,6 +8680,28 @@ export default function ProjectWorkspace({
               deleteProject={deleteProject}
             />
 
+          </div>
+        </details>
+
+        <details className="cf-modal-detail group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
+                Source-Of-Truth Imports
+              </p>
+              <h2 className="mt-1 text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+                Import requirement context
+              </h2>
+              <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+                Bring in Jira, docs, support notes, API contracts, or other source artifacts when needed.
+              </p>
+            </div>
+            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
+              Open modal
+            </span>
+          </summary>
+          <div className="cf-modal-panel">
+            <ModalCloseButton />
             <SourceImportPanel
               sources={sourceArtifacts}
               onImportSource={handleImportSource}
@@ -8844,7 +8908,7 @@ export default function ProjectWorkspace({
           </div>
         </section>
 
-        <details className="group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
+        <details className="cf-modal-detail group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
@@ -8858,10 +8922,11 @@ export default function ProjectWorkspace({
               </p>
             </div>
             <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700 transition group-open:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:group-open:bg-zinc-800">
-              Expand
+              Open modal
             </span>
           </summary>
-          <div className="border-t border-zinc-200/80 p-6 dark:border-zinc-800">
+          <div className="cf-modal-panel">
+            <ModalCloseButton />
         <section className="rounded-[24px] border border-transparent bg-transparent">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -8943,7 +9008,7 @@ export default function ProjectWorkspace({
           </section>
         ) : (
           <>
-            <details className="group overflow-hidden rounded-[28px] border border-white/80 bg-white/88 shadow-[0_24px_65px_-36px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/88">
+            <details className="cf-modal-detail group overflow-hidden rounded-[28px] border border-white/80 bg-white/88 shadow-[0_24px_65px_-36px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/88">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
@@ -8960,7 +9025,8 @@ export default function ProjectWorkspace({
                   {advancedRequirementSignalCount} signal{advancedRequirementSignalCount === 1 ? "" : "s"}
                 </span>
               </summary>
-              <div className="space-y-6 border-t border-zinc-200/80 px-6 py-6 dark:border-zinc-800">
+              <div className="cf-modal-panel space-y-6">
+                <ModalCloseButton />
                 <RequirementRiskHeatmap
                   analysis={requirementRiskAnalysis}
                   hasRequirement={hasRequirementInput}
@@ -8982,7 +9048,7 @@ export default function ProjectWorkspace({
               </div>
             </details>
 
-            <details className="group overflow-hidden rounded-[28px] border border-white/80 bg-white/88 shadow-[0_24px_65px_-36px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/88">
+            <details className="cf-modal-detail group overflow-hidden rounded-[28px] border border-white/80 bg-white/88 shadow-[0_24px_65px_-36px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/88">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
@@ -8999,7 +9065,8 @@ export default function ProjectWorkspace({
                   {advancedToolSignalCount} signal{advancedToolSignalCount === 1 ? "" : "s"}
                 </span>
               </summary>
-              <div className="space-y-6 border-t border-zinc-200/80 px-6 py-6 dark:border-zinc-800">
+              <div className="cf-modal-panel space-y-6">
+                <ModalCloseButton />
                 <BugPredictionPanel
                   analysis={bugPredictionAnalysis}
                   hasRequirement={hasRequirementInput}
@@ -12223,6 +12290,30 @@ export default function ProjectWorkspace({
             )}
 
             {isCasesSection && (
+              <details className="cf-modal-detail group rounded-[24px] border border-sky-200 bg-sky-50/85 shadow-sm dark:border-sky-500/25 dark:bg-sky-500/10">
+                <summary className="flex cursor-pointer list-none flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="max-w-3xl">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700 dark:text-sky-300">
+                      Automation Readiness
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold text-sky-950 dark:text-sky-50">
+                      Configure automation generation
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-sky-900/80 dark:text-sky-100/80">
+                      Open setup only when you need to change URL, environment, auth, data, validations, or cleanup rules.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full border border-sky-300 bg-white/80 px-3 py-1.5 text-xs font-semibold text-sky-800 dark:border-sky-500/30 dark:bg-zinc-950/60 dark:text-sky-200">
+                      Readiness {automationReadinessScore}%
+                    </span>
+                    <span className="rounded-full border border-sky-300 bg-white/80 px-3 py-1.5 text-xs font-semibold text-sky-800 dark:border-sky-500/30 dark:bg-zinc-950/60 dark:text-sky-200">
+                      Open modal
+                    </span>
+                  </div>
+                </summary>
+                <div className="cf-modal-panel">
+                  <ModalCloseButton />
               <section className="rounded-[24px] border border-sky-200 bg-sky-50/85 px-5 py-5 shadow-sm dark:border-sky-500/25 dark:bg-sky-500/10">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="max-w-3xl">
@@ -12460,10 +12551,12 @@ export default function ProjectWorkspace({
                   </span>
                 </div>
               </section>
+                </div>
+              </details>
             )}
 
             {isCasesSection && (
-              <details className="group rounded-[24px] border border-zinc-200 bg-white/88 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/88">
+              <details className="cf-modal-detail group rounded-[24px] border border-zinc-200 bg-white/88 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/88">
                 <summary className="flex cursor-pointer list-none flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
@@ -12481,11 +12574,12 @@ export default function ProjectWorkspace({
                       {traceabilityAnalysis.uncoveredSentences.length} uncovered
                     </span>
                     <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 transition group-open:-translate-y-0.5 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
-                      Deep Dive
+                      Open modal
                     </span>
                   </div>
                 </summary>
-                <div className="border-t border-zinc-200/80 px-5 py-4 dark:border-zinc-800">
+                <div className="cf-modal-panel">
+                  <ModalCloseButton />
               <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
                 <div className="rounded-[24px] border border-zinc-200 bg-white/88 px-5 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/88">
                   <div className="flex items-center justify-between gap-3">
@@ -12817,7 +12911,7 @@ export default function ProjectWorkspace({
             {isCasesSection && traceabilityAnalysis.uncoveredSentences.length > 0 && (
               <details
                 ref={uncoveredRequirementSectionRef}
-                className="group rounded-[24px] border border-amber-200 bg-amber-50/88 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10"
+                className="cf-modal-detail group rounded-[24px] border border-amber-200 bg-amber-50/88 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10"
               >
                 <summary className="flex cursor-pointer list-none flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
@@ -12833,11 +12927,12 @@ export default function ProjectWorkspace({
                       {uncoveredRequirementInsights.filter((item) => item.severity === "high").length} high severity
                     </span>
                     <span className="rounded-full border border-amber-200/80 bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700 transition group-open:-translate-y-0.5 dark:border-amber-500/20 dark:bg-zinc-950/70 dark:text-amber-300">
-                      Draft Queue
+                      Open modal
                     </span>
                   </div>
                 </summary>
-                <div className="border-t border-amber-200/80 px-5 py-4 dark:border-amber-500/20">
+                <div className="cf-modal-panel">
+                  <ModalCloseButton />
               <section className="rounded-[24px] border border-amber-200/0 bg-transparent px-0 py-0 shadow-none">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
@@ -12900,7 +12995,7 @@ export default function ProjectWorkspace({
             )}
 
             {isCasesSection && (
-              <details className="group rounded-[24px] border border-zinc-200 bg-white/88 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/88">
+              <details className="cf-modal-detail group rounded-[24px] border border-zinc-200 bg-white/88 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/88">
                 <summary className="flex cursor-pointer list-none flex-col gap-3 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
@@ -12934,11 +13029,12 @@ export default function ProjectWorkspace({
                       Clear
                     </button>
                     <span className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 transition group-open:-translate-y-0.5 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
-                      Batch Tools
+                      Open modal
                     </span>
                   </div>
                 </summary>
-                <div className="border-t border-zinc-200/80 px-5 py-4 dark:border-zinc-800">
+                <div className="cf-modal-panel">
+                  <ModalCloseButton />
               <section className="rounded-[24px] border border-zinc-200/0 bg-transparent px-0 py-0 shadow-none">
                 <div className="mt-4 grid gap-3 xl:grid-cols-[1.1fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr_auto]">
                   <input
