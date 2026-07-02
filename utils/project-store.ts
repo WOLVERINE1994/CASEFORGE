@@ -269,6 +269,56 @@ const getProjectPlanning = (value: unknown) => {
   return planning as Record<string, unknown>;
 };
 
+const getAutomationGenerationContext = (
+  value: unknown
+): Project["automationGenerationContext"] => {
+  const planning = getProjectPlanning(value);
+  const context = planning?.automationGenerationContext;
+
+  if (!context || typeof context !== "object" || Array.isArray(context)) {
+    return undefined;
+  }
+
+  const record = context as Record<string, unknown>;
+  const read = (key: string) => (typeof record[key] === "string" ? record[key] : "");
+
+  return {
+    authMode:
+      record.authMode === "login-form" ||
+      record.authMode === "saved-session" ||
+      record.authMode === "sso" ||
+      record.authMode === "otp" ||
+      record.authMode === "manual"
+        ? record.authMode
+        : "none",
+    baseUrl: read("baseUrl"),
+    blockersAcknowledged: record.blockersAcknowledged === true,
+    browserProfile:
+      record.browserProfile === "desktop-edge" ||
+      record.browserProfile === "desktop-firefox" ||
+      record.browserProfile === "mobile" ||
+      record.browserProfile === "tablet"
+        ? record.browserProfile
+        : "desktop-chrome",
+    cleanupNotes: read("cleanupNotes"),
+    environmentName: read("environmentName"),
+    locatorStrategy:
+      record.locatorStrategy === "css-xpath" ||
+      record.locatorStrategy === "live-preview-captured"
+        ? record.locatorStrategy
+        : "role-text-testid",
+    passwordVariable: read("passwordVariable"),
+    runScope:
+      record.runScope === "all" || record.runScope === "happy-path"
+        ? record.runScope
+        : "selected",
+    startPage: read("startPage"),
+    testDataNotes: read("testDataNotes"),
+    usernameVariable: read("usernameVariable"),
+    validationGoals: read("validationGoals"),
+  };
+};
+
 const getStoredRuns = (value: unknown): TestRunRecord[] => {
   const planning = getProjectPlanning(value);
   const runs = planning?.runs;
@@ -3151,6 +3201,7 @@ const toWorkspaceProject = (project: ProjectRecord): Project => {
     caseTemplates: getStoredCaseTemplates(project.rows),
     viewPreferences: getViewPreferences(project.rows),
     savedViews: getSavedViews(project.rows),
+    automationGenerationContext: getAutomationGenerationContext(project.rows),
     releaseReview: getReleaseReviewState(project.rows),
     runs: getStoredRuns(project.rows),
     automationSuites: getStoredAutomationSuites(project.rows),
@@ -3240,6 +3291,7 @@ const toWorkspaceAutomationProject = (project: AutomationProjectRecord): Project
   caseTemplates: getStoredCaseTemplates(project.rows),
   viewPreferences: getViewPreferences(project.rows),
   savedViews: getSavedViews(project.rows),
+  automationGenerationContext: getAutomationGenerationContext(project.rows),
   releaseReview: getReleaseReviewState(project.rows),
   runs: getStoredRuns(project.rows),
   automationSuites: getStoredAutomationSuites(project.rows),
@@ -3331,6 +3383,7 @@ const normalizeProject = (project: Project): Project => ({
   caseTemplates: project.caseTemplates ?? [],
   viewPreferences: project.viewPreferences ?? {},
   savedViews: project.savedViews ?? { cases: [], runs: [] },
+  automationGenerationContext: project.automationGenerationContext,
   releaseReview: project.releaseReview ?? {
     reviewedReasonIds: [],
     reviewedActionIds: [],
@@ -3785,6 +3838,7 @@ export const writeProjects = async (projects: Project[]) => {
                   caseTemplates: project.caseTemplates ?? [],
                   viewPreferences: project.viewPreferences ?? {},
                   savedViews: project.savedViews ?? { cases: [], runs: [] },
+                  automationGenerationContext: project.automationGenerationContext,
                   releaseReview: project.releaseReview ?? {
                     reviewedReasonIds: [],
                     reviewedActionIds: [],
@@ -3849,6 +3903,7 @@ export const writeProjects = async (projects: Project[]) => {
                   caseTemplates: project.caseTemplates ?? [],
                   viewPreferences: project.viewPreferences ?? {},
                   savedViews: project.savedViews ?? { cases: [], runs: [] },
+                  automationGenerationContext: project.automationGenerationContext,
                   releaseReview: project.releaseReview ?? {
                     reviewedReasonIds: [],
                     reviewedActionIds: [],

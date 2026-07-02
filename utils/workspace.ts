@@ -545,6 +545,22 @@ export type ProjectViewPreferences = {
   runsDefaultSavedViewId?: string;
 };
 
+export type AutomationGenerationContext = {
+  baseUrl: string;
+  environmentName: string;
+  startPage: string;
+  authMode: "none" | "login-form" | "saved-session" | "sso" | "otp" | "manual";
+  usernameVariable: string;
+  passwordVariable: string;
+  testDataNotes: string;
+  validationGoals: string;
+  browserProfile: "desktop-chrome" | "desktop-edge" | "desktop-firefox" | "mobile" | "tablet";
+  runScope: "selected" | "all" | "happy-path";
+  locatorStrategy: "role-text-testid" | "css-xpath" | "live-preview-captured";
+  cleanupNotes: string;
+  blockersAcknowledged: boolean;
+};
+
 export type CasesSavedView = {
   id: string;
   name: string;
@@ -1423,6 +1439,7 @@ export type Project = {
     cases: CasesSavedView[];
     runs: RunsSavedView[];
   };
+  automationGenerationContext?: AutomationGenerationContext;
   releaseReview?: ReleaseReviewState;
   runs?: TestRunRecord[];
   automationSuites?: AutomationSuite[];

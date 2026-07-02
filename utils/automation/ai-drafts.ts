@@ -25,6 +25,22 @@ export type GeneratedAutomationDraft = {
   steps: AutomationStep[];
 };
 
+export type AutomationDraftContext = {
+  baseUrl?: string;
+  environmentName?: string;
+  startPage?: string;
+  authMode?: string;
+  usernameVariable?: string;
+  passwordVariable?: string;
+  testDataNotes?: string;
+  validationGoals?: string;
+  browserProfile?: string;
+  runScope?: string;
+  locatorStrategy?: string;
+  cleanupNotes?: string;
+  blockersAcknowledged?: boolean;
+};
+
 type AiLocatorCandidate = {
   strategy?: string;
   value?: string;
@@ -379,7 +395,10 @@ const extractJson = (text: string) => {
   return JSON.parse(candidate.slice(start, end + 1)) as AiDraftResponse;
 };
 
-const fallbackDraftForCase = (manualCase: ManualAutomationCase): GeneratedAutomationDraft => {
+const fallbackDraftForCase = (
+  manualCase: ManualAutomationCase,
+  context?: AutomationDraftContext,
+): GeneratedAutomationDraft => {
   const manualSteps = splitManualSteps(manualCase.steps);
   const steps: AutomationStep[] = manualSteps.map((step, index) => {
     const lower = step.toLowerCase();
@@ -431,14 +450,23 @@ const fallbackDraftForCase = (manualCase: ManualAutomationCase): GeneratedAutoma
     name: manualCase.title || `Automation for ${manualCase.id}`,
     sourceCaseId: manualCase.id,
     steps,
-    variables: {},
+    variables: {
+      ...(context?.baseUrl?.trim() ? { baseUrl: context.baseUrl.trim() } : {}),
+      ...(context?.usernameVariable?.trim() ? { [context.usernameVariable.trim()]: "" } : {}),
+      ...(context?.passwordVariable?.trim() ? { [context.passwordVariable.trim()]: "" } : {}),
+    },
     warnings: [
       "Fallback draft was created from manual step wording. Review locators and input values before running.",
+      ...(!context?.baseUrl?.trim() ? ["Base URL is missing. Set {{baseUrl}} before running."] : []),
     ],
   };
 };
 
-const promptForCases = (manualCases: ManualAutomationCase[], requirement?: string) => `Convert these manual QA cases into editable CaseForge automation draft scenarios.
+const promptForCases = (
+  manualCases: ManualAutomationCase[],
+  requirement?: string,
+  automationContext?: AutomationDraftContext,
+) => `Convert these manual QA cases into editable CaseForge automation draft scenarios.
 
 Return JSON only. Do not use markdown.
 
@@ -459,6 +487,11 @@ Allowed command actions:
 
 Prefer reviewable CaseForge commands over code. Do not output Playwright, Selenium, JavaScript, or prose.
 Use variables like {{baseUrl}}, {{email}}, {{password}} for reusable data.
+Never guess the target URL. Use {{baseUrl}} for navigation and include a baseUrl variable from automation context when available.
+If authMode is login-form, saved-session, sso, otp, or manual, create reviewable login/precondition steps and warnings instead of assuming credentials or bypassing auth.
+Add validation steps for the expected result and the automation validation goals.
+Add logMessage steps for important captured values or unresolved blockers.
+Use loops/conditions only when the manual case or context clearly requires repeated rows, lists, responsive branches, or optional UI states.
 Use CSS or XPath locator candidates when likely, but be honest: add warnings for weak locators.
 Every scenario must include sourceCaseId matching the manual case id.
 
@@ -486,10 +519,14 @@ JSON shape:
 Requirement context:
 ${requirement?.trim() || "No extra requirement context was provided."}
 
+Automation setup context:
+${JSON.stringify(automationContext ?? {}, null, 2)}
+
 Manual cases:
 ${JSON.stringify(manualCases, null, 2)}`;
 
 export async function generateAutomationDraftsFromManualCases(input: {
+  automationContext?: AutomationDraftContext;
   manualCases: ManualAutomationCase[];
   requirement?: string;
 }): Promise<{
@@ -518,7 +555,7 @@ export async function generateAutomationDraftsFromManualCases(input: {
         },
         {
           role: "user",
-          content: promptForCases(manualCases, input.requirement),
+          content: promptForCases(manualCases, input.requirement, input.automationContext),
         },
       ],
       temperature: 0.12,
@@ -545,14 +582,14 @@ export async function generateAutomationDraftsFromManualCases(input: {
     const aiScenario = byCaseId.get(manualCase.id);
     if (!aiScenario) {
       usedFallback = true;
-      return fallbackDraftForCase(manualCase);
+      return fallbackDraftForCase(manualCase, input.automationContext);
     }
 
     const aiSteps = Array.isArray(aiScenario.steps) ? aiScenario.steps : [];
     const steps = aiSteps.map((step, index) => makeStep(step, index));
     if (!steps.length) {
       usedFallback = true;
-      return fallbackDraftForCase(manualCase);
+      return fallbackDraftForCase(manualCase, input.automationContext);
     }
 
     return {

@@ -79,6 +79,7 @@ import {
   reviewStatusLabels,
   resolveTypeForMode,
   type AuditEntry,
+  type AutomationGenerationContext,
   type AutomationBinding,
   type AutomationExecution,
   type AutomationExecutionArtifact,
@@ -126,6 +127,22 @@ const STORAGE_KEY = "tc_projects_v1";
 const DRAFT_STORAGE_KEY = "tc_workspace_draft_v1";
 
 type WorkspaceSaveStatus = "idle" | "saving" | "saved" | "local" | "error";
+
+const defaultAutomationGenerationContext = (): AutomationGenerationContext => ({
+  authMode: "none",
+  baseUrl: "",
+  blockersAcknowledged: false,
+  browserProfile: "desktop-chrome",
+  cleanupNotes: "",
+  environmentName: "QA",
+  locatorStrategy: "role-text-testid",
+  passwordVariable: "password",
+  runScope: "selected",
+  startPage: "",
+  testDataNotes: "",
+  usernameVariable: "email",
+  validationGoals: "Validate visible UI result, URL changes, and stored variables where applicable.",
+});
 
 const buildDefaultAutomationReuseLibrary = (projectId: string) => ({
   blocks: [],
@@ -685,6 +702,8 @@ export default function ProjectWorkspace({
   >([]);
   const [activeAutomationEnvironmentId, setActiveAutomationEnvironmentId] =
     useState("");
+  const [automationGenerationContext, setAutomationGenerationContext] =
+    useState<AutomationGenerationContext>(() => defaultAutomationGenerationContext());
   const [generatingAutomationRowIds, setGeneratingAutomationRowIds] = useState<string[]>([]);
   const [generationFeedbackLog, setGenerationFeedbackLog] = useState<
     NonNullable<Project["generationFeedbackLog"]>
@@ -3098,6 +3117,7 @@ export default function ProjectWorkspace({
         automationReusableBlocks,
         automationSelectorPresets,
         automationEnvironmentBindings,
+        automationGenerationContext,
         activeAutomationEnvironmentId,
         generationFeedbackLog,
         viewPreferences: {
@@ -3140,6 +3160,7 @@ export default function ProjectWorkspace({
       automationReusableBlocks,
       automationSelectorPresets,
       automationEnvironmentBindings,
+      automationGenerationContext,
       activeAutomationEnvironmentId,
       coverageDepth,
       generationFeedbackLog,
@@ -3462,6 +3483,9 @@ export default function ProjectWorkspace({
       setAutomationSelectorPresets(reuseLibrary.selectorPresets);
       setAutomationEnvironmentBindings(reuseLibrary.environments);
       setActiveAutomationEnvironmentId(reuseLibrary.activeEnvironmentId);
+      setAutomationGenerationContext(
+        project.automationGenerationContext ?? defaultAutomationGenerationContext()
+      );
       setGenerationFeedbackLog(project.generationFeedbackLog ?? []);
       setCasesSavedViews(project.savedViews?.cases ?? []);
       setCasesDefaultPreset(project.viewPreferences?.casesDefaultPreset ?? "default");
@@ -3563,6 +3587,7 @@ export default function ProjectWorkspace({
     setAutomationBindings([]);
     setAutomationExecutions([]);
     setAutomationArtifacts([]);
+    setAutomationGenerationContext(defaultAutomationGenerationContext());
     setCasesSavedViews([]);
     setCasesDefaultPreset("default");
     setCaseCommentDrafts({});
@@ -4755,11 +4780,60 @@ export default function ProjectWorkspace({
     [addAuditEntry, appendCaseReviewHistory, generationMode, input, rows]
   );
 
+  const automationReadinessBlockers = useMemo(() => {
+    const blockers: string[] = [];
+    if (!automationGenerationContext.baseUrl.trim()) {
+      blockers.push("Base URL is required so generated scripts do not guess where to start.");
+    }
+    if (!automationGenerationContext.environmentName.trim()) {
+      blockers.push("Environment name is required for reusable QA/staging/production runs.");
+    }
+    if (!automationGenerationContext.validationGoals.trim()) {
+      blockers.push("Validation goals are required so expected results become real assertions.");
+    }
+    if (
+      automationGenerationContext.authMode !== "none" &&
+      automationGenerationContext.authMode !== "saved-session" &&
+      (!automationGenerationContext.usernameVariable.trim() ||
+        !automationGenerationContext.passwordVariable.trim())
+    ) {
+      blockers.push("Auth variables are required when login or SSO handling is part of the flow.");
+    }
+    if (rows.length === 0) {
+      blockers.push("At least one manual case is required before automation can be generated.");
+    }
+    return blockers;
+  }, [automationGenerationContext, rows.length]);
+  const automationReadinessScore = Math.max(
+    0,
+    Math.min(100, 100 - automationReadinessBlockers.length * 20)
+  );
+  const updateAutomationGenerationContext = <K extends keyof AutomationGenerationContext>(
+    key: K,
+    value: AutomationGenerationContext[K]
+  ) => {
+    setAutomationGenerationContext((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  };
+
   const generateAutomationForRow = useCallback(
     async (rowId: string) => {
       const row = rows.find((entry) => entry.id === rowId);
       if (!row) {
         showWorkspaceNotice("error", "That case could not be found for automation generation.");
+        return;
+      }
+
+      if (
+        automationReadinessBlockers.length > 0 &&
+        !automationGenerationContext.blockersAcknowledged
+      ) {
+        showWorkspaceNotice(
+          "error",
+          `Resolve automation readiness first: ${automationReadinessBlockers[0]}`
+        );
         return;
       }
 
@@ -4823,6 +4897,7 @@ export default function ProjectWorkspace({
           `/api/automation/projects/${projectRouteRef}/generate-from-cases`,
           {
             body: JSON.stringify({
+              automationContext: automationGenerationContext,
               cases: [row],
               requirement: input,
             }),
@@ -4888,6 +4963,8 @@ export default function ProjectWorkspace({
     },
     [
       addAuditEntry,
+      automationGenerationContext,
+      automationReadinessBlockers,
       input,
       persistProjects,
       projectName,
@@ -4900,14 +4977,23 @@ export default function ProjectWorkspace({
   );
 
   const generateAutomationForSelectedRows = useCallback(async () => {
-    if (selectedRowIds.length === 0) {
-      showWorkspaceNotice("error", "Select at least one case before generating automation.");
+    if (
+      automationReadinessBlockers.length > 0 &&
+      !automationGenerationContext.blockersAcknowledged
+    ) {
+      showWorkspaceNotice(
+        "error",
+        `Resolve automation readiness first: ${automationReadinessBlockers[0]}`
+      );
       return;
     }
 
-    const selectedRows = rows.filter((row) => selectedRowIds.includes(row.id));
+    const selectedRows =
+      selectedRowIds.length > 0
+        ? rows.filter((row) => selectedRowIds.includes(row.id))
+        : rows.filter((row) => !row.archived);
     if (!selectedRows.length) {
-      showWorkspaceNotice("error", "Selected cases are no longer available.");
+      showWorkspaceNotice("error", "There are no cases available for automation generation.");
       return;
     }
 
@@ -4916,13 +5002,11 @@ export default function ProjectWorkspace({
       return;
     }
 
-    const projectRouteRef = !currentProjectId && !initialProjectRef
-      ? ""
-      : encodeURIComponent(projectKey.trim() || currentProjectId || initialProjectRef || "");
-    if (!projectRouteRef) {
+    const trimmedProjectName = projectName.trim();
+    if (!trimmedProjectName) {
       showWorkspaceNotice(
         "error",
-        "Save this workspace as a project before generating automation drafts."
+        "Name and save this workspace before generating automation drafts."
       );
       return;
     }
@@ -4931,11 +5015,50 @@ export default function ProjectWorkspace({
       Array.from(new Set([...current, ...selectedRows.map((row) => row.id)]))
     );
     try {
+      showWorkspaceNotice(
+        "info",
+        `Preparing ${selectedRows.length} cases for complete automation...`
+      );
+      const { updatedProject, updatedProjects } = upsertProject(
+        projectsRef.current,
+        trimmedProjectName
+      );
+      const localProjects = saveProjectsToBrowserFallback(updatedProjects);
+      const localProject =
+        localProjects.find((project) => project.id === updatedProject.id) ??
+        updatedProject;
+
+      setResolvedProjectId(localProject.id);
+      setManualSaveStatus("local");
+      setAutosaveStatus("saving");
+
+      try {
+        const syncedProjects = await persistProjects(updatedProjects);
+        const syncedProject =
+          syncedProjects.find((project) => project.id === updatedProject.id) ??
+          localProject;
+
+        setResolvedProjectId(syncedProject.id);
+        setManualSaveStatus("saved");
+        setAutosaveStatus("saved");
+        setLastSavedAt(syncedProject.updatedAt);
+      } catch (syncError) {
+        console.error("Automation project sync error:", syncError);
+        setAutosaveStatus("local");
+        showWorkspaceNotice(
+          "error",
+          "Automation needs the project library sync to complete first. The project is saved locally, but the server project is not available yet."
+        );
+        return;
+      }
+
+      const projectRouteRef = encodeURIComponent(localProject.id);
       showWorkspaceNotice("info", `Generating automation drafts for ${selectedRows.length} cases...`);
       const response = await fetch(
         `/api/automation/projects/${projectRouteRef}/generate-from-cases`,
         {
           body: JSON.stringify({
+            automationContext: automationGenerationContext,
             cases: selectedRows,
             requirement: input,
           }),
@@ -5002,6 +5125,7 @@ export default function ProjectWorkspace({
               },
             ]
       );
+      router.push(`/projects/${projectRouteRef}/automation/scenarios`);
     } catch (error) {
       showWorkspaceNotice(
         "error",
@@ -5016,14 +5140,18 @@ export default function ProjectWorkspace({
     }
   }, [
     addAuditEntry,
-    currentProjectId,
+    automationGenerationContext,
+    automationReadinessBlockers,
     generateAutomationForRow,
-    initialProjectRef,
     input,
-    projectKey,
+    persistProjects,
+    projectName,
     rows,
+    router,
+    saveProjectsToBrowserFallback,
     selectedRowIds,
     showWorkspaceNotice,
+    upsertProject,
   ]);
 
   const runAutomationForRow = useCallback(
@@ -12095,6 +12223,246 @@ export default function ProjectWorkspace({
             )}
 
             {isCasesSection && (
+              <section className="rounded-[24px] border border-sky-200 bg-sky-50/85 px-5 py-5 shadow-sm dark:border-sky-500/25 dark:bg-sky-500/10">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="max-w-3xl">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700 dark:text-sky-300">
+                      Automation Readiness
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold text-sky-950 dark:text-sky-50">
+                      Generate complete editable automation
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-sky-900/80 dark:text-sky-100/80">
+                      The generated draft uses the same CaseForge command timeline, so you can edit locators, insert validations, add loops, add conditions, and adjust variables before running.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full border border-sky-300 bg-white/80 px-3 py-1.5 text-xs font-semibold text-sky-800 dark:border-sky-500/30 dark:bg-zinc-950/60 dark:text-sky-200">
+                      Readiness {automationReadinessScore}%
+                    </span>
+                    <span className="rounded-full border border-sky-300 bg-white/80 px-3 py-1.5 text-xs font-semibold text-sky-800 dark:border-sky-500/30 dark:bg-zinc-950/60 dark:text-sky-200">
+                      {selectedRowIds.length > 0 ? `${selectedRowIds.length} selected` : `${rows.filter((row) => !row.archived).length} cases`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-3 lg:grid-cols-3">
+                  <label className="text-sm font-medium text-sky-950 dark:text-sky-100">
+                    Base URL
+                    <input
+                      type="url"
+                      value={automationGenerationContext.baseUrl}
+                      onChange={(event) =>
+                        updateAutomationGenerationContext("baseUrl", event.target.value)
+                      }
+                      placeholder="https://staging.example.com"
+                      className="mt-2 w-full rounded-2xl border border-sky-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-sky-500/10"
+                    />
+                  </label>
+                  <label className="text-sm font-medium text-sky-950 dark:text-sky-100">
+                    Environment
+                    <input
+                      type="text"
+                      value={automationGenerationContext.environmentName}
+                      onChange={(event) =>
+                        updateAutomationGenerationContext("environmentName", event.target.value)
+                      }
+                      placeholder="QA / Staging / Production"
+                      className="mt-2 w-full rounded-2xl border border-sky-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-sky-500/10"
+                    />
+                  </label>
+                  <label className="text-sm font-medium text-sky-950 dark:text-sky-100">
+                    Start page
+                    <input
+                      type="text"
+                      value={automationGenerationContext.startPage}
+                      onChange={(event) =>
+                        updateAutomationGenerationContext("startPage", event.target.value)
+                      }
+                      placeholder="/login, /dashboard, or current page"
+                      className="mt-2 w-full rounded-2xl border border-sky-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-sky-500/10"
+                    />
+                  </label>
+                  <label className="text-sm font-medium text-sky-950 dark:text-sky-100">
+                    Auth mode
+                    <select
+                      value={automationGenerationContext.authMode}
+                      onChange={(event) =>
+                        updateAutomationGenerationContext(
+                          "authMode",
+                          event.target.value as AutomationGenerationContext["authMode"]
+                        )
+                      }
+                      className="mt-2 w-full rounded-2xl border border-sky-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-sky-500/10"
+                    >
+                      <option value="none">No login</option>
+                      <option value="login-form">Login form</option>
+                      <option value="saved-session">Saved session</option>
+                      <option value="sso">SSO</option>
+                      <option value="otp">OTP / email link</option>
+                      <option value="manual">Manual precondition</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium text-sky-950 dark:text-sky-100">
+                    Username variable
+                    <input
+                      type="text"
+                      value={automationGenerationContext.usernameVariable}
+                      onChange={(event) =>
+                        updateAutomationGenerationContext("usernameVariable", event.target.value)
+                      }
+                      placeholder="email"
+                      className="mt-2 w-full rounded-2xl border border-sky-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-sky-500/10"
+                    />
+                  </label>
+                  <label className="text-sm font-medium text-sky-950 dark:text-sky-100">
+                    Password variable
+                    <input
+                      type="text"
+                      value={automationGenerationContext.passwordVariable}
+                      onChange={(event) =>
+                        updateAutomationGenerationContext("passwordVariable", event.target.value)
+                      }
+                      placeholder="password"
+                      className="mt-2 w-full rounded-2xl border border-sky-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-sky-500/10"
+                    />
+                  </label>
+                  <label className="text-sm font-medium text-sky-950 dark:text-sky-100">
+                    Browser profile
+                    <select
+                      value={automationGenerationContext.browserProfile}
+                      onChange={(event) =>
+                        updateAutomationGenerationContext(
+                          "browserProfile",
+                          event.target.value as AutomationGenerationContext["browserProfile"]
+                        )
+                      }
+                      className="mt-2 w-full rounded-2xl border border-sky-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-sky-500/10"
+                    >
+                      <option value="desktop-chrome">Desktop Chrome</option>
+                      <option value="desktop-edge">Desktop Edge</option>
+                      <option value="desktop-firefox">Desktop Firefox</option>
+                      <option value="mobile">Mobile</option>
+                      <option value="tablet">Tablet</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium text-sky-950 dark:text-sky-100">
+                    Locator strategy
+                    <select
+                      value={automationGenerationContext.locatorStrategy}
+                      onChange={(event) =>
+                        updateAutomationGenerationContext(
+                          "locatorStrategy",
+                          event.target.value as AutomationGenerationContext["locatorStrategy"]
+                        )
+                      }
+                      className="mt-2 w-full rounded-2xl border border-sky-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-sky-500/10"
+                    >
+                      <option value="role-text-testid">Role, text, test id</option>
+                      <option value="css-xpath">CSS / XPath allowed</option>
+                      <option value="live-preview-captured">Prefer Live Preview captured locators</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium text-sky-950 dark:text-sky-100">
+                    Scope
+                    <select
+                      value={automationGenerationContext.runScope}
+                      onChange={(event) =>
+                        updateAutomationGenerationContext(
+                          "runScope",
+                          event.target.value as AutomationGenerationContext["runScope"]
+                        )
+                      }
+                      className="mt-2 w-full rounded-2xl border border-sky-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-sky-500/10"
+                    >
+                      <option value="selected">Selected cases first</option>
+                      <option value="all">All cases</option>
+                      <option value="happy-path">Happy path first</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                  <label className="text-sm font-medium text-sky-950 dark:text-sky-100">
+                    Test data notes
+                    <textarea
+                      value={automationGenerationContext.testDataNotes}
+                      onChange={(event) =>
+                        updateAutomationGenerationContext("testDataNotes", event.target.value)
+                      }
+                      rows={4}
+                      placeholder="Accounts, CSV/API/DB data, OTP/email handling, generated data rules"
+                      className="mt-2 w-full resize-y rounded-2xl border border-sky-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-sky-500/10"
+                    />
+                  </label>
+                  <label className="text-sm font-medium text-sky-950 dark:text-sky-100">
+                    Validation goals
+                    <textarea
+                      value={automationGenerationContext.validationGoals}
+                      onChange={(event) =>
+                        updateAutomationGenerationContext("validationGoals", event.target.value)
+                      }
+                      rows={4}
+                      placeholder="UI, URL, API, DB, table, accordion, analytics, visual checks"
+                      className="mt-2 w-full resize-y rounded-2xl border border-sky-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-sky-500/10"
+                    />
+                  </label>
+                  <label className="text-sm font-medium text-sky-950 dark:text-sky-100">
+                    Cleanup / reset
+                    <textarea
+                      value={automationGenerationContext.cleanupNotes}
+                      onChange={(event) =>
+                        updateAutomationGenerationContext("cleanupNotes", event.target.value)
+                      }
+                      rows={4}
+                      placeholder="Delete records, reset cart/session, test account cleanup"
+                      className="mt-2 w-full resize-y rounded-2xl border border-sky-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-sky-500/10"
+                    />
+                  </label>
+                </div>
+
+                {automationReadinessBlockers.length > 0 ? (
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                    <p className="font-semibold">Readiness blockers</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {automationReadinessBlockers.map((blocker) => (
+                        <li key={blocker}>{blocker}</li>
+                      ))}
+                    </ul>
+                    <label className="mt-3 flex items-start gap-2 text-sm font-medium">
+                      <input
+                        type="checkbox"
+                        checked={automationGenerationContext.blockersAcknowledged}
+                        onChange={(event) =>
+                          updateAutomationGenerationContext(
+                            "blockersAcknowledged",
+                            event.target.checked
+                          )
+                        }
+                        className="mt-1 h-4 w-4 rounded border-amber-300 text-sky-700 focus:ring-sky-500"
+                      />
+                      Generate a review-only draft even with these blockers.
+                    </label>
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void generateAutomationForSelectedRows()}
+                    disabled={rows.length === 0}
+                    className="rounded-2xl bg-[linear-gradient(135deg,_#0369a1_0%,_#0f766e_100%)] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_35px_-20px_rgba(3,105,161,0.65)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Generate Complete Automation
+                  </button>
+                  <span className="inline-flex items-center rounded-full border border-sky-300 bg-white/75 px-3 py-1.5 text-xs font-semibold text-sky-800 dark:border-sky-500/30 dark:bg-zinc-950/60 dark:text-sky-200">
+                    {selectedRowIds.length > 0 ? "Selected cases will be automated" : "No selection: all active cases will be automated"}
+                  </span>
+                </div>
+              </section>
+            )}
+
+            {isCasesSection && (
               <details className="group rounded-[24px] border border-zinc-200 bg-white/88 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/88">
                 <summary className="flex cursor-pointer list-none flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
@@ -12692,10 +13060,10 @@ export default function ProjectWorkspace({
                   <button
                     type="button"
                     onClick={() => void generateAutomationForSelectedRows()}
-                    disabled={selectedRowIds.length === 0}
+                    disabled={rows.length === 0}
                     className="min-h-[44px] rounded-2xl border border-sky-200 bg-sky-50 px-5 py-2.5 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
                   >
-                    Generate Automation
+                    Generate Complete Automation
                   </button>
                 </div>
 

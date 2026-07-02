@@ -4,6 +4,7 @@ import {
   resolveAutomationProjectId,
 } from "../../../../../../utils/automation/store";
 import {
+  type AutomationDraftContext,
   generateAutomationDraftsFromManualCases,
   type ManualAutomationCase,
 } from "../../../../../../utils/automation/ai-drafts";
@@ -14,6 +15,28 @@ type RouteContext = {
 
 const cleanText = (value: unknown) =>
   typeof value === "string" ? value.trim() : "";
+
+const normalizeAutomationContext = (value: unknown): AutomationDraftContext => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const record = value as Record<string, unknown>;
+  const read = (key: string) => cleanText(record[key]);
+
+  return {
+    authMode: read("authMode"),
+    baseUrl: read("baseUrl"),
+    blockersAcknowledged: record.blockersAcknowledged === true,
+    browserProfile: read("browserProfile"),
+    cleanupNotes: read("cleanupNotes"),
+    environmentName: read("environmentName"),
+    locatorStrategy: read("locatorStrategy"),
+    passwordVariable: read("passwordVariable"),
+    runScope: read("runScope"),
+    startPage: read("startPage"),
+    testDataNotes: read("testDataNotes"),
+    usernameVariable: read("usernameVariable"),
+    validationGoals: read("validationGoals"),
+  };
+};
 
 const normalizeManualCase = (value: unknown): ManualAutomationCase | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -70,7 +93,9 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
+    const automationContext = normalizeAutomationContext(body.automationContext);
     const generated = await generateAutomationDraftsFromManualCases({
+      automationContext,
       manualCases,
       requirement: cleanText(body.requirement),
     });
@@ -88,6 +113,7 @@ export async function POST(request: Request, context: RouteContext) {
           confidence: draft.confidence,
           sourceCaseId: draft.sourceCaseId,
           sourceType: "manual-case",
+          automationContext,
           usedFallback: generated.usedFallback,
           variables: draft.variables,
         },
