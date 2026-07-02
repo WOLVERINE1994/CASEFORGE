@@ -225,6 +225,7 @@ type Props = {
   selectedRowIds?: string[];
   onToggleRowSelection?: (rowId: string) => void;
   onToggleSelectAll?: () => void;
+  footerActions?: ReactNode;
   stickyHeader?: boolean;
 };
 
@@ -405,6 +406,7 @@ export default function TestCaseTable({
   selectedRowIds = [],
   onToggleRowSelection,
   onToggleSelectAll,
+  footerActions,
   stickyHeader = true,
 }: Props) {
   const handleDragOver = (
@@ -2228,6 +2230,11 @@ export default function TestCaseTable({
           </tbody>
         </table>
       </div>
+      {footerActions ? (
+        <div className="border-t border-zinc-200/80 bg-zinc-50/90 px-5 py-5 dark:border-zinc-800 dark:bg-zinc-950/72">
+          {footerActions}
+        </div>
+      ) : null}
     </div>
   );
 }
