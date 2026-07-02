@@ -13165,6 +13165,39 @@ export default function ProjectWorkspace({
               onToggleSelectAll={toggleSelectAllFilteredRows}
               stickyHeader={!(embedded && isCasesSection)}
             />
+
+            {isCasesSection ? (
+              <section className="rounded-[24px] border border-emerald-200 bg-white/94 px-5 py-5 shadow-[0_22px_60px_-42px_rgba(15,23,42,0.45)] dark:border-emerald-500/25 dark:bg-zinc-900/90">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800 dark:text-emerald-200">
+                      Automation
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+                      Create automation from manual cases
+                    </h3>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+                        Readiness {automationReadinessScore}%
+                      </span>
+                      <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100">
+                        {selectedRowIds.length > 0
+                          ? `${selectedRowIds.length} selected`
+                          : `${rows.filter((row) => !row.archived).length} active cases`}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void generateAutomationForSelectedRows()}
+                    disabled={rows.length === 0}
+                    className="cf-readable-on-dark inline-flex min-h-[48px] items-center justify-center rounded-2xl bg-[linear-gradient(135deg,_#0f766e_0%,_#14532d_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_35px_-20px_rgba(5,150,105,0.7)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    Create Automation
+                  </button>
+                </div>
+              </section>
+            ) : null}
           </>
         ) : (
           <section className="rounded-[28px] border border-dashed border-zinc-300 bg-white/70 px-6 py-16 text-center shadow-sm dark:border-zinc-700 dark:bg-zinc-900/60">
