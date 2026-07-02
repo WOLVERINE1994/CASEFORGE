@@ -9179,13 +9179,13 @@ export default function ProjectWorkspace({
                 <button
                   type="button"
                   onClick={focusGeneratedCasesSection}
-                  className="rounded-xl bg-[linear-gradient(135deg,_#0f766e_0%,_#14532d_100%)] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_35px_-18px_rgba(5,150,105,0.52)] transition hover:brightness-110"
+                  className="cf-hover-invert rounded-xl bg-[linear-gradient(135deg,_#0f766e_0%,_#14532d_100%)] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_35px_-18px_rgba(5,150,105,0.52)] transition hover:brightness-110"
                 >
                   Review Generated Cases
                 </button>
                 <Link
                   href={activeProjectCasesHref}
-                  className="rounded-xl border border-emerald-200 bg-white px-5 py-3 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100/60 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-emerald-200 dark:hover:bg-emerald-500/10"
+                  className="cf-hover-invert-light rounded-xl border border-emerald-200 bg-white px-5 py-3 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100/60 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-emerald-200 dark:hover:bg-emerald-500/10"
                 >
                   Open Full Cases Route
                 </Link>
