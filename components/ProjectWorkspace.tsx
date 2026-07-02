@@ -8514,7 +8514,7 @@ export default function ProjectWorkspace({
         </section>
 
         <div className="cf-modal-toolbar" aria-label="Workflow intelligence tools">
-        <details className="cf-modal-detail cf-modal-value group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] dark:border-zinc-800 dark:bg-zinc-900/92">
+        <details className="cf-modal-detail cf-modal-value group rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] dark:border-zinc-800 dark:bg-zinc-900/92">
           <summary className="flex cursor-pointer list-none flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
@@ -8534,7 +8534,7 @@ export default function ProjectWorkspace({
           </div>
         </details>
 
-        <details className="cf-modal-detail cf-modal-telemetry group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] dark:border-zinc-800 dark:bg-zinc-900/92">
+        <details className="cf-modal-detail cf-modal-telemetry group rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] dark:border-zinc-800 dark:bg-zinc-900/92">
           <summary className="flex cursor-pointer list-none flex-col gap-4 px-5 py-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
@@ -8633,7 +8633,7 @@ export default function ProjectWorkspace({
           </div>
         </details>
 
-        <details className="cf-modal-detail cf-modal-setup group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
+        <details className="cf-modal-detail cf-modal-setup group rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
@@ -8675,7 +8675,7 @@ export default function ProjectWorkspace({
           </div>
         </details>
 
-        <details className="cf-modal-detail cf-modal-imports group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
+        <details className="cf-modal-detail cf-modal-imports group rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
@@ -8899,7 +8899,7 @@ export default function ProjectWorkspace({
         </section>
 
         <div className="cf-modal-toolbar" aria-label="Planning and quality tools">
-        <details className="cf-modal-detail cf-modal-navigation group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
+        <details className="cf-modal-detail cf-modal-navigation group rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
@@ -8996,7 +8996,7 @@ export default function ProjectWorkspace({
           </section>
         ) : (
           <>
-            <details className="cf-modal-detail cf-modal-guidance group overflow-hidden rounded-[28px] border border-white/80 bg-white/88 shadow-[0_24px_65px_-36px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/88">
+            <details className="cf-modal-detail cf-modal-guidance group rounded-[28px] border border-white/80 bg-white/88 shadow-[0_24px_65px_-36px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/88">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
@@ -9033,7 +9033,7 @@ export default function ProjectWorkspace({
               </div>
             </details>
 
-            <details className="cf-modal-detail cf-modal-qa group overflow-hidden rounded-[28px] border border-white/80 bg-white/88 shadow-[0_24px_65px_-36px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/88">
+            <details className="cf-modal-detail cf-modal-qa group rounded-[28px] border border-white/80 bg-white/88 shadow-[0_24px_65px_-36px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/88">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">

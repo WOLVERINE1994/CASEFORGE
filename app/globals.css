@@ -402,7 +402,8 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
   display: inline-block !important;
   position: relative;
   width: auto;
-  max-width: min(100%, 18rem);
+  min-width: 10.75rem;
+  max-width: min(100%, 14rem);
   margin: 0.22rem;
   vertical-align: top;
   overflow: visible !important;
@@ -426,6 +427,7 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 }
 
 .cf-modal-toolbar > .cf-modal-detail {
+  flex: 0 0 auto;
   margin: 0 !important;
 }
 
@@ -445,7 +447,7 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 .cf-modal-detail > summary {
   display: grid !important;
   min-height: 2.85rem !important;
-  padding: 0.34rem 0.44rem !important;
+  padding: 0.34rem 0.76rem 0.34rem 0.44rem !important;
   grid-template-columns: 2.15rem minmax(0, 1fr);
   grid-template-rows: auto;
   gap: 0.54rem !important;
@@ -491,7 +493,7 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 }
 
 .cf-modal-detail > summary > :last-child {
-  display: none !important;
+  display: none;
 }
 
 .cf-modal-detail > summary > div:last-child span:not(:last-child) {
@@ -503,7 +505,7 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 }
 
 .cf-modal-detail > summary p:first-child {
-  max-width: 8.6rem !important;
+  max-width: 9.6rem !important;
   overflow: hidden !important;
   color: color-mix(in srgb, var(--cf-modal-accent, #0f766e) 50%, #334155) !important;
   font-size: 0.64rem !important;
@@ -600,6 +602,7 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
   border-color: transparent !important;
   background: transparent !important;
   box-shadow: none !important;
+  min-width: 0;
   transform: none !important;
   z-index: auto;
 }
@@ -616,17 +619,30 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
   display: none;
 }
 
+.cf-modal-detail[open]::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: block;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(10px);
+}
+
 .cf-modal-detail > .cf-modal-panel {
   display: none;
 }
 
 .cf-modal-detail[open] > .cf-modal-panel {
   position: fixed;
-  inset: 4vh max(1rem, calc((100vw - min(1120px, calc(100vw - 2rem))) / 2));
-  z-index: 90;
+  inset: 1.25rem;
+  z-index: 9999;
   display: block;
-  max-height: 92vh;
-  overflow-y: auto;
+  width: auto;
+  max-width: none;
+  max-height: calc(100dvh - 2.5rem);
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid rgba(226, 232, 240, 0.9);
   border-radius: 24px;
   background: rgba(248, 250, 252, 0.98);
@@ -669,9 +685,18 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 }
 
 @media (max-width: 640px) {
+  .cf-modal-detail {
+    min-width: 9.5rem;
+    max-width: calc(50vw - 0.5rem);
+  }
+
+  .cf-modal-detail > summary p:first-child {
+    max-width: 6.8rem !important;
+  }
+
   .cf-modal-detail[open] > .cf-modal-panel {
-    inset: 1rem;
-    max-height: calc(100vh - 2rem);
+    inset: 0.75rem;
+    max-height: calc(100dvh - 1.5rem);
     border-radius: 18px;
     padding: 1rem;
   }
