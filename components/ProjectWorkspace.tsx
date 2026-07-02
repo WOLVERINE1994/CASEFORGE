@@ -8513,6 +8513,7 @@ export default function ProjectWorkspace({
           </div>
         </section>
 
+        <div className="cf-modal-toolbar" aria-label="Workflow intelligence tools">
         <details className="cf-modal-detail cf-modal-value group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] dark:border-zinc-800 dark:bg-zinc-900/92">
           <summary className="flex cursor-pointer list-none flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -8708,6 +8709,7 @@ export default function ProjectWorkspace({
             />
           </div>
         </details>
+        </div>
 
         <section className="overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/96 shadow-[0_26px_58px_-40px_rgba(15,23,42,0.24)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94">
           <div className="border-b border-zinc-200/80 bg-zinc-50/85 px-6 py-5 dark:border-zinc-800 dark:bg-zinc-950/70">

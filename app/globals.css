@@ -399,7 +399,7 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 }
 
 .cf-modal-detail {
-  display: inline-block;
+  display: inline-block !important;
   position: relative;
   width: auto;
   max-width: min(100%, 18rem);
@@ -416,6 +416,18 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
     border-color 160ms ease,
     box-shadow 160ms ease,
     transform 160ms ease;
+}
+
+.cf-modal-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin: -0.15rem 0 0.15rem;
+}
+
+.cf-modal-toolbar > .cf-modal-detail {
+  margin: 0 !important;
 }
 
 .cf-modal-detail:hover {
