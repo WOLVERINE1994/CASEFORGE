@@ -241,6 +241,59 @@ a[href][class*="rounded"]:not([data-no-hover-swap]):focus-visible * {
   color: inherit !important;
 }
 
+html:not(.dark) button[class*="rounded"][class*="bg-white"]:not(:disabled):not([data-no-hover-swap]),
+html:not(.dark) button[class*="rounded"][class*="bg-zinc-50"]:not(:disabled):not([data-no-hover-swap]),
+html:not(.dark) button[class*="rounded"][class*="bg-slate-50"]:not(:disabled):not([data-no-hover-swap]),
+html:not(.dark) button[class*="rounded"][class*="bg-emerald-50"]:not(:disabled):not([data-no-hover-swap]),
+html:not(.dark) button[class*="rounded"][class*="bg-sky-50"]:not(:disabled):not([data-no-hover-swap]),
+html:not(.dark) button[class*="rounded"][class*="bg-cyan-50"]:not(:disabled):not([data-no-hover-swap]),
+html:not(.dark) button[class*="rounded"][class*="bg-amber-50"]:not(:disabled):not([data-no-hover-swap]),
+html:not(.dark) button[class*="rounded"][class*="bg-rose-50"]:not(:disabled):not([data-no-hover-swap]),
+html:not(.dark) button[class*="rounded"][class*="bg-violet-50"]:not(:disabled):not([data-no-hover-swap]),
+html:not(.dark) a[href][class*="rounded"][class*="bg-white"]:not([data-no-hover-swap]),
+html:not(.dark) a[href][class*="rounded"][class*="bg-zinc-50"]:not([data-no-hover-swap]),
+html:not(.dark) a[href][class*="rounded"][class*="bg-slate-50"]:not([data-no-hover-swap]),
+html:not(.dark) a[href][class*="rounded"][class*="bg-emerald-50"]:not([data-no-hover-swap]),
+html:not(.dark) a[href][class*="rounded"][class*="bg-sky-50"]:not([data-no-hover-swap]),
+html:not(.dark) a[href][class*="rounded"][class*="bg-cyan-50"]:not([data-no-hover-swap]),
+html:not(.dark) a[href][class*="rounded"][class*="bg-amber-50"]:not([data-no-hover-swap]),
+html:not(.dark) a[href][class*="rounded"][class*="bg-rose-50"]:not([data-no-hover-swap]),
+html:not(.dark) a[href][class*="rounded"][class*="bg-violet-50"]:not([data-no-hover-swap]) {
+  color: #020617 !important;
+}
+
+html:not(.dark) button[class*="rounded"][class*="bg-white"]:not(:disabled):not([data-no-hover-swap]) *,
+html:not(.dark) button[class*="rounded"][class*="bg-zinc-50"]:not(:disabled):not([data-no-hover-swap]) *,
+html:not(.dark) button[class*="rounded"][class*="bg-slate-50"]:not(:disabled):not([data-no-hover-swap]) *,
+html:not(.dark) button[class*="rounded"][class*="bg-emerald-50"]:not(:disabled):not([data-no-hover-swap]) *,
+html:not(.dark) button[class*="rounded"][class*="bg-sky-50"]:not(:disabled):not([data-no-hover-swap]) *,
+html:not(.dark) button[class*="rounded"][class*="bg-cyan-50"]:not(:disabled):not([data-no-hover-swap]) *,
+html:not(.dark) button[class*="rounded"][class*="bg-amber-50"]:not(:disabled):not([data-no-hover-swap]) *,
+html:not(.dark) button[class*="rounded"][class*="bg-rose-50"]:not(:disabled):not([data-no-hover-swap]) *,
+html:not(.dark) button[class*="rounded"][class*="bg-violet-50"]:not(:disabled):not([data-no-hover-swap]) *,
+html:not(.dark) a[href][class*="rounded"][class*="bg-white"]:not([data-no-hover-swap]) *,
+html:not(.dark) a[href][class*="rounded"][class*="bg-zinc-50"]:not([data-no-hover-swap]) *,
+html:not(.dark) a[href][class*="rounded"][class*="bg-slate-50"]:not([data-no-hover-swap]) *,
+html:not(.dark) a[href][class*="rounded"][class*="bg-emerald-50"]:not([data-no-hover-swap]) *,
+html:not(.dark) a[href][class*="rounded"][class*="bg-sky-50"]:not([data-no-hover-swap]) *,
+html:not(.dark) a[href][class*="rounded"][class*="bg-cyan-50"]:not([data-no-hover-swap]) *,
+html:not(.dark) a[href][class*="rounded"][class*="bg-amber-50"]:not([data-no-hover-swap]) *,
+html:not(.dark) a[href][class*="rounded"][class*="bg-rose-50"]:not([data-no-hover-swap]) *,
+html:not(.dark) a[href][class*="rounded"][class*="bg-violet-50"]:not([data-no-hover-swap]) * {
+  color: inherit !important;
+}
+
+html:not(.dark) button[class*="rounded"]:disabled:not([data-no-hover-swap]),
+html:not(.dark) button[class*="rounded"][aria-disabled="true"]:not([data-no-hover-swap]) {
+  color: #475569 !important;
+  opacity: 0.82 !important;
+}
+
+html:not(.dark) button[class*="rounded"]:disabled:not([data-no-hover-swap]) *,
+html:not(.dark) button[class*="rounded"][aria-disabled="true"]:not([data-no-hover-swap]) * {
+  color: inherit !important;
+}
+
 button[class*="bg-white"]:not(:disabled):not([data-no-hover-swap]):hover,
 button[class*="bg-white"]:not(:disabled):not([data-no-hover-swap]):focus-visible,
 button[class*="bg-zinc-50"]:not(:disabled):not([data-no-hover-swap]):hover,
