@@ -429,6 +429,10 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
   margin: 0 !important;
 }
 
+.cf-modal-toolbar:empty {
+  display: none;
+}
+
 .cf-modal-detail:hover {
   border-color: color-mix(in srgb, var(--cf-modal-accent, #0f766e) 58%, rgba(226, 232, 240, 0.9)) !important;
   box-shadow: 0 20px 44px -34px color-mix(in srgb, var(--cf-modal-accent, #0f766e) 34%, rgba(2, 6, 23, 0.48)) !important;

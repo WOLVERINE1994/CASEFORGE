@@ -8910,6 +8910,7 @@ export default function ProjectWorkspace({
           </div>
         </section>
 
+        <div className="cf-modal-toolbar" aria-label="Planning and quality tools">
         <details className="cf-modal-detail cf-modal-navigation group overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/94 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.22)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/92">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
             <div>
@@ -8994,6 +8995,7 @@ export default function ProjectWorkspace({
         </section>
           </div>
         </details>
+        </div>
 
         {isCasesSection ? (
           <section className="rounded-[28px] border border-white/80 bg-white/92 p-6 shadow-[0_24px_65px_-36px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/88">
@@ -9010,6 +9012,7 @@ export default function ProjectWorkspace({
           </section>
         ) : (
           <>
+            <div className="cf-modal-toolbar" aria-label="Requirement support tools">
             <details className="cf-modal-detail cf-modal-guidance group overflow-hidden rounded-[28px] border border-white/80 bg-white/88 shadow-[0_24px_65px_-36px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/88">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
                 <div>
@@ -9158,6 +9161,7 @@ export default function ProjectWorkspace({
                 />
               </div>
             </details>
+            </div>
           </>
         )}
 
@@ -12291,6 +12295,7 @@ export default function ProjectWorkspace({
               </section>
             )}
 
+            <div className="cf-modal-toolbar" aria-label="Case management tools">
             {isCasesSection && (
               <details className="cf-modal-detail cf-modal-readiness group rounded-[24px] border border-sky-200 bg-sky-50/85 shadow-sm dark:border-sky-500/25 dark:bg-sky-500/10">
                 <summary className="flex cursor-pointer list-none flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
@@ -13194,6 +13199,7 @@ export default function ProjectWorkspace({
                 </div>
               </details>
             )}
+            </div>
 
             <TestCaseTable
               rows={filteredRows}
