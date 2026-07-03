@@ -90,6 +90,8 @@ type Props = {
 };
 
 const statusOptions: ScenarioStatus[] = ["draft", "active", "paused", "archived"];
+const bulkTagModes = ["append", "remove", "replace"] as const;
+type BulkTagMode = (typeof bulkTagModes)[number];
 
 const statusTone: Record<ScenarioStatus, string> = {
   active:
@@ -135,6 +137,25 @@ function sameStringArray(left: string[], right: string[]) {
 
 function statusLabel(status: ScenarioStatus) {
   return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function bulkTagModeLabel(mode: BulkTagMode) {
+  if (mode === "remove") return "Remove tags";
+  if (mode === "replace") return "Replace tags";
+  return "Add tags";
+}
+
+function applyTagMode(currentTags: string[], nextTags: string[], mode: BulkTagMode) {
+  if (mode === "replace") return nextTags;
+  if (mode === "remove") {
+    const tagsToRemove = new Set(nextTags.map((tag) => tag.toLowerCase()));
+    return currentTags.filter((tag) => !tagsToRemove.has(tag.toLowerCase()));
+  }
+  const existing = new Set(currentTags.map((tag) => tag.toLowerCase()));
+  return [
+    ...currentTags,
+    ...nextTags.filter((tag) => !existing.has(tag.toLowerCase())),
+  ];
 }
 
 function legacyScenariosKey(projectKey: string) {
@@ -269,12 +290,16 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [savingSuite, setSavingSuite] = useState(false);
+  const [savingBulk, setSavingBulk] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ScenarioStatus | "all">("all");
   const [tagFilter, setTagFilter] = useState("all");
   const [suiteFilter, setSuiteFilter] = useState("all");
   const [tagDrafts, setTagDrafts] = useState<Record<string, string>>({});
+  const [bulkStatus, setBulkStatus] = useState<ScenarioStatus | "">("");
+  const [bulkTagMode, setBulkTagMode] = useState<BulkTagMode>("append");
+  const [bulkTags, setBulkTags] = useState("");
   const [targetSuiteId, setTargetSuiteId] = useState("");
   const [newSuiteName, setNewSuiteName] = useState("");
   const [newSuiteTags, setNewSuiteTags] = useState("");
@@ -472,6 +497,10 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
   const allVisibleSelected =
     sortedScenarios.length > 0 &&
     sortedScenarios.every((scenario) => selectedIds.has(scenario.id));
+  const canBulkUpdate =
+    selectedScenarios.length > 0 &&
+    !savingBulk &&
+    (Boolean(bulkStatus) || Boolean(bulkTags.trim()) || bulkTagMode === "replace");
 
   const navigateToScenario = (scenarioId: string) => {
     router.push(
@@ -642,6 +671,104 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
     await patchScenario(scenario, { tags: nextTags });
   };
 
+  const handleBulkUpdate = async () => {
+    if (!selectedScenarios.length || savingBulk) return;
+
+    const trimmedTagInput = bulkTags.trim();
+    const parsedTags = parseTags(bulkTags);
+    const shouldUpdateTags =
+      Boolean(trimmedTagInput) || bulkTagMode === "replace";
+    if (!bulkStatus && !shouldUpdateTags) {
+      setError("Choose a status or enter tags before bulk updating.");
+      return;
+    }
+
+    const selectedScenarioIds = selectedScenarios.map((scenario) => scenario.id);
+    const selectedScenarioIdSet = new Set(selectedScenarioIds);
+    const previousScenarios = scenarios;
+    const previousTagDrafts = tagDrafts;
+    const now = new Date().toISOString();
+    setSavingBulk(true);
+    setScenarios((current) =>
+      current.map((scenario) => {
+        if (!selectedScenarioIdSet.has(scenario.id)) return scenario;
+        return {
+          ...scenario,
+          status: bulkStatus || scenario.status,
+          tags: shouldUpdateTags
+            ? applyTagMode(scenario.tags, parsedTags, bulkTagMode)
+            : scenario.tags,
+          updatedAt: now,
+        };
+      }),
+    );
+    setTagDrafts((current) => {
+      const next = { ...current };
+      for (const scenario of selectedScenarios) {
+        if (!shouldUpdateTags) continue;
+        next[scenario.id] = applyTagMode(
+          scenario.tags,
+          parsedTags,
+          bulkTagMode,
+        ).join(", ");
+      }
+      return next;
+    });
+
+    try {
+      const response = await fetch(`${scenariosApi}/bulk`, {
+        body: JSON.stringify({
+          scenarioIds: selectedScenarioIds,
+          status: bulkStatus || undefined,
+          tagMode: bulkTagMode,
+          tags: shouldUpdateTags ? parsedTags : undefined,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      });
+      const data = await readApiJson<{
+        error?: string;
+        notFoundIds?: string[];
+        scenarios?: AutomationScenario[];
+      }>(response);
+      if (!response.ok || !data.scenarios) {
+        throw new Error(data.error || "Could not bulk update scenarios.");
+      }
+
+      const updatedById = new Map(
+        data.scenarios.map((scenario) => [scenario.id, scenario]),
+      );
+      setScenarios((current) =>
+        current.map((scenario) => updatedById.get(scenario.id) ?? scenario),
+      );
+      setTagDrafts((current) => {
+        const next = { ...current };
+        for (const scenario of data.scenarios ?? []) {
+          next[scenario.id] = scenario.tags.join(", ");
+        }
+        return next;
+      });
+      setSelectedIds(new Set());
+      setBulkStatus("");
+      setBulkTags("");
+      setError(
+        data.notFoundIds?.length
+          ? `${data.notFoundIds.length} scenario${data.notFoundIds.length === 1 ? "" : "s"} could not be updated because they no longer exist.`
+          : "",
+      );
+    } catch (bulkError) {
+      setScenarios(previousScenarios);
+      setTagDrafts(previousTagDrafts);
+      setError(
+        bulkError instanceof Error
+          ? bulkError.message
+          : "Could not bulk update scenarios.",
+      );
+    } finally {
+      setSavingBulk(false);
+    }
+  };
+
   const handleAddSelectedToSuite = async () => {
     if (!selectedScenarios.length || savingSuite) return;
     const suiteName = newSuiteName.trim();
@@ -777,66 +904,135 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
         </div>
       </div>
 
-      <section className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px_160px] lg:items-end">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800 dark:text-emerald-200">
-              Test suite builder
-            </p>
-            <p className="mt-1 text-sm text-emerald-950 dark:text-emerald-100">
-              {selectedScenarios.length
-                ? `${selectedScenarios.length} selected scenario${selectedScenarios.length === 1 ? "" : "s"} ready to add.`
-                : "Select scenarios below, then add them to an existing or new suite."}
-            </p>
-          </div>
-          <select
-            value={targetSuiteId}
-            onChange={(event) => setTargetSuiteId(event.target.value)}
-            className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-          >
-            <option value="">Existing suite</option>
-            {suites.map((suite) => (
-              <option key={suite.id} value={suite.id}>
-                {suite.name}
-              </option>
-            ))}
-          </select>
-          <input
-            value={newSuiteName}
-            onChange={(event) => setNewSuiteName(event.target.value)}
-            className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-            placeholder="Or new suite name"
-          />
-          <button
-            type="button"
-            onClick={() => void handleAddSelectedToSuite()}
-            disabled={!selectedScenarios.length || savingSuite}
-            className="inline-flex items-center justify-center rounded-xl border border-zinc-950 bg-zinc-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white hover:text-zinc-950 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-white dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
-          >
-            {savingSuite ? "Saving..." : "Add to suite"}
-          </button>
-        </div>
-        {newSuiteName.trim() ? (
-          <div className="mt-3 grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
+      <section className="grid gap-3 xl:grid-cols-2">
+        <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 dark:border-sky-500/30 dark:bg-sky-500/10">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_150px_150px] lg:items-end">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-800 dark:text-sky-200">
+                Bulk update
+              </p>
+              <p className="mt-1 text-sm text-sky-950 dark:text-sky-100">
+                {selectedScenarios.length
+                  ? `${selectedScenarios.length} selected scenario${selectedScenarios.length === 1 ? "" : "s"} ready for status or tag updates.`
+                  : "Select scenarios below to update status and tags together."}
+              </p>
+            </div>
             <select
-              value={newSuiteStatus}
-              onChange={(event) => setNewSuiteStatus(event.target.value as ScenarioStatus)}
-              className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+              value={bulkStatus}
+              onChange={(event) =>
+                setBulkStatus(event.target.value as ScenarioStatus | "")
+              }
+              className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-sky-600 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
             >
+              <option value="">Keep status</option>
               {statusOptions.map((status) => (
                 <option key={status} value={status}>
                   {statusLabel(status)}
                 </option>
               ))}
             </select>
-            <input
-              value={newSuiteTags}
-              onChange={(event) => setNewSuiteTags(event.target.value)}
-              className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-              placeholder="Suite tags, comma separated"
-            />
+            <select
+              value={bulkTagMode}
+              onChange={(event) => setBulkTagMode(event.target.value as BulkTagMode)}
+              className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-sky-600 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            >
+              {bulkTagModes.map((mode) => (
+                <option key={mode} value={mode}>
+                  {bulkTagModeLabel(mode)}
+                </option>
+              ))}
+            </select>
           </div>
-        ) : null}
+          <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+            <input
+              value={bulkTags}
+              onChange={(event) => setBulkTags(event.target.value)}
+              className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-sky-600 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+              placeholder={
+                bulkTagMode === "replace"
+                  ? "New tags, comma separated. Leave blank to clear."
+                  : "Tags, comma separated"
+              }
+            />
+            <button
+              type="button"
+              onClick={() => void handleBulkUpdate()}
+              disabled={!canBulkUpdate}
+              className="inline-flex items-center justify-center rounded-xl border border-sky-700 bg-sky-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white hover:text-sky-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-sky-300 dark:bg-sky-400 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-sky-100 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
+            >
+              {savingBulk ? "Updating..." : "Apply bulk update"}
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px] lg:items-end">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800 dark:text-emerald-200">
+                Test suite builder
+              </p>
+              <p className="mt-1 text-sm text-emerald-950 dark:text-emerald-100">
+                {selectedScenarios.length
+                  ? `${selectedScenarios.length} selected scenario${selectedScenarios.length === 1 ? "" : "s"} ready to add.`
+                  : "Select scenarios below, then add them to an existing or new suite."}
+              </p>
+              <p className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">
+                Matching suite and scenario tags are included automatically.
+              </p>
+            </div>
+            <select
+              value={targetSuiteId}
+              onChange={(event) => setTargetSuiteId(event.target.value)}
+              className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            >
+              <option value="">Existing suite</option>
+              {suites.map((suite) => (
+                <option key={suite.id} value={suite.id}>
+                  {suite.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+            <input
+              value={newSuiteName}
+              onChange={(event) => setNewSuiteName(event.target.value)}
+              className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+              placeholder="Or new suite name"
+            />
+            <button
+              type="button"
+              onClick={() => void handleAddSelectedToSuite()}
+              disabled={!selectedScenarios.length || savingSuite}
+              className="inline-flex items-center justify-center rounded-xl border border-zinc-950 bg-zinc-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white hover:text-zinc-950 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-white dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
+            >
+              {savingSuite ? "Saving..." : "Add to suite"}
+            </button>
+          </div>
+          {newSuiteName.trim() ? (
+            <div className="mt-3 grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
+              <select
+                value={newSuiteStatus}
+                onChange={(event) =>
+                  setNewSuiteStatus(event.target.value as ScenarioStatus)
+                }
+                className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+              >
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {statusLabel(status)}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={newSuiteTags}
+                onChange={(event) => setNewSuiteTags(event.target.value)}
+                className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                placeholder="Suite tags, comma separated"
+              />
+            </div>
+          ) : null}
+        </div>
       </section>
 
       <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">

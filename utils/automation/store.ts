@@ -811,18 +811,128 @@ export async function updateScenario(
   return mapScenario(rows[0], input.steps ? (await getScenario(projectId, scenarioId))?.steps ?? [] : current.steps);
 }
 
+export async function bulkUpdateScenarios(
+  projectId: string,
+  scenarioIds: string[],
+  input: {
+    status?: AutomationScenario["status"];
+    tags?: string[];
+    tagMode?: "append" | "remove" | "replace";
+  },
+) {
+  const ids = [
+    ...new Set(
+      scenarioIds
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (!ids.length) {
+    return { notFoundIds: [], scenarios: [] satisfies AutomationScenario[] };
+  }
+
+  const tagMode = input.tagMode ?? "append";
+  const inputTags = Array.isArray(input.tags)
+    ? [
+        ...new Set(
+          input.tags
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+        ),
+      ]
+    : undefined;
+
+  const currentRows = await prisma.$queryRaw<ScenarioRow[]>(Prisma.sql`
+    SELECT "id", "projectId", "version", "name", "description", "status", "tags", "metadata", "createdAt", "updatedAt"
+    FROM "AutomationScenario"
+    WHERE "projectId" = ${projectId}
+      AND "id" IN (${Prisma.join(ids)})
+      AND COALESCE("metadata"->'recycleBin'->>'deletedAt', '') = ''
+  `);
+  const currentById = new Map(currentRows.map((row) => [row.id, row]));
+  const notFoundIds = ids.filter((id) => !currentById.has(id));
+
+  const updatedRows = await prisma.$transaction(async (tx) => {
+    const rows: ScenarioRow[] = [];
+    for (const id of ids) {
+      const current = currentById.get(id);
+      if (!current) continue;
+
+      const currentTags = toStringArray(current.tags);
+      let nextTags = currentTags;
+      if (inputTags) {
+        if (tagMode === "replace") {
+          nextTags = inputTags;
+        } else if (tagMode === "remove") {
+          const tagsToRemove = new Set(inputTags.map((tag) => tag.toLowerCase()));
+          nextTags = currentTags.filter(
+            (tag) => !tagsToRemove.has(tag.toLowerCase()),
+          );
+        } else {
+          const existing = new Set(currentTags.map((tag) => tag.toLowerCase()));
+          nextTags = [
+            ...currentTags,
+            ...inputTags.filter((tag) => !existing.has(tag.toLowerCase())),
+          ];
+        }
+      }
+
+      const updated = await tx.$queryRaw<ScenarioRow[]>(Prisma.sql`
+        UPDATE "AutomationScenario"
+        SET "status" = ${input.status ?? current.status}::"AutomationScenarioStatus",
+          "tags" = ${jsonb(nextTags)},
+          "version" = "version" + 1,
+          "updatedAt" = NOW()
+        WHERE "projectId" = ${projectId} AND "id" = ${id}
+        RETURNING "id", "projectId", "version", "name", "description", "status", "tags", "metadata", "createdAt", "updatedAt"
+      `);
+      if (updated[0]) rows.push(updated[0]);
+    }
+    return rows;
+  });
+
+  const order = new Map(ids.map((id, index) => [id, index]));
+  return {
+    notFoundIds,
+    scenarios: updatedRows
+      .sort((left, right) => (order.get(left.id) ?? 0) - (order.get(right.id) ?? 0))
+      .map((row) => mapScenario(row)),
+  };
+}
+
 export async function listSuites(projectId: string): Promise<AutomationSuite[]> {
   const rows = await prisma.$queryRaw<SuiteRow[]>(Prisma.sql`
     SELECT suite."id", suite."projectId", suite."version", suite."name",
       suite."description", suite."status", suite."tags", suite."metadata",
       COALESCE(
-        jsonb_agg(member."scenarioId" ORDER BY member."addedAt")
-          FILTER (WHERE member."scenarioId" IS NOT NULL),
+        jsonb_agg(suite_scenario."scenarioId" ORDER BY suite_scenario."sortAt")
+          FILTER (WHERE suite_scenario."scenarioId" IS NOT NULL),
         '[]'::jsonb
       ) AS "scenarioIds",
       suite."createdAt", suite."updatedAt"
     FROM "AutomationSuite" suite
-    LEFT JOIN "AutomationSuiteScenario" member ON member."suiteId" = suite."id"
+    LEFT JOIN LATERAL (
+      SELECT source."scenarioId", MIN(source."sortAt") AS "sortAt"
+      FROM (
+        SELECT member."scenarioId", member."addedAt" AS "sortAt"
+        FROM "AutomationSuiteScenario" member
+        WHERE member."suiteId" = suite."id"
+        UNION ALL
+        SELECT scenario."id" AS "scenarioId", scenario."updatedAt" AS "sortAt"
+        FROM "AutomationScenario" scenario
+        WHERE scenario."projectId" = suite."projectId"
+          AND COALESCE(scenario."metadata"->'recycleBin'->>'deletedAt', '') = ''
+          AND jsonb_typeof(suite."tags") = 'array'
+          AND jsonb_typeof(scenario."tags") = 'array'
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(suite."tags") AS suite_tag("tag")
+            INNER JOIN jsonb_array_elements_text(scenario."tags") AS scenario_tag("tag")
+              ON LOWER(suite_tag."tag") = LOWER(scenario_tag."tag")
+          )
+      ) source
+      GROUP BY source."scenarioId"
+    ) suite_scenario ON TRUE
     WHERE suite."projectId" = ${projectId}
       AND COALESCE(suite."metadata"->'recycleBin'->>'deletedAt', '') = ''
     GROUP BY suite."id"
@@ -840,13 +950,34 @@ export async function getSuite(
     SELECT suite."id", suite."projectId", suite."version", suite."name",
       suite."description", suite."status", suite."tags", suite."metadata",
       COALESCE(
-        jsonb_agg(member."scenarioId" ORDER BY member."addedAt")
-          FILTER (WHERE member."scenarioId" IS NOT NULL),
+        jsonb_agg(suite_scenario."scenarioId" ORDER BY suite_scenario."sortAt")
+          FILTER (WHERE suite_scenario."scenarioId" IS NOT NULL),
         '[]'::jsonb
       ) AS "scenarioIds",
       suite."createdAt", suite."updatedAt"
     FROM "AutomationSuite" suite
-    LEFT JOIN "AutomationSuiteScenario" member ON member."suiteId" = suite."id"
+    LEFT JOIN LATERAL (
+      SELECT source."scenarioId", MIN(source."sortAt") AS "sortAt"
+      FROM (
+        SELECT member."scenarioId", member."addedAt" AS "sortAt"
+        FROM "AutomationSuiteScenario" member
+        WHERE member."suiteId" = suite."id"
+        UNION ALL
+        SELECT scenario."id" AS "scenarioId", scenario."updatedAt" AS "sortAt"
+        FROM "AutomationScenario" scenario
+        WHERE scenario."projectId" = suite."projectId"
+          AND COALESCE(scenario."metadata"->'recycleBin'->>'deletedAt', '') = ''
+          AND jsonb_typeof(suite."tags") = 'array'
+          AND jsonb_typeof(scenario."tags") = 'array'
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(suite."tags") AS suite_tag("tag")
+            INNER JOIN jsonb_array_elements_text(scenario."tags") AS scenario_tag("tag")
+              ON LOWER(suite_tag."tag") = LOWER(scenario_tag."tag")
+          )
+      ) source
+      GROUP BY source."scenarioId"
+    ) suite_scenario ON TRUE
     WHERE suite."projectId" = ${projectId} AND suite."id" = ${suiteId}
       AND COALESCE(suite."metadata"->'recycleBin'->>'deletedAt', '') = ''
     GROUP BY suite."id"
@@ -888,7 +1019,7 @@ export async function createSuite(input: {
     if (suite) return suite;
   }
 
-  return mapSuite(rows[0]) satisfies AutomationSuite;
+  return (await getSuite(input.projectId, id)) ?? (mapSuite(rows[0]) satisfies AutomationSuite);
 }
 
 export async function updateSuite(
@@ -920,7 +1051,7 @@ export async function updateSuite(
       ? { ...(current.metadata ?? {}), ...input.metadata }
       : current.metadata ?? {};
 
-  const rows = await prisma.$queryRaw<SuiteRow[]>(Prisma.sql`
+  const rows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
     UPDATE "AutomationSuite"
     SET "name" = ${name || "Untitled Suite"},
       "description" = ${description},
@@ -930,12 +1061,10 @@ export async function updateSuite(
       "version" = "version" + 1,
       "updatedAt" = NOW()
     WHERE "projectId" = ${projectId} AND "id" = ${suiteId}
-    RETURNING "id", "projectId", "version", "name", "description", "status", "tags",
-      "metadata", ${jsonb(input.scenarioIds ?? current.scenarioIds)} AS "scenarioIds",
-      "createdAt", "updatedAt"
+    RETURNING "id"
   `);
 
-  return rows[0] ? mapSuite(rows[0]) : null;
+  return rows[0] ? getSuite(projectId, suiteId) : null;
 }
 
 export async function addScenariosToSuite(

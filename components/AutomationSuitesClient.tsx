@@ -264,6 +264,9 @@ export default function AutomationSuitesClient({ projectKey }: Props) {
               className="mt-1 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
               placeholder="release, smoke"
             />
+            <p className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">
+              Scenarios with matching tags join automatically.
+            </p>
           </div>
           <button
             type="button"
