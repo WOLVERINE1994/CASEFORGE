@@ -128,6 +128,20 @@ const DRAFT_STORAGE_KEY = "tc_workspace_draft_v1";
 
 type WorkspaceSaveStatus = "idle" | "saving" | "saved" | "local" | "error";
 
+type AutomationGenerationProgress = {
+  message: string;
+  stage: number;
+  status: "running" | "success" | "error";
+};
+
+const automationGenerationStages = [
+  "Saving workspace",
+  "Preparing manual cases",
+  "Generating automation scenario",
+  "Saving command timeline",
+  "Opening automation workspace",
+];
+
 function ModalCloseButton() {
   return (
     <div className="mb-4 flex justify-end">
@@ -722,6 +736,8 @@ export default function ProjectWorkspace({
   const [automationGenerationContext, setAutomationGenerationContext] =
     useState<AutomationGenerationContext>(() => defaultAutomationGenerationContext());
   const [generatingAutomationRowIds, setGeneratingAutomationRowIds] = useState<string[]>([]);
+  const [automationGenerationProgress, setAutomationGenerationProgress] =
+    useState<AutomationGenerationProgress | null>(null);
   const [generationFeedbackLog, setGenerationFeedbackLog] = useState<
     NonNullable<Project["generationFeedbackLog"]>
   >([]);
@@ -4829,11 +4845,22 @@ export default function ProjectWorkspace({
     key: K,
     value: AutomationGenerationContext[K]
   ) => {
+    setAutomationGenerationProgress(null);
     setAutomationGenerationContext((current) => ({
       ...current,
       [key]: value,
     }));
   };
+  const showAutomationGenerationProgress = useCallback(
+    (stage: number, message: string, status: AutomationGenerationProgress["status"] = "running") => {
+      setAutomationGenerationProgress({
+        message,
+        stage: Math.max(0, Math.min(automationGenerationStages.length - 1, stage)),
+        status,
+      });
+    },
+    []
+  );
 
   const generateAutomationForRow = useCallback(
     async (rowId: string) => {
@@ -4847,6 +4874,11 @@ export default function ProjectWorkspace({
         automationReadinessBlockers.length > 0 &&
         !automationGenerationContext.blockersAcknowledged
       ) {
+        showAutomationGenerationProgress(
+          0,
+          `Resolve automation readiness first: ${automationReadinessBlockers[0]}`,
+          "error"
+        );
         showWorkspaceNotice(
           "error",
           `Resolve automation readiness first: ${automationReadinessBlockers[0]}`
@@ -4855,9 +4887,15 @@ export default function ProjectWorkspace({
       }
 
       setGeneratingAutomationRowIds((current) => [...current, rowId]);
+      showAutomationGenerationProgress(0, "Saving workspace before automation generation...");
       try {
         const trimmedProjectName = projectName.trim();
         if (!trimmedProjectName) {
+          showAutomationGenerationProgress(
+            0,
+            "Name and save this workspace before generating automation drafts.",
+            "error"
+          );
           showWorkspaceNotice(
             "error",
             "Name and save this workspace before generating automation drafts."
@@ -4866,6 +4904,7 @@ export default function ProjectWorkspace({
         }
 
         showWorkspaceNotice("info", `Preparing ${row.id} for automation...`);
+        showAutomationGenerationProgress(1, `Preparing ${row.id} for automation...`);
 
         const { updatedProject, updatedProjects } = upsertProject(
           projectsRef.current,
@@ -4893,6 +4932,11 @@ export default function ProjectWorkspace({
         } catch (syncError) {
           console.error("Automation project sync error:", syncError);
           setAutosaveStatus("local");
+          showAutomationGenerationProgress(
+            0,
+            "Project sync failed. Automation needs the server project before scenario creation.",
+            "error"
+          );
           showWorkspaceNotice(
             "error",
             "Automation needs the project library sync to complete first. The project is saved locally, but the server project is not available yet."
@@ -4902,6 +4946,11 @@ export default function ProjectWorkspace({
 
         const projectRouteRef = encodeURIComponent(localProject.id);
         if (!projectRouteRef) {
+          showAutomationGenerationProgress(
+            0,
+            "Save this workspace as a project before generating automation drafts.",
+            "error"
+          );
           showWorkspaceNotice(
             "error",
             "Save this workspace as a project before generating automation drafts."
@@ -4910,6 +4959,7 @@ export default function ProjectWorkspace({
         }
 
         showWorkspaceNotice("info", `Generating an automation draft for ${row.id}...`);
+        showAutomationGenerationProgress(2, `Generating automation scenario for ${row.id}...`);
         const response = await fetch(
           `/api/automation/projects/${projectRouteRef}/generate-from-cases`,
           {
@@ -4936,6 +4986,7 @@ export default function ProjectWorkspace({
         if (!scenario?.id) {
           throw new Error("The AI provider did not return an automation scenario.");
         }
+        showAutomationGenerationProgress(3, "Saving generated command timeline...");
 
         setRows((currentRows) =>
           currentRows.map((entry) =>
@@ -4964,10 +5015,18 @@ export default function ProjectWorkspace({
             },
           ]
         );
+        showAutomationGenerationProgress(4, "Opening automation workspace...", "success");
         router.push(
           `/projects/${projectRouteRef}/automation/scenarios/${encodeURIComponent(scenario.id)}`
         );
       } catch (error) {
+        showAutomationGenerationProgress(
+          2,
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : "Failed to generate automation.",
+          "error"
+        );
         showWorkspaceNotice(
           "error",
           error instanceof Error && error.message.trim()
@@ -4982,6 +5041,7 @@ export default function ProjectWorkspace({
       addAuditEntry,
       automationGenerationContext,
       automationReadinessBlockers,
+      showAutomationGenerationProgress,
       input,
       persistProjects,
       projectName,
@@ -4998,6 +5058,11 @@ export default function ProjectWorkspace({
       automationReadinessBlockers.length > 0 &&
       !automationGenerationContext.blockersAcknowledged
     ) {
+      showAutomationGenerationProgress(
+        0,
+        `Resolve automation readiness first: ${automationReadinessBlockers[0]}`,
+        "error"
+      );
       showWorkspaceNotice(
         "error",
         `Resolve automation readiness first: ${automationReadinessBlockers[0]}`
@@ -5010,6 +5075,11 @@ export default function ProjectWorkspace({
         ? rows.filter((row) => selectedRowIds.includes(row.id))
         : rows.filter((row) => !row.archived);
     if (!selectedRows.length) {
+      showAutomationGenerationProgress(
+        1,
+        "There are no cases available for automation generation.",
+        "error"
+      );
       showWorkspaceNotice("error", "There are no cases available for automation generation.");
       return;
     }
@@ -5021,6 +5091,11 @@ export default function ProjectWorkspace({
 
     const trimmedProjectName = projectName.trim();
     if (!trimmedProjectName) {
+      showAutomationGenerationProgress(
+        0,
+        "Name and save this workspace before generating automation drafts.",
+        "error"
+      );
       showWorkspaceNotice(
         "error",
         "Name and save this workspace before generating automation drafts."
@@ -5031,10 +5106,18 @@ export default function ProjectWorkspace({
     setGeneratingAutomationRowIds((current) =>
       Array.from(new Set([...current, ...selectedRows.map((row) => row.id)]))
     );
+    showAutomationGenerationProgress(
+      0,
+      `Saving workspace before generating ${selectedRows.length} automation drafts...`
+    );
     try {
       showWorkspaceNotice(
         "info",
         `Preparing ${selectedRows.length} cases for complete automation...`
+      );
+      showAutomationGenerationProgress(
+        1,
+        `Preparing ${selectedRows.length} reviewed cases for automation...`
       );
       const { updatedProject, updatedProjects } = upsertProject(
         projectsRef.current,
@@ -5062,6 +5145,11 @@ export default function ProjectWorkspace({
       } catch (syncError) {
         console.error("Automation project sync error:", syncError);
         setAutosaveStatus("local");
+        showAutomationGenerationProgress(
+          0,
+          "Project sync failed. Automation needs the server project before scenario creation.",
+          "error"
+        );
         showWorkspaceNotice(
           "error",
           "Automation needs the project library sync to complete first. The project is saved locally, but the server project is not available yet."
@@ -5071,6 +5159,10 @@ export default function ProjectWorkspace({
 
       const projectRouteRef = encodeURIComponent(localProject.id);
       showWorkspaceNotice("info", `Generating automation drafts for ${selectedRows.length} cases...`);
+      showAutomationGenerationProgress(
+        2,
+        `Generating automation scenarios for ${selectedRows.length} cases...`
+      );
       const response = await fetch(
         `/api/automation/projects/${projectRouteRef}/generate-from-cases`,
         {
@@ -5097,6 +5189,7 @@ export default function ProjectWorkspace({
       if (!generatedCount) {
         throw new Error("The AI provider did not return automation scenarios.");
       }
+      showAutomationGenerationProgress(3, "Saving generated command timelines...");
 
       const generatedCaseIds = new Set(
         (data.scenarios ?? [])
@@ -5142,8 +5235,23 @@ export default function ProjectWorkspace({
               },
             ]
       );
-      router.push(`/projects/${projectRouteRef}/automation/scenarios`);
+      if (firstScenario?.id) {
+        showAutomationGenerationProgress(4, "Opening first generated automation workspace...", "success");
+        router.push(
+          `/projects/${projectRouteRef}/automation/scenarios/${encodeURIComponent(firstScenario.id)}`
+        );
+      } else {
+        showAutomationGenerationProgress(4, "Opening automation workspace...", "success");
+        router.push(`/projects/${projectRouteRef}/automation/scenarios`);
+      }
     } catch (error) {
+      showAutomationGenerationProgress(
+        2,
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "Failed to generate automation.",
+        "error"
+      );
       showWorkspaceNotice(
         "error",
         error instanceof Error && error.message.trim()
@@ -5167,6 +5275,7 @@ export default function ProjectWorkspace({
     router,
     saveProjectsToBrowserFallback,
     selectedRowIds,
+    showAutomationGenerationProgress,
     showWorkspaceNotice,
     upsertProject,
   ]);
@@ -8403,6 +8512,52 @@ export default function ProjectWorkspace({
               </span>
             ) : null}
           </div>
+          {automationGenerationProgress ? (
+            <div className="mt-4 rounded-2xl border border-emerald-200 bg-white/88 px-4 py-3 shadow-sm dark:border-emerald-500/25 dark:bg-zinc-950/70">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-semibold text-emerald-950 dark:text-emerald-100">
+                  {automationGenerationProgress.message}
+                </p>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
+                    automationGenerationProgress.status === "error"
+                      ? "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200"
+                      : automationGenerationProgress.status === "success"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
+                        : "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200"
+                  }`}
+                >
+                  {automationGenerationProgress.status}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-5">
+                {automationGenerationStages.map((stageLabel, index) => {
+                  const stageState =
+                    index < automationGenerationProgress.stage
+                      ? "done"
+                      : index === automationGenerationProgress.stage
+                        ? automationGenerationProgress.status
+                        : "pending";
+                  return (
+                    <div
+                      key={stageLabel}
+                      className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                        stageState === "done" || stageState === "success"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-200"
+                          : stageState === "error"
+                            ? "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-200"
+                            : stageState === "running"
+                              ? "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-200"
+                              : "border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+                      }`}
+                    >
+                      {stageLabel}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
         <button
           type="button"

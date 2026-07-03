@@ -139,6 +139,60 @@ const textLocatorForIntent = (intent: string) => {
   return safe ? `text="${safe}"` : "";
 };
 
+const hasUrlProtocol = (value: string) => /^https?:\/\//i.test(value);
+
+const normalizeUrlText = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  try {
+    return new URL(trimmed).toString();
+  } catch {
+    try {
+      return new URL(`https://${trimmed}`).toString();
+    } catch {
+      return trimmed;
+    }
+  }
+};
+
+const mergeBaseAndPath = (baseUrl: string, pathValue: string) => {
+  const normalizedBase = normalizeUrlText(baseUrl);
+  if (!normalizedBase) return pathValue.trim();
+  const path = pathValue.trim();
+  if (!path) return normalizedBase;
+  if (hasUrlProtocol(path)) return normalizeUrlText(path);
+
+  try {
+    return new URL(path.startsWith("/") ? path : `/${path}`, normalizedBase).toString();
+  } catch {
+    return normalizedBase;
+  }
+};
+
+const contextNavigateUrl = (context?: AutomationDraftContext) => {
+  const baseUrl = cleanText(context?.baseUrl);
+  if (!baseUrl) return "";
+  const startPage = cleanText(context?.startPage);
+  return mergeBaseAndPath(baseUrl, startPage);
+};
+
+const resolveNavigateUrl = (rawUrl: string, context?: AutomationDraftContext) => {
+  const url = cleanText(rawUrl);
+  const baseUrl = cleanText(context?.baseUrl);
+  const defaultUrl = contextNavigateUrl(context);
+  if (!url || url === "{{baseUrl}}") return defaultUrl || "{{baseUrl}}";
+  if (url.includes("{{baseUrl}}")) {
+    if (!baseUrl) return url;
+    const mergedBase = mergeBaseAndPath(baseUrl, "");
+    return normalizeUrlText(url.replaceAll("{{baseUrl}}", mergedBase.replace(/\/$/, "")));
+  }
+  if (hasUrlProtocol(url)) return normalizeUrlText(url);
+  if (baseUrl && (url.startsWith("/") || cleanText(context?.startPage))) {
+    return mergeBaseAndPath(baseUrl, url);
+  }
+  return url;
+};
+
 const targetFor = (input: {
   displayName: string;
   elementKind?: string;
@@ -202,7 +256,11 @@ const normalizeAction = (value: unknown) => {
   return SUPPORTED_ACTIONS.has(action) ? action : "click";
 };
 
-const makeStep = (raw: AiDraftStep, index: number): AutomationStep => {
+const makeStep = (
+  raw: AiDraftStep,
+  index: number,
+  context?: AutomationDraftContext,
+): AutomationStep => {
   const action = normalizeAction(raw.action);
   const description = cleanText(raw.description || raw.commandText, `${action} ${index + 1}`);
   const locator = cleanText(raw.locator);
@@ -213,7 +271,7 @@ const makeStep = (raw: AiDraftStep, index: number): AutomationStep => {
   const duration = Number(raw.durationMs);
 
   if (action === "navigate") {
-    const targetUrl = url || "{{baseUrl}}";
+    const targetUrl = resolveNavigateUrl(url, context);
     return {
       action,
       commandText: description || `Navigate to ${targetUrl}`,
@@ -407,16 +465,19 @@ const fallbackDraftForCase = (
         {
           action: "navigate",
           description: step,
-          url: /\bhttps?:\/\//i.test(step) ? step.match(/https?:\/\/\S+/i)?.[0] : "{{baseUrl}}",
+          url: /\bhttps?:\/\//i.test(step)
+            ? step.match(/https?:\/\/\S+/i)?.[0]
+            : contextNavigateUrl(context) || "{{baseUrl}}",
         },
         index,
+        context,
       );
     }
     if (/\b(enter|type|fill|input)\b/.test(lower)) {
-      return makeStep({ action: "fill", description: step, text: "" }, index);
+      return makeStep({ action: "fill", description: step, text: "" }, index, context);
     }
     if (/\b(select|choose)\b/.test(lower)) {
-      return makeStep({ action: "select", description: step, option: "" }, index);
+      return makeStep({ action: "select", description: step, option: "" }, index, context);
     }
     if (/\b(verify|validate|check|confirm|ensure)\b/.test(lower)) {
       return makeStep(
@@ -426,9 +487,10 @@ const fallbackDraftForCase = (
           expectedText: manualCase.expectedResult,
         },
         index,
+        context,
       );
     }
-    return makeStep({ action: "click", description: step }, index);
+    return makeStep({ action: "click", description: step }, index, context);
   });
 
   if (!steps.some((step) => step.action === "verifyPageText" || step.action === "assertText")) {
@@ -440,6 +502,7 @@ const fallbackDraftForCase = (
           expectedText: manualCase.expectedResult,
         },
         steps.length,
+        context,
       ),
     );
   }
@@ -451,7 +514,7 @@ const fallbackDraftForCase = (
     sourceCaseId: manualCase.id,
     steps,
     variables: {
-      ...(context?.baseUrl?.trim() ? { baseUrl: context.baseUrl.trim() } : {}),
+      ...(context?.baseUrl?.trim() ? { baseUrl: normalizeUrlText(context.baseUrl.trim()) } : {}),
       ...(context?.usernameVariable?.trim() ? { [context.usernameVariable.trim()]: "" } : {}),
       ...(context?.passwordVariable?.trim() ? { [context.passwordVariable.trim()]: "" } : {}),
     },
@@ -586,7 +649,7 @@ export async function generateAutomationDraftsFromManualCases(input: {
     }
 
     const aiSteps = Array.isArray(aiScenario.steps) ? aiScenario.steps : [];
-    const steps = aiSteps.map((step, index) => makeStep(step, index));
+    const steps = aiSteps.map((step, index) => makeStep(step, index, input.automationContext));
     if (!steps.length) {
       usedFallback = true;
       return fallbackDraftForCase(manualCase, input.automationContext);
@@ -602,13 +665,22 @@ export async function generateAutomationDraftsFromManualCases(input: {
       steps,
       variables:
         aiScenario.variables && typeof aiScenario.variables === "object"
-          ? Object.fromEntries(
-              Object.entries(aiScenario.variables).map(([key, value]) => [
-                key,
-                typeof value === "string" ? value : String(value ?? ""),
-              ]),
-            )
-          : {},
+          ? {
+              ...Object.fromEntries(
+                Object.entries(aiScenario.variables).map(([key, value]) => [
+                  key,
+                  typeof value === "string" ? value : String(value ?? ""),
+                ]),
+              ),
+              ...(input.automationContext?.baseUrl?.trim()
+                ? { baseUrl: normalizeUrlText(input.automationContext.baseUrl.trim()) }
+                : {}),
+            }
+          : {
+              ...(input.automationContext?.baseUrl?.trim()
+                ? { baseUrl: normalizeUrlText(input.automationContext.baseUrl.trim()) }
+                : {}),
+            },
       warnings: Array.isArray(aiScenario.warnings)
         ? aiScenario.warnings.map((warning) => cleanText(warning)).filter(Boolean)
         : [],
