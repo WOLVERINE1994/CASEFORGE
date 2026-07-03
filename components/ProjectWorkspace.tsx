@@ -8337,6 +8337,85 @@ export default function ProjectWorkspace({
     );
   }
 
+  const automationGenerationPanel = hasRows ? (
+    <section className="rounded-[24px] border border-emerald-200/80 bg-[linear-gradient(135deg,_rgba(236,253,245,0.98)_0%,_rgba(240,253,250,0.94)_52%,_rgba(255,255,255,0.98)_100%)] px-5 py-5 shadow-[0_24px_58px_-42px_rgba(6,95,70,0.62)] dark:border-emerald-500/25 dark:bg-emerald-500/10">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800 dark:text-emerald-200">
+            Automation Script Generation
+          </p>
+          <h3 className="mt-2 text-xl font-semibold text-zinc-950 dark:text-zinc-50">
+            Create automation from the reviewed cases above
+          </h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-emerald-950/80 dark:text-emerald-100/80">
+            This converts the selected manual cases, or all active cases when nothing is selected, into editable CaseForge automation scenarios.
+          </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-900 dark:text-emerald-100">
+              Base URL
+              <input
+                type="url"
+                value={automationGenerationContext.baseUrl}
+                onChange={(event) =>
+                  updateAutomationGenerationContext("baseUrl", event.target.value)
+                }
+                placeholder="https://staging.example.com"
+                className="mt-2 min-h-[44px] w-full rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-emerald-500/10"
+              />
+            </label>
+            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-900 dark:text-emerald-100">
+              Environment
+              <input
+                type="text"
+                value={automationGenerationContext.environmentName}
+                onChange={(event) =>
+                  updateAutomationGenerationContext("environmentName", event.target.value)
+                }
+                placeholder="QA / Staging / Production"
+                className="mt-2 min-h-[44px] w-full rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-emerald-500/10"
+              />
+            </label>
+            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-900 dark:text-emerald-100">
+              Start Page
+              <input
+                type="text"
+                value={automationGenerationContext.startPage}
+                onChange={(event) =>
+                  updateAutomationGenerationContext("startPage", event.target.value)
+                }
+                placeholder="/login or current page"
+                className="mt-2 min-h-[44px] w-full rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-emerald-500/10"
+              />
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="rounded-full border border-emerald-200 bg-white/85 px-3 py-1.5 text-xs font-semibold text-emerald-900 dark:border-emerald-500/30 dark:bg-zinc-950/60 dark:text-emerald-100">
+              Readiness {automationReadinessScore}%
+            </span>
+            <span className="rounded-full border border-zinc-200 bg-white/85 px-3 py-1.5 text-xs font-semibold text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950/60 dark:text-zinc-100">
+              {selectedRowIds.length > 0
+                ? `${selectedRowIds.length} selected`
+                : `${rows.filter((row) => !row.archived).length} active cases`}
+            </span>
+            {automationReadinessBlockers.length > 0 ? (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                Needs setup
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => void generateAutomationForSelectedRows()}
+          disabled={rows.length === 0 || generatingAutomationRowIds.length > 0}
+          className="cf-readable-on-dark inline-flex min-h-[52px] shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,_#0f766e_0%,_#14532d_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_35px_-20px_rgba(5,150,105,0.78)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {generatingAutomationRowIds.length > 0 ? "Creating Automation..." : "Create Automation Script"}
+        </button>
+      </div>
+    </section>
+  ) : null;
+
   return (
     <div
       className={
@@ -13232,87 +13311,10 @@ export default function ProjectWorkspace({
               selectedRowIds={selectedRowIds}
               onToggleRowSelection={toggleRowSelection}
               onToggleSelectAll={toggleSelectAllFilteredRows}
+              footerActions={automationGenerationPanel}
               stickyHeader={!(embedded && isCasesSection)}
             />
 
-            {hasRows ? (
-              <section className="rounded-[28px] border border-emerald-200/80 bg-[linear-gradient(135deg,_rgba(236,253,245,0.96)_0%,_rgba(240,253,250,0.92)_52%,_rgba(255,255,255,0.96)_100%)] px-5 py-5 shadow-[0_24px_58px_-42px_rgba(6,95,70,0.62)] dark:border-emerald-500/25 dark:bg-emerald-500/10">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800 dark:text-emerald-200">
-                      Automation Script Generation
-                    </p>
-                    <h3 className="mt-2 text-xl font-semibold text-zinc-950 dark:text-zinc-50">
-                      Create automation from the reviewed cases above
-                    </h3>
-                    <p className="mt-2 max-w-3xl text-sm leading-6 text-emerald-950/80 dark:text-emerald-100/80">
-                      This converts the selected manual cases, or all active cases when nothing is selected, into editable CaseForge automation scenarios.
-                    </p>
-                    <div className="mt-4 grid gap-3 md:grid-cols-3">
-                      <label className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-900 dark:text-emerald-100">
-                        Base URL
-                        <input
-                          type="url"
-                          value={automationGenerationContext.baseUrl}
-                          onChange={(event) =>
-                            updateAutomationGenerationContext("baseUrl", event.target.value)
-                          }
-                          placeholder="https://staging.example.com"
-                          className="mt-2 min-h-[44px] w-full rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-emerald-500/10"
-                        />
-                      </label>
-                      <label className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-900 dark:text-emerald-100">
-                        Environment
-                        <input
-                          type="text"
-                          value={automationGenerationContext.environmentName}
-                          onChange={(event) =>
-                            updateAutomationGenerationContext("environmentName", event.target.value)
-                          }
-                          placeholder="QA / Staging / Production"
-                          className="mt-2 min-h-[44px] w-full rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-emerald-500/10"
-                        />
-                      </label>
-                      <label className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-900 dark:text-emerald-100">
-                        Start Page
-                        <input
-                          type="text"
-                          value={automationGenerationContext.startPage}
-                          onChange={(event) =>
-                            updateAutomationGenerationContext("startPage", event.target.value)
-                          }
-                          placeholder="/login or current page"
-                          className="mt-2 min-h-[44px] w-full rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-emerald-500/10"
-                        />
-                      </label>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <span className="rounded-full border border-emerald-200 bg-white/85 px-3 py-1.5 text-xs font-semibold text-emerald-900 dark:border-emerald-500/30 dark:bg-zinc-950/60 dark:text-emerald-100">
-                        Readiness {automationReadinessScore}%
-                      </span>
-                      <span className="rounded-full border border-zinc-200 bg-white/85 px-3 py-1.5 text-xs font-semibold text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950/60 dark:text-zinc-100">
-                        {selectedRowIds.length > 0
-                          ? `${selectedRowIds.length} selected`
-                          : `${rows.filter((row) => !row.archived).length} active cases`}
-                      </span>
-                      {automationReadinessBlockers.length > 0 ? (
-                        <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-                          Needs setup
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void generateAutomationForSelectedRows()}
-                    disabled={rows.length === 0 || generatingAutomationRowIds.length > 0}
-                    className="cf-readable-on-dark inline-flex min-h-[52px] shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,_#0f766e_0%,_#14532d_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_35px_-20px_rgba(5,150,105,0.78)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {generatingAutomationRowIds.length > 0 ? "Creating Automation..." : "Create Automation Script"}
-                  </button>
-                </div>
-              </section>
-            ) : null}
           </>
         ) : (
           <section className="rounded-[28px] border border-dashed border-zinc-300 bg-white/70 px-6 py-16 text-center shadow-sm dark:border-zinc-700 dark:bg-zinc-900/60">
