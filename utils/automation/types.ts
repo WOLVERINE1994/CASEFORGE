@@ -108,6 +108,21 @@ export type AutomationScenario = {
   tags: string[];
   metadata?: Record<string, unknown>;
   steps: AutomationStep[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AutomationSuite = {
+  id: string;
+  projectId: string;
+  version: number;
+  name: string;
+  description: string;
+  status: AutomationScenarioStatus;
+  tags: string[];
+  metadata?: Record<string, unknown>;
+  scenarioIds: string[];
+  createdAt: string;
   updatedAt: string;
 };
 

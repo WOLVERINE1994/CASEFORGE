@@ -63,27 +63,78 @@ export type AutomationScenario = {
   version?: number;
   name: string;
   description: string;
-  suiteId?: string;
   tags: string[];
   status: ScenarioStatus;
   metadata?: Record<string, unknown>;
   steps?: AutomationStep[];
+  createdAt?: number | string;
   updatedAt: number | string;
+};
+
+type AutomationSuite = {
+  id: string;
+  projectId?: string;
+  version?: number;
+  name: string;
+  description: string;
+  status: ScenarioStatus;
+  tags: string[];
+  metadata?: Record<string, unknown>;
+  scenarioIds: string[];
+  createdAt: string;
+  updatedAt: string;
 };
 
 type Props = {
   projectKey: string;
 };
 
-function updatedTime(value: AutomationScenario["updatedAt"]) {
+const statusOptions: ScenarioStatus[] = ["draft", "active", "paused", "archived"];
+
+const statusTone: Record<ScenarioStatus, string> = {
+  active:
+    "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-100",
+  archived:
+    "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
+  draft:
+    "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-100",
+  paused:
+    "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-100",
+};
+
+function valueTime(value?: AutomationScenario["updatedAt"]) {
+  if (!value) return 0;
   return typeof value === "number" ? value : new Date(value).getTime();
 }
 
-function formatUpdated(value: AutomationScenario["updatedAt"]) {
+function formatDate(value?: AutomationScenario["updatedAt"]) {
+  if (!value) return "Not saved";
+  const date = new Date(valueTime(value));
+  if (Number.isNaN(date.getTime())) return "Not saved";
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(new Date(updatedTime(value)));
+  }).format(date);
+}
+
+function parseTags(value: string) {
+  return [
+    ...new Set(
+      value
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function sameStringArray(left: string[], right: string[]) {
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => item === right[index]);
+}
+
+function statusLabel(status: ScenarioStatus) {
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function legacyScenariosKey(projectKey: string) {
@@ -214,13 +265,24 @@ function isNotFoundError(error: unknown) {
 export default function AutomationScenariosClient({ projectKey }: Props) {
   const router = useRouter();
   const [scenarios, setScenarios] = useState<AutomationScenario[]>([]);
+  const [suites, setSuites] = useState<AutomationSuite[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [savingSuite, setSavingSuite] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ScenarioStatus | "all">("all");
+  const [tagFilter, setTagFilter] = useState("all");
+  const [suiteFilter, setSuiteFilter] = useState("all");
+  const [tagDrafts, setTagDrafts] = useState<Record<string, string>>({});
+  const [targetSuiteId, setTargetSuiteId] = useState("");
+  const [newSuiteName, setNewSuiteName] = useState("");
+  const [newSuiteTags, setNewSuiteTags] = useState("");
+  const [newSuiteStatus, setNewSuiteStatus] = useState<ScenarioStatus>("draft");
 
   const encodedProjectKey = encodeURIComponent(projectKey);
   const scenariosApi = `/api/automation/projects/${encodedProjectKey}/scenarios`;
+  const suitesApi = `/api/automation/projects/${encodedProjectKey}/suites`;
   const importApi = `${scenariosApi}/import`;
 
   useEffect(() => {
@@ -239,6 +301,21 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
         );
       }
       return data.scenarios ?? [];
+    }
+
+    async function fetchSuites() {
+      const response = await fetch(suitesApi, { cache: "no-store" });
+      const data = await readApiJson<{
+        error?: string;
+        suites?: AutomationSuite[];
+      }>(response);
+      if (!response.ok) {
+        throw withResponseStatus(
+          new Error(data.error || "Could not load suites."),
+          response.status,
+        );
+      }
+      return data.suites ?? [];
     }
 
     async function importLegacyScenariosOnce() {
@@ -273,13 +350,17 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
       return Boolean(data.imported?.length);
     }
 
-    async function loadScenarios() {
+    async function loadLibrary() {
       try {
         setLoading(true);
         await ensureBrowserProjectSynced(projectKey);
-        let loaded: AutomationScenario[];
+        let loadedScenarios: AutomationScenario[] = [];
+        let loadedSuites: AutomationSuite[] = [];
         try {
-          loaded = await fetchScenarios();
+          [loadedScenarios, loadedSuites] = await Promise.all([
+            fetchScenarios(),
+            fetchSuites(),
+          ]);
         } catch (loadError) {
           if (!isNotFoundError(loadError)) {
             throw loadError;
@@ -288,23 +369,36 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
           if (!synced) {
             throw loadError;
           }
-          loaded = await fetchScenarios();
+          [loadedScenarios, loadedSuites] = await Promise.all([
+            fetchScenarios(),
+            fetchSuites(),
+          ]);
         }
         const imported = await importLegacyScenariosOnce();
         if (imported) {
-          loaded = await fetchScenarios();
+          loadedScenarios = await fetchScenarios();
         }
         if (!cancelled) {
-          setScenarios(loaded);
+          setScenarios(loadedScenarios);
+          setSuites(loadedSuites);
+          setTagDrafts(
+            Object.fromEntries(
+              loadedScenarios.map((scenario) => [
+                scenario.id,
+                scenario.tags.join(", "),
+              ]),
+            ),
+          );
           setError("");
         }
       } catch (loadError) {
         if (!cancelled) {
           setScenarios([]);
+          setSuites([]);
           setError(
             loadError instanceof Error
               ? loadError.message
-              : "Could not load scenarios.",
+              : "Could not load scenario library.",
           );
         }
       } finally {
@@ -312,32 +406,121 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
       }
     }
 
-    void loadScenarios();
+    void loadLibrary();
     return () => {
       cancelled = true;
     };
-  }, [importApi, projectKey, scenariosApi]);
+  }, [importApi, projectKey, scenariosApi, suitesApi]);
+
+  const scenarioSuitesById = useMemo(() => {
+    const result = new Map<string, AutomationSuite[]>();
+    for (const suite of suites) {
+      for (const scenarioId of suite.scenarioIds) {
+        const entries = result.get(scenarioId) ?? [];
+        entries.push(suite);
+        result.set(scenarioId, entries);
+      }
+    }
+    return result;
+  }, [suites]);
+
+  const allTags = useMemo(
+    () =>
+      [
+        ...new Set(
+          scenarios.flatMap((scenario) => scenario.tags).filter((tag) => tag.trim()),
+        ),
+      ].sort((a, b) => a.localeCompare(b)),
+    [scenarios],
+  );
 
   const sortedScenarios = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return scenarios
       .filter((scenario) => {
+        const suiteNames = (scenarioSuitesById.get(scenario.id) ?? []).map(
+          (suite) => suite.name,
+        );
         const matchesQuery =
           !normalizedQuery ||
           scenario.name.toLowerCase().includes(normalizedQuery) ||
           scenario.description.toLowerCase().includes(normalizedQuery) ||
-          scenario.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery));
+          scenario.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery)) ||
+          suiteNames.some((name) => name.toLowerCase().includes(normalizedQuery));
         const matchesStatus =
           statusFilter === "all" || scenario.status === statusFilter;
-        return matchesQuery && matchesStatus;
+        const matchesTag = tagFilter === "all" || scenario.tags.includes(tagFilter);
+        const matchesSuite =
+          suiteFilter === "all" ||
+          (suiteFilter === "unassigned" &&
+            !scenarioSuitesById.get(scenario.id)?.length) ||
+          Boolean(
+            scenarioSuitesById
+              .get(scenario.id)
+              ?.some((suite) => suite.id === suiteFilter),
+          );
+        return matchesQuery && matchesStatus && matchesTag && matchesSuite;
       })
-      .sort((a, b) => updatedTime(b.updatedAt) - updatedTime(a.updatedAt));
-  }, [query, scenarios, statusFilter]);
+      .sort((a, b) => valueTime(b.updatedAt) - valueTime(a.updatedAt));
+  }, [query, scenarioSuitesById, scenarios, statusFilter, suiteFilter, tagFilter]);
+
+  const selectedScenarios = useMemo(
+    () => scenarios.filter((scenario) => selectedIds.has(scenario.id)),
+    [scenarios, selectedIds],
+  );
+
+  const allVisibleSelected =
+    sortedScenarios.length > 0 &&
+    sortedScenarios.every((scenario) => selectedIds.has(scenario.id));
 
   const navigateToScenario = (scenarioId: string) => {
     router.push(
       `/projects/${encodedProjectKey}/automation/scenarios?scenarioId=${encodeURIComponent(scenarioId)}`,
     );
+  };
+
+  const patchScenario = async (
+    scenario: AutomationScenario,
+    updates: Partial<Pick<AutomationScenario, "description" | "name" | "status" | "tags" | "metadata">>,
+  ) => {
+    const previous = scenarios;
+    setScenarios((current) =>
+      current.map((item) =>
+        item.id === scenario.id
+          ? { ...item, ...updates, updatedAt: new Date().toISOString() }
+          : item,
+      ),
+    );
+    try {
+      const response = await fetch(`${scenariosApi}/${encodeURIComponent(scenario.id)}`, {
+        body: JSON.stringify(updates),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      });
+      const data = await readApiJson<{
+        error?: string;
+        scenario?: AutomationScenario;
+      }>(response);
+      if (!response.ok || !data.scenario) {
+        throw new Error(data.error || "Could not update scenario.");
+      }
+      const updatedScenario = data.scenario;
+      setScenarios((current) =>
+        current.map((item) => (item.id === scenario.id ? updatedScenario : item)),
+      );
+      setTagDrafts((current) => ({
+        ...current,
+        [scenario.id]: updatedScenario.tags.join(", "),
+      }));
+      setError("");
+    } catch (updateError) {
+      setScenarios(previous);
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : "Could not update scenario.",
+      );
+    }
   };
 
   const handleNewScenario = async () => {
@@ -350,21 +533,24 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
       return;
     }
 
+    const now = new Date().toISOString();
     const optimisticId = `scenario-draft-${Date.now().toString(36)}`;
     const optimisticScenario: AutomationScenario = {
+      createdAt: now,
       description: "",
       id: optimisticId,
       name: scenarioName,
       status: "draft",
       steps: [],
       tags: [],
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
       version: 1,
     };
     setScenarios((current) => [optimisticScenario, ...current]);
+    setTagDrafts((current) => ({ ...current, [optimisticId]: "" }));
     try {
       const response = await fetch(scenariosApi, {
-        body: JSON.stringify({ name: scenarioName }),
+        body: JSON.stringify({ name: scenarioName, status: "draft" }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -380,6 +566,12 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
           scenario.id === optimisticId ? data.scenario as AutomationScenario : scenario,
         ),
       );
+      setTagDrafts((current) => {
+        const next = { ...current };
+        delete next[optimisticId];
+        next[data.scenario!.id] = data.scenario!.tags.join(", ");
+        return next;
+      });
       navigateToScenario(data.scenario.id);
     } catch (createError) {
       setScenarios((current) =>
@@ -396,6 +588,11 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
   const handleDeleteScenario = async (scenario: AutomationScenario) => {
     const previous = scenarios;
     setScenarios((current) => current.filter((item) => item.id !== scenario.id));
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      next.delete(scenario.id);
+      return next;
+    });
     try {
       const response = await fetch(`${scenariosApi}/${encodeURIComponent(scenario.id)}`, {
         method: "DELETE",
@@ -415,6 +612,99 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
     }
   };
 
+  const toggleScenario = (scenarioId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(scenarioId)) {
+        next.delete(scenarioId);
+      } else {
+        next.add(scenarioId);
+      }
+      return next;
+    });
+  };
+
+  const toggleVisibleScenarios = () => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (allVisibleSelected) {
+        sortedScenarios.forEach((scenario) => next.delete(scenario.id));
+      } else {
+        sortedScenarios.forEach((scenario) => next.add(scenario.id));
+      }
+      return next;
+    });
+  };
+
+  const saveScenarioTags = async (scenario: AutomationScenario) => {
+    const nextTags = parseTags(tagDrafts[scenario.id] ?? scenario.tags.join(", "));
+    if (sameStringArray(nextTags, scenario.tags)) return;
+    await patchScenario(scenario, { tags: nextTags });
+  };
+
+  const handleAddSelectedToSuite = async () => {
+    if (!selectedScenarios.length || savingSuite) return;
+    const suiteName = newSuiteName.trim();
+    const selectedScenarioIds = selectedScenarios.map((scenario) => scenario.id);
+    setSavingSuite(true);
+    try {
+      if (suiteName) {
+        const response = await fetch(suitesApi, {
+          body: JSON.stringify({
+            name: suiteName,
+            scenarioIds: selectedScenarioIds,
+            status: newSuiteStatus,
+            tags: parseTags(newSuiteTags),
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        const data = await readApiJson<{ error?: string; suite?: AutomationSuite }>(
+          response,
+        );
+        if (!response.ok || !data.suite) {
+          throw new Error(data.error || "Could not create suite.");
+        }
+        setSuites((current) => [data.suite!, ...current]);
+        setTargetSuiteId(data.suite.id);
+        setNewSuiteName("");
+        setNewSuiteTags("");
+      } else {
+        const targetSuite = suites.find((suite) => suite.id === targetSuiteId);
+        if (!targetSuite) {
+          throw new Error("Choose an existing suite or enter a new suite name.");
+        }
+        const nextScenarioIds = [
+          ...new Set([...targetSuite.scenarioIds, ...selectedScenarioIds]),
+        ];
+        const response = await fetch(`${suitesApi}/${encodeURIComponent(targetSuite.id)}`, {
+          body: JSON.stringify({ scenarioIds: nextScenarioIds }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        });
+        const data = await readApiJson<{ error?: string; suite?: AutomationSuite }>(
+          response,
+        );
+        if (!response.ok || !data.suite) {
+          throw new Error(data.error || "Could not update suite.");
+        }
+        setSuites((current) =>
+          current.map((suite) => (suite.id === targetSuite.id ? data.suite! : suite)),
+        );
+      }
+      setSelectedIds(new Set());
+      setError("");
+    } catch (suiteError) {
+      setError(
+        suiteError instanceof Error
+          ? suiteError.message
+          : "Could not add scenarios to suite.",
+      );
+    } finally {
+      setSavingSuite(false);
+    }
+  };
+
   return (
     <div className="mt-5 space-y-4">
       <div className="flex flex-col gap-3 border-b border-zinc-200 bg-white pb-4 dark:border-zinc-800 dark:bg-zinc-950 xl:flex-row xl:items-end xl:justify-between">
@@ -423,7 +713,7 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
             Scenarios
           </h2>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Lightweight browser flows. Create one to open the recorder.
+            Organize automation scenarios by status, tags, date, and suite membership.
           </p>
           {error ? (
             <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
@@ -431,12 +721,12 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
             </p>
           ) : null}
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row xl:min-w-[560px]">
+        <div className="flex flex-col gap-2 sm:flex-row xl:min-w-[760px]">
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
-            placeholder="Search scenarios"
+            placeholder="Search scenario, tag, or suite"
           />
           <select
             value={statusFilter}
@@ -445,23 +735,129 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
             }
             className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
           >
-            <option value="all">All</option>
-            <option value="draft">Draft</option>
-            <option value="active">Active</option>
-            <option value="paused">Paused</option>
-            <option value="archived">Archived</option>
+            <option value="all">All statuses</option>
+            {statusOptions.map((status) => (
+              <option key={status} value={status}>
+                {statusLabel(status)}
+              </option>
+            ))}
+          </select>
+          <select
+            value={tagFilter}
+            onChange={(event) => setTagFilter(event.target.value)}
+            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+          >
+            <option value="all">All tags</option>
+            {allTags.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
+          <select
+            value={suiteFilter}
+            onChange={(event) => setSuiteFilter(event.target.value)}
+            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+          >
+            <option value="all">All suites</option>
+            <option value="unassigned">Unassigned</option>
+            {suites.map((suite) => (
+              <option key={suite.id} value={suite.id}>
+                {suite.name}
+              </option>
+            ))}
           </select>
           <button
             type="button"
             onClick={() => void handleNewScenario()}
-            className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-950"
+            className="inline-flex items-center justify-center rounded-xl border border-emerald-700 bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-white hover:text-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:border-emerald-400 dark:bg-emerald-500 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-emerald-100 dark:focus:ring-offset-zinc-950"
           >
             + Scenario
           </button>
         </div>
       </div>
 
+      <section className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px_160px] lg:items-end">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800 dark:text-emerald-200">
+              Test suite builder
+            </p>
+            <p className="mt-1 text-sm text-emerald-950 dark:text-emerald-100">
+              {selectedScenarios.length
+                ? `${selectedScenarios.length} selected scenario${selectedScenarios.length === 1 ? "" : "s"} ready to add.`
+                : "Select scenarios below, then add them to an existing or new suite."}
+            </p>
+          </div>
+          <select
+            value={targetSuiteId}
+            onChange={(event) => setTargetSuiteId(event.target.value)}
+            className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+          >
+            <option value="">Existing suite</option>
+            {suites.map((suite) => (
+              <option key={suite.id} value={suite.id}>
+                {suite.name}
+              </option>
+            ))}
+          </select>
+          <input
+            value={newSuiteName}
+            onChange={(event) => setNewSuiteName(event.target.value)}
+            className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            placeholder="Or new suite name"
+          />
+          <button
+            type="button"
+            onClick={() => void handleAddSelectedToSuite()}
+            disabled={!selectedScenarios.length || savingSuite}
+            className="inline-flex items-center justify-center rounded-xl border border-zinc-950 bg-zinc-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white hover:text-zinc-950 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-white dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
+          >
+            {savingSuite ? "Saving..." : "Add to suite"}
+          </button>
+        </div>
+        {newSuiteName.trim() ? (
+          <div className="mt-3 grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
+            <select
+              value={newSuiteStatus}
+              onChange={(event) => setNewSuiteStatus(event.target.value as ScenarioStatus)}
+              className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+            >
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {statusLabel(status)}
+                </option>
+              ))}
+            </select>
+            <input
+              value={newSuiteTags}
+              onChange={(event) => setNewSuiteTags(event.target.value)}
+              className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+              placeholder="Suite tags, comma separated"
+            />
+          </div>
+        ) : null}
+      </section>
+
       <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="grid gap-3 border-b border-zinc-100 bg-zinc-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400 lg:grid-cols-[28px_minmax(220px,1.3fr)_128px_minmax(180px,0.8fr)_minmax(160px,0.8fr)_132px_132px_128px] lg:items-center">
+          <label className="flex items-center justify-center">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              onChange={toggleVisibleScenarios}
+              className="h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+              aria-label="Select visible scenarios"
+            />
+          </label>
+          <span>Scenario</span>
+          <span>Status</span>
+          <span>Tags</span>
+          <span>Suites</span>
+          <span>Created</span>
+          <span>Updated</span>
+          <span>Actions</span>
+        </div>
         <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
           {loading ? (
             <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
@@ -469,43 +865,118 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
             </div>
           ) : sortedScenarios.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-              {scenarios.length ? "No scenarios match the current filters." : "No scenarios yet. Create one to start recording."}
+              {scenarios.length
+                ? "No scenarios match the current filters."
+                : "No scenarios yet. Create one to start recording."}
             </div>
           ) : (
-            sortedScenarios.map((scenario) => (
-              <div
-                key={scenario.id}
-                className="grid w-full gap-2 px-4 py-3 transition hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10 sm:grid-cols-[minmax(0,1fr)_88px_132px_64px] sm:items-center"
-              >
-                <button
-                  type="button"
-                  onClick={() => navigateToScenario(scenario.id)}
-                  className="min-w-0 text-left focus:outline-none"
+            sortedScenarios.map((scenario) => {
+              const scenarioSuites = scenarioSuitesById.get(scenario.id) ?? [];
+              return (
+                <div
+                  key={scenario.id}
+                  className="grid gap-3 px-4 py-3 transition hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10 lg:grid-cols-[28px_minmax(220px,1.3fr)_128px_minmax(180px,0.8fr)_minmax(160px,0.8fr)_132px_132px_128px] lg:items-center"
                 >
-                  <span className="block truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">
-                    {scenario.name}
-                  </span>
-                  {scenario.description ? (
-                    <span className="mt-1 block truncate text-xs text-zinc-500 dark:text-zinc-400">
-                      {scenario.description}
+                  <label className="flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(scenario.id)}
+                      onChange={() => toggleScenario(scenario.id)}
+                      className="h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+                      aria-label={`Select ${scenario.name}`}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => navigateToScenario(scenario.id)}
+                    className="min-w-0 text-left focus:outline-none"
+                  >
+                    <span className="block truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                      {scenario.name}
                     </span>
-                  ) : null}
-                </button>
-                <span className="text-xs font-semibold capitalize text-zinc-600 dark:text-zinc-300">
-                  {scenario.status}
-                </span>
-                <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {formatUpdated(scenario.updatedAt)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void handleDeleteScenario(scenario)}
-                  className="justify-self-start rounded-lg px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 dark:hover:bg-rose-500/10 sm:justify-self-end"
-                >
-                  Move to bin
-                </button>
-              </div>
-            ))
+                    {scenario.description ? (
+                      <span className="mt-1 block line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        {scenario.description}
+                      </span>
+                    ) : (
+                      <span className="mt-1 block text-xs text-zinc-400">
+                        No description yet
+                      </span>
+                    )}
+                  </button>
+                  <select
+                    value={scenario.status}
+                    onChange={(event) =>
+                      void patchScenario(scenario, {
+                        status: event.target.value as ScenarioStatus,
+                      })
+                    }
+                    className={`rounded-xl border px-3 py-2 text-xs font-semibold capitalize outline-none focus:ring-2 focus:ring-emerald-500 ${statusTone[scenario.status]}`}
+                  >
+                    {statusOptions.map((status) => (
+                      <option key={status} value={status}>
+                        {statusLabel(status)}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    value={tagDrafts[scenario.id] ?? scenario.tags.join(", ")}
+                    onChange={(event) =>
+                      setTagDrafts((current) => ({
+                        ...current,
+                        [scenario.id]: event.target.value,
+                      }))
+                    }
+                    onBlur={() => void saveScenarioTags(scenario)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.currentTarget.blur();
+                      }
+                    }}
+                    className="min-w-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                    placeholder="tag1, tag2"
+                  />
+                  <div className="flex min-w-0 flex-wrap gap-1">
+                    {scenarioSuites.length ? (
+                      scenarioSuites.map((suite) => (
+                        <span
+                          key={suite.id}
+                          className="max-w-full truncate rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-100"
+                        >
+                          {suite.name}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="rounded-full border border-zinc-200 px-2 py-1 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+                        Unassigned
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {formatDate(scenario.createdAt)}
+                  </span>
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {formatDate(scenario.updatedAt)}
+                  </span>
+                  <div className="flex flex-wrap gap-2 lg:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => navigateToScenario(scenario.id)}
+                      className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs font-semibold text-zinc-800 transition hover:border-zinc-950 hover:bg-zinc-950 hover:text-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-100 dark:hover:bg-zinc-100 dark:hover:text-zinc-950"
+                    >
+                      Open
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteScenario(scenario)}
+                      className="rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 transition hover:bg-rose-600 hover:text-white dark:border-rose-500/30 dark:bg-zinc-900 dark:text-rose-200 dark:hover:bg-rose-500 dark:hover:text-white"
+                    >
+                      Move to bin
+                    </button>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       </div>

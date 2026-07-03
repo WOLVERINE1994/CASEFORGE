@@ -1,6 +1,6 @@
 import {
-  createScenario,
-  listScenarios,
+  createSuite,
+  listSuites,
   resolveAutomationProjectId,
 } from "../../../../../../utils/automation/store";
 
@@ -8,14 +8,25 @@ type RouteContext = {
   params: Promise<{ projectKey: string }>;
 };
 
-function automationApiError(error: unknown, fallback: string) {
+const isValidStatus = (value: unknown) =>
+  value === "draft" ||
+  value === "active" ||
+  value === "paused" ||
+  value === "archived";
+
+const stringArray = (value: unknown) =>
+  Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+
+function suiteApiError(error: unknown, fallback: string) {
   if (
     error &&
     typeof error === "object" &&
     "code" in error &&
     (error as { code?: unknown }).code === "ECONNREFUSED"
   ) {
-    return "Database connection failed. Check DATABASE_URL/DIRECT_URL and make sure the database is reachable before creating scenarios.";
+    return "Database connection failed. Check DATABASE_URL/DIRECT_URL and make sure the database is reachable before managing suites.";
   }
   return error instanceof Error && error.message.trim() ? error.message : fallback;
 }
@@ -28,11 +39,11 @@ export async function GET(_: Request, context: RouteContext) {
       return Response.json({ error: "Project not found." }, { status: 404 });
     }
 
-    return Response.json({ scenarios: await listScenarios(projectId) });
+    return Response.json({ suites: await listSuites(projectId) });
   } catch (error) {
-    console.error("AUTOMATION SCENARIOS GET ERROR:", error);
+    console.error("AUTOMATION SUITES GET ERROR:", error);
     return Response.json(
-      { error: automationApiError(error, "Could not load scenarios.") },
+      { error: suiteApiError(error, "Could not load suites.") },
       { status: 500 },
     );
   }
@@ -47,31 +58,29 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const scenario = await createScenario({
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name) {
+      return Response.json({ error: "Suite name is required." }, { status: 400 });
+    }
+
+    const suite = await createSuite({
       description: typeof body.description === "string" ? body.description : "",
       metadata:
         body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
           ? body.metadata
           : undefined,
-      name: typeof body.name === "string" ? body.name : undefined,
+      name,
       projectId,
-      status:
-        body.status === "draft" ||
-        body.status === "active" ||
-        body.status === "paused" ||
-        body.status === "archived"
-          ? body.status
-          : undefined,
-      tags: Array.isArray(body.tags)
-        ? body.tags.filter((tag: unknown): tag is string => typeof tag === "string")
-        : [],
+      scenarioIds: stringArray(body.scenarioIds),
+      status: isValidStatus(body.status) ? body.status : "draft",
+      tags: stringArray(body.tags),
     });
 
-    return Response.json({ scenario }, { status: 201 });
+    return Response.json({ suite }, { status: 201 });
   } catch (error) {
-    console.error("AUTOMATION SCENARIOS POST ERROR:", error);
+    console.error("AUTOMATION SUITES POST ERROR:", error);
     return Response.json(
-      { error: automationApiError(error, "Could not create scenario.") },
+      { error: suiteApiError(error, "Could not create suite.") },
       { status: 500 },
     );
   }

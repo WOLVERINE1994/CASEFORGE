@@ -29,13 +29,13 @@ const sections: Array<{
     key: "suites",
     label: "Suites",
     href: "/suites",
-    description: "Placeholder for organizing automation suites.",
+    description: "Group automation scenarios into tagged suites with lifecycle status.",
   },
   {
     key: "scenarios",
     label: "Scenarios",
     href: "/scenarios",
-    description: "Placeholder for scenario authoring.",
+    description: "Create and manage lightweight automation scenario records.",
   },
   {
     key: "actions",

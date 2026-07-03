@@ -230,6 +230,7 @@ model Project {
   sprints         Sprint[]
   issues          Issue[]
   automationScenarios AutomationScenario[]
+  automationSuites AutomationSuite[]
   automationActions AutomationAction[]
   automationRuns AutomationRun[]
   automationEnvironments AutomationEnvironment[]
@@ -393,8 +394,42 @@ model AutomationScenario {
   steps       AutomationStep[]
   runs        AutomationRun[]
   sessions    AutomationSession[]
+  suiteMemberships AutomationSuiteScenario[]
 
   @@index([projectId, updatedAt])
+}
+
+model AutomationSuite {
+  id          String                   @id @default(cuid())
+  projectId   String
+  version     Int                      @default(1)
+  name        String
+  description String                   @default("")
+  status      AutomationScenarioStatus @default(draft)
+  tags        Json                     @default("[]")
+  metadata    Json                     @default("{}")
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  project     Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenarios   AutomationSuiteScenario[]
+
+  @@index([projectId, updatedAt])
+}
+
+model AutomationSuiteScenario {
+  id         String             @id @default(cuid())
+  projectId  String
+  suiteId    String
+  scenarioId String
+  addedAt    DateTime           @default(now())
+
+  suite      AutomationSuite     @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  scenario   AutomationScenario  @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  @@unique([suiteId, scenarioId])
+  @@index([projectId, suiteId])
+  @@index([projectId, scenarioId])
 }
 
 model AutomationAction {

@@ -22,6 +22,7 @@ import type {
   AutomationSessionProviderId,
   AutomationSessionStatus,
   AutomationStep,
+  AutomationSuite,
   AutomationView,
   AutomationElement,
   AutomationElementUsage,
@@ -73,6 +74,20 @@ type ScenarioRow = {
   status: AutomationScenario["status"];
   tags: unknown;
   metadata: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+};
+type SuiteRow = {
+  id: string;
+  projectId: string;
+  version: number;
+  name: string;
+  description: string;
+  status: AutomationSuite["status"];
+  tags: unknown;
+  metadata: unknown;
+  scenarioIds: unknown;
+  createdAt: Date;
   updatedAt: Date;
 };
 type ActionRow = {
@@ -341,6 +356,26 @@ function mapScenario(row: ScenarioRow, steps: AutomationStep[] = []): Automation
     projectId: row.projectId,
     status: row.status,
     steps,
+    tags: toStringArray(row.tags),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    version: row.version,
+  };
+}
+
+function mapSuite(row: SuiteRow): AutomationSuite {
+  return {
+    createdAt: row.createdAt.toISOString(),
+    description: row.description,
+    id: row.id,
+    metadata:
+      row.metadata && typeof row.metadata === "object"
+        ? (row.metadata as Record<string, unknown>)
+        : {},
+    name: row.name,
+    projectId: row.projectId,
+    scenarioIds: toStringArray(row.scenarioIds),
+    status: row.status,
     tags: toStringArray(row.tags),
     updatedAt: row.updatedAt.toISOString(),
     version: row.version,
@@ -658,7 +693,7 @@ function actionStepSignature(steps: AutomationStep[]) {
 
 export async function listScenarios(projectId: string): Promise<AutomationScenario[]> {
   const rows = await prisma.$queryRaw<ScenarioRow[]>(Prisma.sql`
-    SELECT "id", "projectId", "version", "name", "description", "status", "tags", "metadata", "updatedAt"
+    SELECT "id", "projectId", "version", "name", "description", "status", "tags", "metadata", "createdAt", "updatedAt"
     FROM "AutomationScenario"
     WHERE "projectId" = ${projectId}
       AND COALESCE("metadata"->'recycleBin'->>'deletedAt', '') = ''
@@ -673,7 +708,7 @@ export async function getScenario(
   scenarioId: string,
 ): Promise<AutomationScenario | null> {
   const rows = await prisma.$queryRaw<ScenarioRow[]>(Prisma.sql`
-    SELECT "id", "projectId", "version", "name", "description", "status", "tags", "metadata", "updatedAt"
+    SELECT "id", "projectId", "version", "name", "description", "status", "tags", "metadata", "createdAt", "updatedAt"
     FROM "AutomationScenario"
     WHERE "projectId" = ${projectId} AND "id" = ${scenarioId}
       AND COALESCE("metadata"->'recycleBin'->>'deletedAt', '') = ''
@@ -722,7 +757,7 @@ export async function createScenario(input: {
       ${input.status ?? "draft"}::"AutomationScenarioStatus", ${jsonb(input.tags ?? [])},
       ${jsonb(input.metadata ?? {})}, NOW()
     )
-    RETURNING "id", "projectId", "version", "name", "description", "status", "tags", "metadata", "updatedAt"
+    RETURNING "id", "projectId", "version", "name", "description", "status", "tags", "metadata", "createdAt", "updatedAt"
   `);
   if (!rows[0]) {
     throw new Error("Scenario was not created.");
@@ -769,11 +804,235 @@ export async function updateScenario(
       "version" = "version" + 1,
       "updatedAt" = NOW()
     WHERE "projectId" = ${projectId} AND "id" = ${scenarioId}
-    RETURNING "id", "projectId", "version", "name", "description", "status", "tags", "metadata", "updatedAt"
+    RETURNING "id", "projectId", "version", "name", "description", "status", "tags", "metadata", "createdAt", "updatedAt"
   `);
 
   if (!rows[0]) return null;
   return mapScenario(rows[0], input.steps ? (await getScenario(projectId, scenarioId))?.steps ?? [] : current.steps);
+}
+
+export async function listSuites(projectId: string): Promise<AutomationSuite[]> {
+  const rows = await prisma.$queryRaw<SuiteRow[]>(Prisma.sql`
+    SELECT suite."id", suite."projectId", suite."version", suite."name",
+      suite."description", suite."status", suite."tags", suite."metadata",
+      COALESCE(
+        jsonb_agg(member."scenarioId" ORDER BY member."addedAt")
+          FILTER (WHERE member."scenarioId" IS NOT NULL),
+        '[]'::jsonb
+      ) AS "scenarioIds",
+      suite."createdAt", suite."updatedAt"
+    FROM "AutomationSuite" suite
+    LEFT JOIN "AutomationSuiteScenario" member ON member."suiteId" = suite."id"
+    WHERE suite."projectId" = ${projectId}
+      AND COALESCE(suite."metadata"->'recycleBin'->>'deletedAt', '') = ''
+    GROUP BY suite."id"
+    ORDER BY suite."updatedAt" DESC
+  `);
+
+  return rows.map((row) => mapSuite(row));
+}
+
+export async function getSuite(
+  projectId: string,
+  suiteId: string,
+): Promise<AutomationSuite | null> {
+  const rows = await prisma.$queryRaw<SuiteRow[]>(Prisma.sql`
+    SELECT suite."id", suite."projectId", suite."version", suite."name",
+      suite."description", suite."status", suite."tags", suite."metadata",
+      COALESCE(
+        jsonb_agg(member."scenarioId" ORDER BY member."addedAt")
+          FILTER (WHERE member."scenarioId" IS NOT NULL),
+        '[]'::jsonb
+      ) AS "scenarioIds",
+      suite."createdAt", suite."updatedAt"
+    FROM "AutomationSuite" suite
+    LEFT JOIN "AutomationSuiteScenario" member ON member."suiteId" = suite."id"
+    WHERE suite."projectId" = ${projectId} AND suite."id" = ${suiteId}
+      AND COALESCE(suite."metadata"->'recycleBin'->>'deletedAt', '') = ''
+    GROUP BY suite."id"
+    LIMIT 1
+  `);
+
+  return rows[0] ? mapSuite(rows[0]) : null;
+}
+
+export async function createSuite(input: {
+  projectId: string;
+  name?: string;
+  description?: string;
+  status?: AutomationSuite["status"];
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+  scenarioIds?: string[];
+}) {
+  const id = newId("suite");
+  const suiteName = input.name?.trim() || "Untitled Suite";
+  const rows = await prisma.$queryRaw<SuiteRow[]>(Prisma.sql`
+    INSERT INTO "AutomationSuite" (
+      "id", "projectId", "name", "description", "status", "tags", "metadata", "updatedAt"
+    )
+    VALUES (
+      ${id}, ${input.projectId}, ${suiteName}, ${input.description ?? ""},
+      ${input.status ?? "draft"}::"AutomationScenarioStatus", ${jsonb(input.tags ?? [])},
+      ${jsonb(input.metadata ?? {})}, NOW()
+    )
+    RETURNING "id", "projectId", "version", "name", "description", "status", "tags",
+      "metadata", '[]'::jsonb AS "scenarioIds", "createdAt", "updatedAt"
+  `);
+  if (!rows[0]) {
+    throw new Error("Suite was not created.");
+  }
+
+  if (input.scenarioIds?.length) {
+    const suite = await addScenariosToSuite(input.projectId, id, input.scenarioIds);
+    if (suite) return suite;
+  }
+
+  return mapSuite(rows[0]) satisfies AutomationSuite;
+}
+
+export async function updateSuite(
+  projectId: string,
+  suiteId: string,
+  input: {
+    name?: string;
+    description?: string;
+    status?: AutomationSuite["status"];
+    tags?: string[];
+    metadata?: Record<string, unknown>;
+    scenarioIds?: string[];
+  },
+) {
+  const current = await getSuite(projectId, suiteId);
+  if (!current) return null;
+
+  if (Array.isArray(input.scenarioIds)) {
+    await replaceSuiteScenarios(projectId, suiteId, input.scenarioIds);
+  }
+
+  const name = typeof input.name === "string" ? input.name.trim() : current.name;
+  const description =
+    typeof input.description === "string" ? input.description : current.description;
+  const status = input.status ?? current.status;
+  const tags = Array.isArray(input.tags) ? input.tags : current.tags;
+  const metadata =
+    input.metadata && typeof input.metadata === "object"
+      ? { ...(current.metadata ?? {}), ...input.metadata }
+      : current.metadata ?? {};
+
+  const rows = await prisma.$queryRaw<SuiteRow[]>(Prisma.sql`
+    UPDATE "AutomationSuite"
+    SET "name" = ${name || "Untitled Suite"},
+      "description" = ${description},
+      "status" = ${status}::"AutomationScenarioStatus",
+      "tags" = ${jsonb(tags)},
+      "metadata" = ${jsonb(metadata)},
+      "version" = "version" + 1,
+      "updatedAt" = NOW()
+    WHERE "projectId" = ${projectId} AND "id" = ${suiteId}
+    RETURNING "id", "projectId", "version", "name", "description", "status", "tags",
+      "metadata", ${jsonb(input.scenarioIds ?? current.scenarioIds)} AS "scenarioIds",
+      "createdAt", "updatedAt"
+  `);
+
+  return rows[0] ? mapSuite(rows[0]) : null;
+}
+
+export async function addScenariosToSuite(
+  projectId: string,
+  suiteId: string,
+  scenarioIds: string[],
+) {
+  const uniqueScenarioIds = [...new Set(scenarioIds.filter(Boolean))];
+  if (!uniqueScenarioIds.length) return getSuite(projectId, suiteId);
+
+  await prisma.$transaction(async (tx) => {
+    for (const scenarioId of uniqueScenarioIds) {
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO "AutomationSuiteScenario" (
+          "id", "projectId", "suiteId", "scenarioId", "addedAt"
+        )
+        SELECT ${newId("suite_member")}, ${projectId}, ${suiteId}, ${scenarioId}, NOW()
+        WHERE EXISTS (
+          SELECT 1 FROM "AutomationSuite"
+          WHERE "id" = ${suiteId} AND "projectId" = ${projectId}
+        )
+        AND EXISTS (
+          SELECT 1 FROM "AutomationScenario"
+          WHERE "id" = ${scenarioId} AND "projectId" = ${projectId}
+            AND COALESCE("metadata"->'recycleBin'->>'deletedAt', '') = ''
+        )
+        ON CONFLICT ("suiteId", "scenarioId") DO NOTHING
+      `);
+    }
+
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE "AutomationSuite"
+      SET "updatedAt" = NOW()
+      WHERE "id" = ${suiteId} AND "projectId" = ${projectId}
+    `);
+  });
+
+  return getSuite(projectId, suiteId);
+}
+
+export async function replaceSuiteScenarios(
+  projectId: string,
+  suiteId: string,
+  scenarioIds: string[],
+) {
+  const uniqueScenarioIds = [...new Set(scenarioIds.filter(Boolean))];
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw(Prisma.sql`
+      DELETE FROM "AutomationSuiteScenario"
+      WHERE "projectId" = ${projectId} AND "suiteId" = ${suiteId}
+    `);
+
+    for (const scenarioId of uniqueScenarioIds) {
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO "AutomationSuiteScenario" (
+          "id", "projectId", "suiteId", "scenarioId", "addedAt"
+        )
+        SELECT ${newId("suite_member")}, ${projectId}, ${suiteId}, ${scenarioId}, NOW()
+        WHERE EXISTS (
+          SELECT 1 FROM "AutomationScenario"
+          WHERE "id" = ${scenarioId} AND "projectId" = ${projectId}
+            AND COALESCE("metadata"->'recycleBin'->>'deletedAt', '') = ''
+        )
+        ON CONFLICT ("suiteId", "scenarioId") DO NOTHING
+      `);
+    }
+  });
+}
+
+export async function deleteSuite(projectId: string, suiteId: string) {
+  const current = await prisma.$queryRaw<Array<{ status: string }>>(Prisma.sql`
+    SELECT "status" FROM "AutomationSuite"
+    WHERE "projectId" = ${projectId} AND "id" = ${suiteId}
+      AND COALESCE("metadata"->'recycleBin'->>'deletedAt', '') = ''
+    LIMIT 1
+  `);
+  if (!current[0]) return false;
+
+  await prisma.$executeRaw(Prisma.sql`
+    UPDATE "AutomationSuite"
+    SET "status" = ${"archived"}::"AutomationScenarioStatus",
+      "metadata" = jsonb_set(
+        COALESCE("metadata", '{}'::jsonb),
+        ${Prisma.raw("'{recycleBin}'")},
+        ${jsonb({
+          deletedAt: new Date().toISOString(),
+          deletedBy: null,
+          previousStatus: current[0].status,
+          type: "suite",
+        })},
+        true
+      ),
+      "updatedAt" = NOW()
+    WHERE "projectId" = ${projectId} AND "id" = ${suiteId}
+  `);
+
+  return true;
 }
 
 export async function deleteScenario(projectId: string, scenarioId: string) {
