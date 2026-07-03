@@ -604,6 +604,7 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 }
 
 .cf-modal-detail[open] {
+  display: contents !important;
   border-color: transparent !important;
   background: transparent !important;
   box-shadow: none !important;
@@ -612,9 +613,7 @@ a[href][class*="text-red"]:not([data-no-hover-swap]):focus-visible * {
 }
 
 .cf-modal-detail[open] > summary {
-  pointer-events: none;
-  position: static;
-  z-index: auto;
+  display: none !important;
 }
 
 .cf-modal-detail[open]::before {
