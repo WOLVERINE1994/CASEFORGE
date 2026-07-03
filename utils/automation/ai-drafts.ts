@@ -184,7 +184,12 @@ const resolveNavigateUrl = (rawUrl: string, context?: AutomationDraftContext) =>
   if (url.includes("{{baseUrl}}")) {
     if (!baseUrl) return url;
     const mergedBase = mergeBaseAndPath(baseUrl, "");
-    return normalizeUrlText(url.replaceAll("{{baseUrl}}", mergedBase.replace(/\/$/, "")));
+    const normalizedBase = mergedBase.replace(/\/$/, "");
+    return normalizeUrlText(
+      url
+        .replace(/^https?:\/\/\{\{baseUrl\}\}/i, normalizedBase)
+        .replaceAll("{{baseUrl}}", normalizedBase),
+    );
   }
   if (hasUrlProtocol(url)) return normalizeUrlText(url);
   if (baseUrl && (url.startsWith("/") || cleanText(context?.startPage))) {

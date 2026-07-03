@@ -845,6 +845,34 @@ function normalizeUrl(value: string) {
   return /^https?:\/\//i.test(value) ? value : `https://${value}`;
 }
 
+function hasTemplateToken(value?: string | null) {
+  return /\{\{[^}]+\}\}/.test(value ?? "");
+}
+
+function resolvedBaseUrlTemplate(value: string, baseUrl?: string | null) {
+  const rawValue = textValue(value);
+  if (!rawValue) return baseUrl ? normalizeUrl(baseUrl) : "";
+  if (!rawValue.includes("{{baseUrl}}")) return rawValue;
+  const normalizedBase = baseUrl ? normalizeUrl(baseUrl).replace(/\/+$/, "") : "";
+  if (!normalizedBase) return rawValue;
+  return rawValue
+    .replace(/^https?:\/\/\{\{baseUrl\}\}/i, normalizedBase)
+    .replaceAll("{{baseUrl}}", normalizedBase);
+}
+
+function scenarioBaseUrlFromMetadata(metadata: Record<string, unknown>) {
+  const sources = [
+    metadata.variables,
+    metadata.automationContext,
+  ];
+  for (const source of sources) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) continue;
+    const baseUrl = textValue((source as Record<string, unknown>).baseUrl);
+    if (baseUrl && !hasTemplateToken(baseUrl)) return normalizeUrl(baseUrl);
+  }
+  return "";
+}
+
 function safeUrl(value: string) {
   try {
     return new URL(normalizeUrl(value));
@@ -2368,24 +2396,25 @@ function makeNavigateStep(url: string, id = makeStepId()): AutomationStep {
   };
 }
 
-function navigationUrlForStep(step: AutomationStep) {
+function navigationUrlForStep(step: AutomationStep, baseUrl = "") {
   if (displayAction(step.action) !== "navigate") return null;
-  const value = step.inputValue || step.target?.value;
+  const value = resolvedBaseUrlTemplate(step.inputValue || step.target?.value || "", baseUrl);
   if (!value) return null;
+  if (hasTemplateToken(value)) return null;
   return normalizeUrl(value);
 }
 
-function lastNavigationUrl(steps: AutomationStep[]) {
+function lastNavigationUrl(steps: AutomationStep[], baseUrl = "") {
   for (const step of [...steps].reverse()) {
-    const url = navigationUrlForStep(step);
+    const url = navigationUrlForStep(step, baseUrl);
     if (url) return url;
   }
   return null;
 }
 
-function firstNavigationUrl(steps: AutomationStep[]) {
+function firstNavigationUrl(steps: AutomationStep[], baseUrl = "") {
   for (const step of steps) {
-    const url = navigationUrlForStep(step);
+    const url = navigationUrlForStep(step, baseUrl);
     if (url) return url;
   }
   return null;
@@ -2421,7 +2450,7 @@ function environmentUrlForStep(step: AutomationStep, environmentBaseUrl: string)
   const rawValue = textValue(step.inputValue || step.target?.value);
   if (!rawValue) return normalizeUrl(environmentBaseUrl);
   if (rawValue.includes("{{baseUrl}}")) {
-    return normalizeUrl(rawValue.replaceAll("{{baseUrl}}", environmentBaseUrl.replace(/\/$/, "")));
+    return normalizeUrl(resolvedBaseUrlTemplate(rawValue, environmentBaseUrl));
   }
   return mergeUrlPath(environmentBaseUrl, rawValue);
 }
@@ -4827,9 +4856,21 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     livePreviewWheelInFlightRef.current = false;
   }, [session?.sessionId, workspaceTab]);
 
+  const scenarioMetadata = useMemo(() => scenarioMetadataRecord(scenario), [scenario]);
+  const scenarioMetadataBaseUrl = useMemo(
+    () => scenarioBaseUrlFromMetadata(scenarioMetadata),
+    [scenarioMetadata],
+  );
+  const activeBaseUrl = useMemo(
+    () =>
+      scenarioMetadataBaseUrl ||
+      runConfig.environments.find((environment) => environment.baseUrl.trim())?.baseUrl.trim() ||
+      "",
+    [runConfig.environments, scenarioMetadataBaseUrl],
+  );
   const scenarioName = scenario?.name || "Untitled Scenario";
   const previewTabs = useMemo(() => session?.tabs ?? [], [session?.tabs]);
-  const previewAddress = session?.currentUrl || targetUrl;
+  const rawPreviewAddress = session?.currentUrl || targetUrl;
   const activePreviewTab =
     previewTabs.find((tab) => tab.id === session?.activeTabId || tab.active) ??
     previewTabs[0] ??
@@ -4841,6 +4882,15 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       isCompanionPreviewSession(session) &&
       workspaceTab === "browser",
   );
+  const resolveWorkspaceUrl = useCallback(
+    (value: string) => {
+      const resolved = resolvedBaseUrlTemplate(value, activeBaseUrl);
+      if (!resolved || hasTemplateToken(resolved)) return "";
+      return normalizeUrl(resolved);
+    },
+    [activeBaseUrl],
+  );
+  const previewAddress = resolveWorkspaceUrl(rawPreviewAddress) || rawPreviewAddress;
 
   useEffect(() => {
     setBrowserAddressDraft(previewAddress);
@@ -4892,7 +4942,6 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     livePreviewKnownTabIdsRef.current = nextTabIds;
   }, [previewTabs, session?.activeTabId]);
 
-  const scenarioMetadata = useMemo(() => scenarioMetadataRecord(scenario), [scenario]);
   const finalizedSteps = useMemo(() => normalizeSteps(scenario?.steps), [scenario?.steps]);
   const scenarioSteps = finalizedSteps;
   const liveSteps = useMemo(
@@ -5961,9 +6010,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   useEffect(() => {
     if (!scenario || targetInitializedForScenario.current === scenarioId) return;
     targetInitializedForScenario.current = scenarioId;
-    const savedUrl = lastNavigationUrl(finalizedSteps);
-    if (savedUrl) setTargetUrl(savedUrl);
-  }, [finalizedSteps, scenario, scenarioId]);
+    const savedUrl = lastNavigationUrl(finalizedSteps, activeBaseUrl) || activeBaseUrl;
+    if (savedUrl) setTargetUrl(cleanUrlAuth(savedUrl));
+  }, [activeBaseUrl, finalizedSteps, scenario, scenarioId]);
 
   useEffect(() => {
     if (!liveSteps.length) return;
@@ -6352,7 +6401,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const startVerifyCapture = async () => {
     setBusy(true);
     try {
-      const url = normalizeUrl(targetUrl);
+      const url = resolveWorkspaceUrl(targetUrl) || normalizeUrl(targetUrl);
       if (shouldUseLegacyDesktopBridge(url)) {
         if (!isUsableBrokerSession(session) || !isCompanionPreviewSession(session)) {
           appendLog("Start Live Preview or Recorder before adding a verification in Companion.");
@@ -7377,6 +7426,14 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       appendLog("Start a Companion Live Preview before using browser controls.");
       return false;
     }
+    const commandUrl =
+      (command === "navigate" || command === "newTab") && url
+        ? resolveWorkspaceUrl(url)
+        : url;
+    if ((command === "navigate" || command === "newTab") && !commandUrl) {
+      appendLog("Navigation URL still contains an unresolved variable. Set the Base URL first.");
+      return false;
+    }
 
     setBrowserNavBusy(true);
     try {
@@ -7388,7 +7445,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         socket.send(JSON.stringify({
           command,
           type: "browserCommand",
-          url,
+          url: commandUrl,
         }));
         setLivePreviewFailed(false);
         setLivePreviewTick(Date.now());
@@ -7402,7 +7459,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           action: command === "closeTab" ? "closePage" : "browserCommand",
           command,
           sessionId: session.sessionId,
-          url,
+          url: commandUrl,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -7440,16 +7497,21 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     appendLog,
     browserAddressDraft,
     canControlLiveBrowser,
+    resolveWorkspaceUrl,
     session?.sessionId,
     targetUrl,
   ]);
 
   const submitLiveBrowserAddress = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const nextUrl = normalizeUrl(browserAddressDraft);
+    const nextUrl = resolveWorkspaceUrl(browserAddressDraft);
+    if (!nextUrl) {
+      appendLog("Navigation URL still contains an unresolved variable. Set the Base URL first.");
+      return;
+    }
     setBrowserAddressDraft(nextUrl);
     void requestLiveBrowserCommand("navigate", nextUrl);
-  }, [browserAddressDraft, requestLiveBrowserCommand]);
+  }, [appendLog, browserAddressDraft, requestLiveBrowserCommand, resolveWorkspaceUrl]);
 
   const switchLivePreviewTab = useCallback(async (tabId: string) => {
     if (
@@ -7831,7 +7893,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       id: `step_${crypto.randomUUID().replace(/-/g, "")}`,
       inputValue:
         normalizedAction === "navigate"
-          ? normalizeUrl(targetUrl)
+          ? resolveWorkspaceUrl(targetUrl) || normalizeUrl(targetUrl)
           : normalizedAction === "press"
             ? "Enter"
             : "",
@@ -8189,7 +8251,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
 
   const cycleLivePreviewSize = async () => {
     if (busy) return;
-    const previewUrl = authoringPreviewUrl || targetUrl;
+    const previewUrl = resolveWorkspaceUrl(authoringPreviewUrl || targetUrl);
     if (!previewUrl || !isCompanionPreviewSession(session)) {
       appendLog("Start a Live Preview session before changing preview size.");
       return;
@@ -8400,7 +8462,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const pauseRecording = async () => {
     const sessionId = recordingSessionId || session?.sessionId;
     if (!recording || !sessionId) return;
-    if (!shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl))) {
+    if (!shouldUseLegacyDesktopBridge(resolveWorkspaceUrl(targetUrl) || normalizeUrl(targetUrl))) {
       await setSessionRecorderMode(sessionId, "off");
     }
     setRecordingPaused(true);
@@ -8411,7 +8473,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const resumeRecording = async () => {
     const sessionId = recordingSessionId || session?.sessionId;
     if (!recording || !sessionId) return;
-    if (!shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl))) {
+    if (!shouldUseLegacyDesktopBridge(resolveWorkspaceUrl(targetUrl) || normalizeUrl(targetUrl))) {
       await setSessionRecorderMode(sessionId, "record");
     }
     setRecordingPaused(false);
@@ -10496,7 +10558,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   };
 
   const expectedUrlForPlayback = (scopedSteps: AutomationStep[]) => {
-    const scopedNavigationUrl = firstNavigationUrl(scopedSteps);
+    const scopedNavigationUrl = firstNavigationUrl(scopedSteps, activeBaseUrl);
     if (scopedNavigationUrl) return scopedNavigationUrl;
     const timelineSteps = mergeStepsById([...finalizedSteps, ...liveSteps]);
     const firstScopedStepId = scopedSteps.find((step) => step.id)?.id;
@@ -10504,7 +10566,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       ? timelineSteps.findIndex((step) => step.id === firstScopedStepId)
       : -1;
     const priorSteps = firstScopedIndex >= 0 ? timelineSteps.slice(0, firstScopedIndex + 1) : timelineSteps;
-    return lastNavigationUrl(priorSteps) || firstNavigationUrl(timelineSteps) || normalizeUrl(targetUrl);
+    return (
+      lastNavigationUrl(priorSteps, activeBaseUrl) ||
+      firstNavigationUrl(timelineSteps, activeBaseUrl) ||
+      resolveWorkspaceUrl(targetUrl) ||
+      normalizeUrl(targetUrl)
+    );
   };
 
   const playbackStateGuardFor = (
@@ -10513,7 +10580,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     anchorStep?: AutomationStep | null,
   ): PlaybackStateGuard | null => {
     const expectedUrl = expectedUrlForPlayback(scopedSteps);
-    if (shouldUseLegacyDesktopBridge(expectedUrl || normalizeUrl(targetUrl))) {
+    if (shouldUseLegacyDesktopBridge(expectedUrl || resolveWorkspaceUrl(targetUrl) || normalizeUrl(targetUrl))) {
       return null;
     }
     const currentUrl = session?.currentUrl || "";
@@ -10634,14 +10701,18 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           ? [makeNavigateStep(expectedUrl, `playback_state_${Date.now().toString(36)}`), ...baseRunSteps]
           : baseRunSteps;
       const playbackRunId = `playback-${Date.now().toString(36)}`;
-      if (shouldUseLegacyDesktopBridge(firstNavigationUrl(runSteps) || normalizeUrl(targetUrl))) {
+      const playbackStartUrl =
+        firstNavigationUrl(runSteps, activeBaseUrl) ||
+        resolveWorkspaceUrl(targetUrl) ||
+        normalizeUrl(targetUrl);
+      if (shouldUseLegacyDesktopBridge(playbackStartUrl)) {
         let companionSessionId =
           recordingSessionId ||
           (isUsableBrokerSession(session) && isCompanionPreviewSession(session)
             ? session.sessionId
             : "");
         if (!companionSessionId) {
-          const startUrl = firstNavigationUrl(runSteps) || normalizeUrl(targetUrl);
+          const startUrl = playbackStartUrl;
           const data = await companionBrowserRequest({
             body: JSON.stringify({
               action: "start",
@@ -10702,7 +10773,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       }
       const activeSession = isUsableBrokerSession(session)
         ? session
-        : await createSession(firstNavigationUrl(runSteps) || normalizeUrl(targetUrl), {
+        : await createSession(playbackStartUrl, {
             browserMode: runConfig.browserMode,
             viewport: viewportForRunConfig(runConfig),
           });
@@ -11227,7 +11298,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     if (input.forceNewSession && session?.sessionId && !isCompanionPreviewSession(session)) {
       await closeSession("Previous run session closed.");
     }
-    const startUrl = sessionStartUrlForRun(input.runSteps, input.startUrl) || normalizeUrl(targetUrl);
+    const startUrl =
+      sessionStartUrlForRun(input.runSteps, input.startUrl) ||
+      resolveWorkspaceUrl(targetUrl) ||
+      normalizeUrl(targetUrl);
     let companionSessionId =
       !input.forceNewSession && isUsableBrokerSession(session) && isCompanionPreviewSession(session)
         ? session.sessionId
@@ -11481,12 +11555,13 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       const parameterizedResumeSteps = substituteStepsParameters(resumeSteps, parameterData, runtimeVariableNamesForSubstitution);
       if (testCase) appendLog(`Using test data: ${testCase.name}.`);
       const resumeStartUrl =
-        firstNavigationUrl(parameterizedReplaySteps) ||
-        firstNavigationUrl(parameterizedResumeSteps) ||
+        firstNavigationUrl(parameterizedReplaySteps, activeBaseUrl) ||
+        firstNavigationUrl(parameterizedResumeSteps, activeBaseUrl) ||
+        resolveWorkspaceUrl(targetUrl) ||
         normalizeUrl(targetUrl);
       const resumeEndUrl =
-        lastNavigationUrl(parameterizedReplaySteps) ||
-        lastNavigationUrl(parameterizedResumeSteps) ||
+        lastNavigationUrl(parameterizedReplaySteps, activeBaseUrl) ||
+        lastNavigationUrl(parameterizedResumeSteps, activeBaseUrl) ||
         resumeStartUrl;
       setTargetUrl(resumeStartUrl);
       if (shouldUseLegacyDesktopBridge(resumeStartUrl)) {
@@ -11699,7 +11774,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             runScope: "scenario",
             showLiveReport: true,
             startUrl:
-              firstNavigationUrl(parameterizedExecutableSteps) ||
+              firstNavigationUrl(parameterizedExecutableSteps, environment.baseUrl) ||
               normalizeUrl(environment.baseUrl),
             summarySteps: parameterizedSummarySteps,
             testCase,
@@ -11780,7 +11855,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
             runSteps: executableActionSteps,
             runScope: "action",
             showLiveReport: false,
-            startUrl: firstNavigationUrl(executableActionSteps) || normalizeUrl(targetUrl),
+            startUrl:
+              firstNavigationUrl(executableActionSteps, activeBaseUrl) ||
+              resolveWorkspaceUrl(targetUrl) ||
+              normalizeUrl(targetUrl),
             summarySteps: parameterizedSummarySteps,
             testCase,
           });
@@ -11800,7 +11878,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           runSteps: executableActionSteps,
           runScope: "action",
           showLiveReport: false,
-          startUrl: firstNavigationUrl(executableActionSteps) || normalizeUrl(targetUrl),
+          startUrl:
+            firstNavigationUrl(executableActionSteps, activeBaseUrl) ||
+            resolveWorkspaceUrl(targetUrl) ||
+            normalizeUrl(targetUrl),
           summarySteps: parameterizedSummarySteps,
         });
       }
@@ -11849,8 +11930,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       }
       const commandAction = displayAction(runnableStep.action);
       if (commandAction === "navigate") {
-        const nextUrl = navigationUrlForStep(runnableStep);
-        if (!nextUrl) throw new Error("Navigate command is missing a URL.");
+        const nextUrl = navigationUrlForStep(runnableStep, activeBaseUrl);
+        if (!nextUrl) throw new Error("Navigate command is missing a URL or has an unresolved Base URL.");
         setCommandRunStates((current) => ({
           ...current,
           [runnableStep.id]: {
@@ -12034,7 +12115,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           runSteps: executableSteps,
           runScope: "command",
           showLiveReport: false,
-          startUrl: firstNavigationUrl(executableSteps) || normalizeUrl(targetUrl),
+          startUrl:
+            firstNavigationUrl(executableSteps, activeBaseUrl) ||
+            resolveWorkspaceUrl(targetUrl) ||
+            normalizeUrl(targetUrl),
           summarySteps,
           testCase: activeTestCase,
         });
@@ -12118,7 +12202,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
         runSteps: parameterizedRunSteps,
         runScope: "resume",
         showLiveReport: false,
-        startUrl: firstNavigationUrl(parameterizedRunSteps) || normalizeUrl(targetUrl),
+        startUrl:
+          firstNavigationUrl(parameterizedRunSteps, activeBaseUrl) ||
+          resolveWorkspaceUrl(targetUrl) ||
+          normalizeUrl(targetUrl),
         summarySteps: parameterizedSummarySteps,
         testCase,
       });
@@ -12215,8 +12302,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   }, [appendLog, refreshCanvasState]);
 
   useEffect(() => {
+    const resolvedTargetUrl = resolveWorkspaceUrl(targetUrl) || normalizeUrl(targetUrl);
     if (
-      !shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl)) ||
+      !shouldUseLegacyDesktopBridge(resolvedTargetUrl) ||
       !recordingActive ||
       recordingPaused ||
       !recordingSessionId
@@ -12252,10 +12340,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     poll();
     const intervalId = window.setInterval(poll, 1000);
     return () => window.clearInterval(intervalId);
-  }, [persistRecorderEvents, recordingActive, recordingPaused, recordingSessionId, targetUrl]);
+  }, [persistRecorderEvents, recordingActive, recordingPaused, recordingSessionId, resolveWorkspaceUrl, targetUrl]);
 
   useEffect(() => {
-    if (shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl)) || !session?.sessionId) return;
+    if (shouldUseLegacyDesktopBridge(resolveWorkspaceUrl(targetUrl) || normalizeUrl(targetUrl)) || !session?.sessionId) return;
     let cancelled = false;
     const sessionId = session.sessionId;
     const poll = () => {
@@ -12292,12 +12380,12 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [recording, session?.sessionId, targetUrl, verifyPicking]);
+  }, [recording, resolveWorkspaceUrl, session?.sessionId, targetUrl, verifyPicking]);
 
   useEffect(() => {
     const captureSessionId = recordingSessionId || session?.sessionId || "";
     if (
-      shouldUseLegacyDesktopBridge(normalizeUrl(targetUrl)) ||
+      shouldUseLegacyDesktopBridge(resolveWorkspaceUrl(targetUrl) || normalizeUrl(targetUrl)) ||
       (!recording && !verifyPicking) ||
       !captureSessionId
     ) {
@@ -12347,7 +12435,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [appendLog, persistRecorderEvents, providerEventCaptureAfter, recording, recordingSessionId, session?.sessionId, targetUrl, verifyPicking]);
+  }, [appendLog, persistRecorderEvents, providerEventCaptureAfter, recording, recordingSessionId, resolveWorkspaceUrl, session?.sessionId, targetUrl, verifyPicking]);
 
   useEffect(() => {
     if (!canvasExploreElement) return;
@@ -12536,7 +12624,11 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
                           event.preventDefault();
-                          const nextUrl = normalizeUrl(browserAddressDraft);
+                          const nextUrl = resolveWorkspaceUrl(browserAddressDraft);
+                          if (!nextUrl) {
+                            appendLog("Navigation URL still contains an unresolved variable. Set the Base URL first.");
+                            return;
+                          }
                           setBrowserAddressDraft(nextUrl);
                           void requestLiveBrowserCommand("navigate", nextUrl);
                         }
