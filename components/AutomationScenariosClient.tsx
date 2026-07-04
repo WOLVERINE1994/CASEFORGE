@@ -840,8 +840,8 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
 
   return (
     <div className="mt-5 space-y-4">
-      <div className="flex flex-col gap-3 border-b border-zinc-200 bg-white pb-4 dark:border-zinc-800 dark:bg-zinc-950 xl:flex-row xl:items-end xl:justify-between">
-        <div>
+      <div className="flex min-w-0 flex-col gap-3 border-b border-zinc-200 bg-white pb-4 dark:border-zinc-800 dark:bg-zinc-950 xl:flex-row xl:items-end xl:justify-between">
+        <div className="shrink-0">
           <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
             Scenarios
           </h2>
@@ -851,59 +851,61 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
             </p>
           ) : null}
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row xl:min-w-[760px]">
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
-            placeholder="Search scenario, tag, or suite"
-          />
-          <select
-            value={statusFilter}
-            onChange={(event) =>
-              setStatusFilter(event.target.value as ScenarioStatus | "all")
-            }
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-          >
-            <option value="all">All statuses</option>
-            {statusOptions.map((status) => (
-              <option key={status} value={status}>
-                {statusLabel(status)}
-              </option>
-            ))}
-          </select>
-          <select
-            value={tagFilter}
-            onChange={(event) => setTagFilter(event.target.value)}
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-          >
-            <option value="all">All tags</option>
-            {allTags.map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
-          <select
-            value={suiteFilter}
-            onChange={(event) => setSuiteFilter(event.target.value)}
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-          >
-            <option value="all">All suites</option>
-            <option value="unassigned">Unassigned</option>
-            {suites.map((suite) => (
-              <option key={suite.id} value={suite.id}>
-                {suite.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => void handleNewScenario()}
-            className="inline-flex items-center justify-center rounded-xl border border-emerald-700 bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-white hover:text-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:border-emerald-400 dark:bg-emerald-500 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-emerald-100 dark:focus:ring-offset-zinc-950"
-          >
-            + Scenario
-          </button>
+        <div className="min-w-0 flex-1 overflow-x-auto pb-1 xl:max-w-[860px]">
+          <div className="flex min-w-max items-end gap-2">
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="min-h-[44px] w-[260px] shrink-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+              placeholder="Search scenario, tag, or suite"
+            />
+            <select
+              value={statusFilter}
+              onChange={(event) =>
+                setStatusFilter(event.target.value as ScenarioStatus | "all")
+              }
+              className="min-h-[44px] w-[150px] shrink-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+            >
+              <option value="all">All statuses</option>
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {statusLabel(status)}
+                </option>
+              ))}
+            </select>
+            <select
+              value={tagFilter}
+              onChange={(event) => setTagFilter(event.target.value)}
+              className="min-h-[44px] w-[190px] shrink-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+            >
+              <option value="all">All tags</option>
+              {allTags.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
+            </select>
+            <select
+              value={suiteFilter}
+              onChange={(event) => setSuiteFilter(event.target.value)}
+              className="min-h-[44px] w-[250px] shrink-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+            >
+              <option value="all">All suites</option>
+              <option value="unassigned">Unassigned</option>
+              {suites.map((suite) => (
+                <option key={suite.id} value={suite.id}>
+                  {suite.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => void handleNewScenario()}
+              className="inline-flex min-h-[44px] w-[104px] shrink-0 items-center justify-center rounded-xl border border-emerald-700 bg-emerald-700 px-3 py-2 text-center text-sm font-semibold leading-tight text-white shadow-sm transition hover:bg-white hover:text-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:border-emerald-400 dark:bg-emerald-500 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-emerald-100 dark:focus:ring-offset-zinc-950"
+            >
+              + Scenario
+            </button>
+          </div>
         </div>
       </div>
 
