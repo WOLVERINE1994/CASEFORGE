@@ -1138,43 +1138,45 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
       </section>
 
       <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="grid gap-3 border-b border-zinc-100 bg-zinc-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400 lg:grid-cols-[28px_minmax(220px,1.3fr)_128px_minmax(180px,0.8fr)_minmax(160px,0.8fr)_132px_132px_128px] lg:items-center">
-          <label className="flex items-center justify-center">
-            <input
-              type="checkbox"
-              checked={allVisibleSelected}
-              onChange={toggleVisibleScenarios}
-              className="h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
-              aria-label="Select visible scenarios"
-            />
-          </label>
-          <span>Scenario</span>
-          <span>Status</span>
-          <span>Tags</span>
-          <span>Suites</span>
-          <span>Created</span>
-          <span>Updated</span>
-          <span>Actions</span>
-        </div>
-        <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {loading ? (
-            <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-              Loading scenarios...
+        <div className="overflow-x-auto">
+          <div className="min-w-[1240px]">
+            <div className="grid grid-cols-[28px_minmax(220px,1.3fr)_128px_minmax(180px,0.8fr)_minmax(160px,0.8fr)_132px_132px_170px] items-center gap-3 border-b border-zinc-100 bg-zinc-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400">
+              <label className="flex items-center justify-center">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleVisibleScenarios}
+                  className="h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+                  aria-label="Select visible scenarios"
+                />
+              </label>
+              <span>Scenario</span>
+              <span>Status</span>
+              <span>Tags</span>
+              <span>Suites</span>
+              <span>Created</span>
+              <span>Updated</span>
+              <span>Actions</span>
             </div>
-          ) : sortedScenarios.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-              {scenarios.length
-                ? "No scenarios match the current filters."
-                : "No scenarios yet. Create one to start recording."}
-            </div>
-          ) : (
-            sortedScenarios.map((scenario) => {
-              const scenarioSuites = scenarioSuitesById.get(scenario.id) ?? [];
-              return (
-                <div
-                  key={scenario.id}
-                  className="grid gap-3 px-4 py-3 transition hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10 lg:grid-cols-[28px_minmax(220px,1.3fr)_128px_minmax(180px,0.8fr)_minmax(160px,0.8fr)_132px_132px_128px] lg:items-center"
-                >
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {loading ? (
+                <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                  Loading scenarios...
+                </div>
+              ) : sortedScenarios.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                  {scenarios.length
+                    ? "No scenarios match the current filters."
+                    : "No scenarios yet. Create one to start recording."}
+                </div>
+              ) : (
+                sortedScenarios.map((scenario) => {
+                  const scenarioSuites = scenarioSuitesById.get(scenario.id) ?? [];
+                  return (
+                    <div
+                      key={scenario.id}
+                      className="grid grid-cols-[28px_minmax(220px,1.3fr)_128px_minmax(180px,0.8fr)_minmax(160px,0.8fr)_132px_132px_170px] items-center gap-3 px-4 py-3 transition hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10"
+                    >
                   <label className="flex items-center justify-center">
                     <input
                       type="checkbox"
@@ -1256,7 +1258,7 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
                   <span className="text-xs text-zinc-500 dark:text-zinc-400">
                     {formatDate(scenario.updatedAt)}
                   </span>
-                  <div className="flex flex-wrap gap-2 lg:justify-end">
+                  <div className="flex flex-wrap justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => navigateToScenario(scenario.id)}
@@ -1273,9 +1275,11 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
                     </button>
                   </div>
                 </div>
-              );
-            })
-          )}
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

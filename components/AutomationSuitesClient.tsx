@@ -303,30 +303,32 @@ export default function AutomationSuitesClient({ projectKey }: Props) {
       </div>
 
       <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="grid gap-3 border-b border-zinc-100 bg-zinc-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400 lg:grid-cols-[minmax(220px,1.2fr)_130px_110px_minmax(160px,0.8fr)_132px_132px_132px]">
-          <span>Suite</span>
-          <span>Status</span>
-          <span>Scenarios</span>
-          <span>Tags</span>
-          <span>Created</span>
-          <span>Updated</span>
-          <span>Actions</span>
-        </div>
-        <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {loading ? (
-            <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-              Loading suites...
+        <div className="overflow-x-auto">
+          <div className="min-w-[1140px]">
+            <div className="grid grid-cols-[minmax(220px,1.2fr)_130px_110px_minmax(160px,0.8fr)_132px_132px_170px] gap-3 border-b border-zinc-100 bg-zinc-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400">
+              <span>Suite</span>
+              <span>Status</span>
+              <span>Scenarios</span>
+              <span>Tags</span>
+              <span>Created</span>
+              <span>Updated</span>
+              <span>Actions</span>
             </div>
-          ) : filteredSuites.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-              {suites.length ? "No suites match the current filters." : "No suites yet. Create one above or select scenarios from the Scenarios tab."}
-            </div>
-          ) : (
-            filteredSuites.map((suite) => (
-              <div
-                key={suite.id}
-                className="grid gap-3 px-4 py-3 transition hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10 lg:grid-cols-[minmax(220px,1.2fr)_130px_110px_minmax(160px,0.8fr)_132px_132px_132px] lg:items-center"
-              >
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {loading ? (
+                <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                  Loading suites...
+                </div>
+              ) : filteredSuites.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                  {suites.length ? "No suites match the current filters." : "No suites yet. Create one above or select scenarios from the Scenarios tab."}
+                </div>
+              ) : (
+                filteredSuites.map((suite) => (
+                  <div
+                    key={suite.id}
+                    className="grid grid-cols-[minmax(220px,1.2fr)_130px_110px_minmax(160px,0.8fr)_132px_132px_170px] items-center gap-3 px-4 py-3 transition hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10"
+                  >
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">
                     {suite.name}
@@ -371,7 +373,7 @@ export default function AutomationSuitesClient({ projectKey }: Props) {
                 <span className="text-xs text-zinc-500 dark:text-zinc-400">
                   {formatDate(suite.updatedAt)}
                 </span>
-                <div className="flex flex-wrap gap-2 lg:justify-end">
+                <div className="flex flex-wrap justify-end gap-2">
                   <Link
                     href={`/projects/${encodedProjectKey}/automation/scenarios`}
                     className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs font-semibold text-zinc-800 transition hover:border-zinc-950 hover:bg-zinc-950 hover:text-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-100 dark:hover:bg-zinc-100 dark:hover:text-zinc-950"
@@ -387,8 +389,10 @@ export default function AutomationSuitesClient({ projectKey }: Props) {
                   </button>
                 </div>
               </div>
-            ))
-          )}
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
