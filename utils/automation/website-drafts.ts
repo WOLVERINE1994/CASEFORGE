@@ -11,6 +11,16 @@ import type {
 } from "./types";
 
 type WebsiteCoverageDepth = "basic" | "standard" | "thorough";
+type WebsiteGenerationMode =
+  | "functional"
+  | "negative"
+  | "edge"
+  | "ui"
+  | "api"
+  | "regression"
+  | "security"
+  | "accessibility"
+  | "salesforce";
 
 type WebsiteElementSnapshot = {
   id: string;
@@ -124,6 +134,9 @@ const PRIVATE_HOSTS = new Set(["localhost", "localhost.localdomain"]);
 
 const cleanText = (value: unknown, fallback = "") =>
   typeof value === "string" ? value.replace(/\s+/g, " ").trim() : fallback;
+
+const cleanCaseCell = (value: unknown, fallback = "") =>
+  cleanText(value, fallback).replace(/\|/g, "/");
 
 const clampConfidence = (value: unknown) => {
   const numeric = Number(value);
@@ -883,6 +896,264 @@ ${JSON.stringify(
   2,
 )}`;
 
+const targetManualCaseCount = (coverage: WebsiteCoverageDepth) =>
+  coverage === "basic" ? "5 to 7" : coverage === "thorough" ? "12 to 16" : "8 to 12";
+
+const manualModeGuidance = (mode: WebsiteGenerationMode) => {
+  switch (mode) {
+    case "negative":
+      return "Emphasize invalid actions, blocked submissions, missing fields, and error messaging supported by observed controls.";
+    case "edge":
+      return "Emphasize boundary UI states, empty states, unusual but realistic inputs, and layout stability.";
+    case "ui":
+      return "Emphasize visible UI behavior, content, labels, field states, interaction feedback, and usability.";
+    case "api":
+      return "Only include API-oriented cases if the inspected page visibly exposes API behavior. Otherwise keep cases manual UI-focused.";
+    case "security":
+      return "Keep security validation defensive and release-readiness focused, such as access boundaries, safe errors, and sensitive data exposure checks.";
+    case "accessibility":
+      return "Emphasize manual WCAG-oriented checks: keyboard flow, visible focus, accessible names, semantics, form labels, contrast, zoom/reflow, and screen reader announcements.";
+    case "regression":
+      return "Emphasize stable existing behavior for visible content, navigation, forms, and critical interactions.";
+    case "salesforce":
+      return "Only include Salesforce-specific language if the inspected page evidence supports it. Otherwise keep cases grounded in the website component.";
+    case "functional":
+    default:
+      return "Emphasize primary user-visible behavior, successful paths, validation, and meaningful alternate paths.";
+  }
+};
+
+const promptForManualWebsiteCases = (input: {
+  coverage: WebsiteCoverageDepth;
+  mode: WebsiteGenerationMode;
+  orchestration?: string;
+  persona?: string;
+  snapshot: WebsiteInspectionSnapshot;
+}) => `Generate manual QA test cases for the inspected website component.
+
+Return plain text only. Do not use markdown.
+Return exactly one test case per line.
+Use | as the column separator.
+Keep each row strictly in 7 columns only.
+Column order: ID | Type | Title | Preconditions | Steps | Expected Result | Test Data
+Use only these Type values: Functional, Regression, API, UI, Negative, Edge, Integration, Security, Performance.
+
+Rules:
+- This is manual test case generation only.
+- Do not create automation scripts, browser commands, locators, code, selectors, Playwright, Cypress, Selenium, or step implementations.
+- Ground every case in the inspected website evidence below.
+- Do not invent hidden flows, credentials, business rules, or elements that are not present in the evidence.
+- Steps must be human-executable manual QA actions separated with semicolons.
+- Preconditions should describe starting state, page availability, access, or setup only.
+- Expected Result must be observable and concise.
+- Test Data must include concrete visible labels, field values, URLs, or "None" when no data is needed.
+- Include functional, negative, UI/accessibility, link/navigation, form, and regression coverage only where supported by observed evidence.
+- Target ${targetManualCaseCount(input.coverage)} useful manual cases.
+- Persona: ${cleanText(input.persona, "all users")}
+- Mode guidance: ${manualModeGuidance(input.mode)}
+- Orchestration guidance: ${
+  cleanText(input.orchestration) ||
+  "No orchestration override was provided. Infer the best QA mix from the inspected component."
+}
+
+Format example:
+TC001 | Functional | Homepage hero content appears correctly | Website is reachable; Homepage component is open | Open the homepage URL; Review the hero heading; Review primary call to action | The hero content and primary action are visible and understandable | URL=https://example.com; Heading=Observed heading
+
+Inspected component evidence:
+${JSON.stringify(
+  {
+    component: input.snapshot.component,
+    finalUrl: input.snapshot.finalUrl,
+    forms: input.snapshot.forms.map((form) => ({
+      buttons: form.buttons.map((button) => ({ name: button.name, text: button.text })),
+      fields: form.fields.map((field) => ({
+        inputType: field.inputType,
+        name: field.name,
+        placeholder: field.placeholder,
+        required: field.required,
+      })),
+      name: form.name,
+    })),
+    headings: input.snapshot.headings,
+    observedElements: input.snapshot.elements.map((element) => ({
+      disabled: element.disabled,
+      href: element.href,
+      inputType: element.inputType,
+      kind: element.kind,
+      name: element.name,
+      placeholder: element.placeholder,
+      required: element.required,
+      tag: element.tag,
+      text: element.text,
+    })),
+    root: input.snapshot.rootDescription,
+    stats: input.snapshot.stats,
+    title: input.snapshot.title,
+    visibleText: input.snapshot.visibleText.slice(0, 2200),
+  },
+  null,
+  2,
+)}`;
+
+const caseLine = (
+  id: string,
+  type: string,
+  title: string,
+  preconditions: string,
+  steps: string,
+  expectedResult: string,
+  testData = "None",
+) =>
+  [id, type, title, preconditions, steps, expectedResult, testData]
+    .map((cell) => cleanCaseCell(cell))
+    .join(" | ");
+
+const fallbackManualWebsiteCases = (
+  snapshot: WebsiteInspectionSnapshot,
+  coverage: WebsiteCoverageDepth,
+) => {
+  const component = snapshot.component || "website component";
+  const url = snapshot.finalUrl || snapshot.requestedUrl;
+  const heading = snapshot.headings[0] || snapshot.title || component;
+  const links = snapshot.elements.filter((element) => element.kind === "link" && element.href);
+  const buttons = snapshot.elements.filter((element) => element.kind === "button");
+  const fields = snapshot.elements.filter((element) => element.kind === "field");
+  const images = snapshot.elements.filter((element) => element.kind === "image");
+  const rows: string[] = [
+    caseLine(
+      "TC001",
+      "Functional",
+      `${component} renders expected visible content`,
+      `${component} page is reachable`,
+      `Open ${url}; Review the page title and main heading; Scan the visible ${component} content`,
+      `The ${component} content is visible and matches the inspected page structure.`,
+      `URL=${url}; Heading=${heading}`,
+    ),
+    caseLine(
+      "TC002",
+      "UI",
+      `${component} layout remains readable on desktop`,
+      `${component} page is open in a desktop browser`,
+      "Set the browser to a desktop viewport; Review headings, text, buttons, links, and images; Check for clipped or overlapping content",
+      "All visible content remains readable, aligned, and free of obvious overlap.",
+      `Buttons=${buttons.length}; Links=${links.length}; Fields=${fields.length}`,
+    ),
+  ];
+
+  links.slice(0, coverage === "basic" ? 2 : 4).forEach((link, index) => {
+    rows.push(
+      caseLine(
+        `TC${String(rows.length + 1).padStart(3, "0")}`,
+        "Functional",
+        `${link.name || link.text || "Observed link"} navigates to expected destination`,
+        `${component} page is open; Link is visible`,
+        `Locate ${link.name || link.text || "the observed link"}; Open the link; Review the destination page or URL`,
+        "The link opens the expected destination without a broken page or unexpected error.",
+        `Link text=${link.name || link.text || `Link ${index + 1}`}; href=${link.href}`,
+      ),
+    );
+  });
+
+  buttons.slice(0, coverage === "basic" ? 2 : 4).forEach((button, index) => {
+    rows.push(
+      caseLine(
+        `TC${String(rows.length + 1).padStart(3, "0")}`,
+        "Functional",
+        `${button.name || button.text || "Observed button"} action gives clear feedback`,
+        `${component} page is open; Button is visible`,
+        `Locate ${button.name || button.text || "the observed button"}; Activate the button; Review the visible response`,
+        "The button responds with a clear state change, navigation, or feedback appropriate to the visible UI.",
+        `Button=${button.name || button.text || `Button ${index + 1}`}`,
+      ),
+    );
+  });
+
+  fields.slice(0, coverage === "basic" ? 2 : 5).forEach((field, index) => {
+    const sampleValue = field.inputType === "email" ? "qa.user@example.com" : "Sample test value";
+    rows.push(
+      caseLine(
+        `TC${String(rows.length + 1).padStart(3, "0")}`,
+        field.required ? "Negative" : "Functional",
+        `${field.name || field.placeholder || "Observed field"} accepts reviewable input`,
+        `${component} page is open; Field is visible`,
+        `Locate ${field.name || field.placeholder || "the observed field"}; Enter sample data; Move focus away from the field`,
+        "The field accepts the value or shows clear validation feedback if the value is not allowed.",
+        `Field=${field.name || field.placeholder || `Field ${index + 1}`}; Value=${sampleValue}; Required=${field.required}`,
+      ),
+    );
+  });
+
+  if (fields.some((field) => field.required) || snapshot.forms.length) {
+    rows.push(
+      caseLine(
+        `TC${String(rows.length + 1).padStart(3, "0")}`,
+        "Negative",
+        `${component} required fields block incomplete submission`,
+        `${component} form is available`,
+        "Leave required fields empty; Submit or continue the form; Review validation feedback",
+        "Submission is blocked and each missing required value has understandable feedback.",
+        `Required fields=${fields.filter((field) => field.required).map((field) => field.name || field.placeholder || field.id).join(", ") || "Observed form fields"}`,
+      ),
+    );
+  }
+
+  if (coverage !== "basic") {
+    rows.push(
+      caseLine(
+        `TC${String(rows.length + 1).padStart(3, "0")}`,
+        "UI",
+        `${component} keyboard flow reaches interactive controls`,
+        `${component} page is open; Keyboard is available`,
+        "Start at the browser address bar; Use Tab to move through links, buttons, and fields; Activate reachable controls with keyboard only",
+        "Focus order is logical, focus is visible, and interactive controls can be reached without a mouse.",
+        `Interactive controls=${links.length + buttons.length + fields.length}`,
+      ),
+    );
+  }
+
+  if (coverage === "thorough" && images.length) {
+    rows.push(
+      caseLine(
+        `TC${String(rows.length + 1).padStart(3, "0")}`,
+        "UI",
+        `${component} images have meaningful alternatives`,
+        `${component} page is open; Images are visible`,
+        "Review visible images; Check whether each informative image has meaningful alternative text or surrounding context; Check decorative images do not distract assistive review",
+        "Images have appropriate alt text or surrounding accessible context based on their purpose.",
+        `Images=${images.length}`,
+      ),
+    );
+  }
+
+  return rows.slice(0, coverage === "thorough" ? 16 : coverage === "basic" ? 7 : 12).join("\n");
+};
+
+const normalizeManualCaseResult = (text: string) =>
+  text
+    .replace(/```(?:plaintext|text)?/gi, "")
+    .replace(/```/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.includes("|"))
+    .join("\n")
+    .trim();
+
+const normalizeWebsiteMode = (value: unknown): WebsiteGenerationMode => {
+  const allowed = new Set<WebsiteGenerationMode>([
+    "functional",
+    "negative",
+    "edge",
+    "ui",
+    "api",
+    "regression",
+    "security",
+    "accessibility",
+    "salesforce",
+  ]);
+  const normalized = cleanText(value, "functional").toLowerCase() as WebsiteGenerationMode;
+  return allowed.has(normalized) ? normalized : "functional";
+};
+
 export async function generateWebsiteAutomationDrafts(input: {
   component: string;
   coverage?: unknown;
@@ -983,6 +1254,82 @@ export async function generateWebsiteAutomationDrafts(input: {
     drafts: drafts.slice(0, coverage === "thorough" ? 12 : coverage === "basic" ? 6 : 9),
     model,
     provider,
+    snapshot,
+    usedFallback,
+  };
+}
+
+export async function generateWebsiteManualTestCases(input: {
+  component: string;
+  coverage?: unknown;
+  mode?: unknown;
+  orchestration?: unknown;
+  persona?: unknown;
+  url: string;
+}): Promise<{
+  coverage: WebsiteCoverageDepth;
+  model: string;
+  provider: string;
+  result: string;
+  snapshot: WebsiteInspectionSnapshot;
+  usedFallback: boolean;
+}> {
+  const targetUrl = normalizeUrlText(input.url);
+  await assertUrlIsAllowed(targetUrl);
+
+  const component = cleanText(input.component, "homepage");
+  const coverage = normalizeCoverage(input.coverage);
+  const mode = normalizeWebsiteMode(input.mode);
+  const snapshot = await inspectWebsite(targetUrl, component);
+  let model = "";
+  let provider = "";
+  let usedFallback = false;
+
+  try {
+    const response = await generateCaseForgeAiText({
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are CaseForge's senior QA engineer. Generate manual test cases only from observed website evidence.",
+        },
+        {
+          role: "user",
+          content: promptForManualWebsiteCases({
+            coverage,
+            mode,
+            orchestration: cleanText(input.orchestration),
+            persona: cleanText(input.persona, "all"),
+            snapshot,
+          }),
+        },
+      ],
+      temperature: 0.16,
+    });
+    model = response.model;
+    provider = response.provider;
+    const normalized = normalizeManualCaseResult(response.text);
+    if (normalized.split(/\r?\n/).filter(Boolean).length >= 3) {
+      return {
+        coverage,
+        model,
+        provider,
+        result: normalized,
+        snapshot,
+        usedFallback,
+      };
+    }
+    usedFallback = true;
+  } catch (error) {
+    usedFallback = true;
+    console.error("AI website manual case generation failed:", error);
+  }
+
+  return {
+    coverage,
+    model: model || "fallback",
+    provider: provider || "caseforge",
+    result: fallbackManualWebsiteCases(snapshot, coverage),
     snapshot,
     usedFallback,
   };

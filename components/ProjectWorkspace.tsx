@@ -738,6 +738,10 @@ export default function ProjectWorkspace({
   const [generatingAutomationRowIds, setGeneratingAutomationRowIds] = useState<string[]>([]);
   const [automationGenerationProgress, setAutomationGenerationProgress] =
     useState<AutomationGenerationProgress | null>(null);
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [websiteComponent, setWebsiteComponent] = useState("homepage");
+  const [generatingWebsiteCases, setGeneratingWebsiteCases] = useState(false);
+  const [websiteGenerationNote, setWebsiteGenerationNote] = useState("");
   const [generationFeedbackLog, setGenerationFeedbackLog] = useState<
     NonNullable<Project["generationFeedbackLog"]>
   >([]);
@@ -3799,7 +3803,7 @@ export default function ProjectWorkspace({
     });
   };
 
-  const parseGeneratedResult = (result: string) => {
+  const parseGeneratedResult = (result: string, sourceRequirementOverride?: string) => {
     const parsedRows = parseResultToRows(result || "");
     const enrichedRows = enrichGeneratedRowsWithDomainMetadata(
       prepareGeneratedRows(parsedRows, generationMode),
@@ -3824,7 +3828,7 @@ export default function ProjectWorkspace({
             ...row,
             generationSource: "ai-generated",
           },
-          sourceRequirement: input.trim(),
+          sourceRequirement: sourceRequirementOverride ?? input.trim(),
           generationMode,
           disposition: "accepted",
         }),
@@ -4850,6 +4854,124 @@ export default function ProjectWorkspace({
       ...current,
       [key]: value,
     }));
+  };
+
+  const generateFromWebsite = async () => {
+    const url = websiteUrl.trim();
+    const component = websiteComponent.trim();
+    if (!url || !component) {
+      showWorkspaceNotice("error", "Website URL and component are required.");
+      return;
+    }
+
+    const websiteRequirement = [
+      `Website URL: ${url}`,
+      `Component: ${component}`,
+      `Goal: Generate manual QA test cases for the inspected website component before any automation is created.`,
+    ].join("\n");
+
+    try {
+      setGeneratingWebsiteCases(true);
+      setWebsiteGenerationNote("");
+      const response = await fetch("/api/generate-from-website", {
+        body: JSON.stringify({
+          component,
+          coverage: coverageDepth,
+          mode: generationMode,
+          orchestration: cognitiveOrchestrationPlan.promptDirective,
+          persona,
+          url,
+        }),
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const rawResponse = await response.text();
+      let data: {
+        error?: string;
+        result?: string;
+        snapshot?: { component?: string; finalUrl?: string; visibleElementCount?: number };
+        warning?: string;
+      } = {};
+      try {
+        data = rawResponse ? JSON.parse(rawResponse) : {};
+      } catch {
+        throw new Error("Website case generation returned an invalid response.");
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not generate website manual test cases.");
+      }
+
+      const { preparedRows, duplicateCount } = parseGeneratedResult(
+        data.result || "",
+        websiteRequirement,
+      );
+      const websiteRows = preparedRows.map((row) => ({
+        ...row,
+        automationStatus: row.automationStatus ?? "manual",
+        componentArea: component,
+        labels: Array.from(new Set([...(row.labels ?? []), "website", "AI website"])),
+      }));
+
+      if (websiteRows.length === 0) {
+        showWorkspaceNotice(
+          "error",
+          "The website generator returned a weak draft. Try a more specific component name like login form, pricing, header, or checkout.",
+        );
+        return;
+      }
+
+      setInput(websiteRequirement);
+      if (!projectName.trim()) {
+        setProjectName(`${component} Website QA`);
+      }
+      if (!automationGenerationContext.baseUrl.trim()) {
+        updateAutomationGenerationContext("baseUrl", data.snapshot?.finalUrl || url);
+      }
+      setRows(websiteRows);
+      setGenerationFeedbackLog(
+        websiteRows
+          .map((row) => row.generationFeedback)
+          .filter((item): item is NonNullable<typeof item> => Boolean(item)),
+      );
+      setSeenGapIds([]);
+      setIgnoredQualityFindingIds([]);
+      setIgnoredPredictionIds([]);
+      setFillingPredictionId(null);
+      setHighlightedRowId(null);
+      setHighlightedRowLabel(null);
+      setHighlightedCommentId(null);
+      setIsGeneratingChangeImpactCases(false);
+      setLastGeneratedChangeImpactSignature(null);
+      addAuditEntry(
+        "Website cases generated",
+        `Generated manual cases for ${component} from ${data.snapshot?.finalUrl || url}.`,
+      );
+      window.setTimeout(() => {
+        focusGeneratedCasesSection();
+      }, 120);
+      const note = `${websiteRows.length} manual case${websiteRows.length === 1 ? "" : "s"} generated for ${data.snapshot?.component || component}. Review them before creating automation.`;
+      setWebsiteGenerationNote(note);
+      showWorkspaceNotice(
+        data.warning ? "info" : "success",
+        data.warning
+          ? `${note} ${data.warning}`
+          : duplicateCount > 0
+            ? `${note} Removed ${duplicateCount} duplicate draft${duplicateCount === 1 ? "" : "s"}.`
+            : note,
+      );
+    } catch (error) {
+      setWebsiteGenerationNote("");
+      showWorkspaceNotice(
+        "error",
+        error instanceof Error
+          ? error.message
+          : "Could not generate website manual test cases.",
+      );
+    } finally {
+      setGeneratingWebsiteCases(false);
+    }
   };
   const showAutomationGenerationProgress = useCallback(
     (stage: number, message: string, status: AutomationGenerationProgress["status"] = "running") => {
@@ -9006,6 +9128,57 @@ export default function ProjectWorkspace({
                   </p>
                 </div>
               </div>
+            </div>
+            <div className="mb-5 rounded-[22px] border border-violet-200/80 bg-violet-50/75 px-5 py-5 shadow-sm dark:border-violet-500/20 dark:bg-violet-500/10">
+              <div className="grid gap-4 xl:grid-cols-[minmax(240px,1.2fr)_minmax(180px,0.8fr)_180px_220px] xl:items-end">
+                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-800 dark:text-violet-200">
+                  Website URL
+                  <input
+                    type="url"
+                    value={websiteUrl}
+                    onChange={(event) => setWebsiteUrl(event.target.value)}
+                    placeholder="https://example.com"
+                    className="mt-2 min-h-[44px] w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-violet-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-violet-500/10"
+                  />
+                </label>
+                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-800 dark:text-violet-200">
+                  Component
+                  <input
+                    type="text"
+                    value={websiteComponent}
+                    onChange={(event) => setWebsiteComponent(event.target.value)}
+                    placeholder="homepage, login form, header"
+                    className="mt-2 min-h-[44px] w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-violet-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-violet-500/10"
+                  />
+                </label>
+                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-800 dark:text-violet-200">
+                  Coverage
+                  <select
+                    value={coverageDepth}
+                    onChange={(event) =>
+                      setCoverageDepth(event.target.value as CoverageDepth)
+                    }
+                    className="mt-2 min-h-[44px] w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-zinc-800 shadow-sm outline-none transition focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-violet-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-violet-500/10"
+                  >
+                    <option value="basic">Basic</option>
+                    <option value="standard">Standard</option>
+                    <option value="thorough">Thorough</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void generateFromWebsite()}
+                  disabled={generatingWebsiteCases || loading}
+                  className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-violet-700 bg-violet-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-white hover:text-violet-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-violet-300 dark:bg-violet-400 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-violet-100 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
+                >
+                  {generatingWebsiteCases ? "Generating..." : "Generate Manual Cases"}
+                </button>
+              </div>
+              {websiteGenerationNote ? (
+                <p className="mt-3 text-xs font-medium text-violet-900 dark:text-violet-100">
+                  {websiteGenerationNote}
+                </p>
+              ) : null}
             </div>
             <textarea
               ref={requirementTextareaRef}

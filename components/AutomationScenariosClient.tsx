@@ -312,17 +312,10 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
   const [newSuiteName, setNewSuiteName] = useState("");
   const [newSuiteTags, setNewSuiteTags] = useState("");
   const [newSuiteStatus, setNewSuiteStatus] = useState<ScenarioStatus>("draft");
-  const [websiteUrl, setWebsiteUrl] = useState("");
-  const [websiteComponent, setWebsiteComponent] = useState("homepage");
-  const [websiteCoverage, setWebsiteCoverage] = useState("standard");
-  const [generatingWebsite, setGeneratingWebsite] = useState(false);
-  const [websiteGenerationNote, setWebsiteGenerationNote] = useState("");
-
   const encodedProjectKey = encodeURIComponent(projectKey);
   const scenariosApi = `/api/automation/projects/${encodedProjectKey}/scenarios`;
   const suitesApi = `/api/automation/projects/${encodedProjectKey}/suites`;
   const importApi = `${scenariosApi}/import`;
-  const websiteGenerateApi = `/api/automation/projects/${encodedProjectKey}/generate-from-website`;
 
   useEffect(() => {
     let cancelled = false;
@@ -515,11 +508,6 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
     selectedScenarios.length > 0 &&
     !savingBulk &&
     (Boolean(bulkStatus) || Boolean(bulkTags.trim()) || bulkTagMode === "replace");
-  const canGenerateFromWebsite =
-    Boolean(websiteUrl.trim()) &&
-    Boolean(websiteComponent.trim()) &&
-    !generatingWebsite;
-
   const navigateToScenario = (scenarioId: string) => {
     router.push(
       `/projects/${encodedProjectKey}/automation/scenarios?scenarioId=${encodeURIComponent(scenarioId)}`,
@@ -629,68 +617,6 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
           ? createError.message
           : "Could not create scenario.",
       );
-    }
-  };
-
-  const handleGenerateFromWebsite = async () => {
-    if (!canGenerateFromWebsite) {
-      setError("Website URL and component are required.");
-      return;
-    }
-
-    setGeneratingWebsite(true);
-    setWebsiteGenerationNote("");
-    try {
-      const response = await fetch(websiteGenerateApi, {
-        body: JSON.stringify({
-          component: websiteComponent.trim(),
-          coverage: websiteCoverage,
-          url: websiteUrl.trim(),
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const data = await readApiJson<{
-        error?: string;
-        scenarios?: AutomationScenario[];
-        snapshot?: {
-          component?: string;
-          finalUrl?: string;
-          visibleElementCount?: number;
-        };
-        usedFallback?: boolean;
-      }>(response);
-      if (!response.ok || !data.scenarios?.length) {
-        throw new Error(data.error || "Could not generate website scenarios.");
-      }
-
-      setScenarios((current) => [...data.scenarios!, ...current]);
-      setTagDrafts((current) => ({
-        ...current,
-        ...Object.fromEntries(
-          data.scenarios!.map((scenario) => [
-            scenario.id,
-            scenario.tags.join(", "),
-          ]),
-        ),
-      }));
-      setQuery("");
-      setStatusFilter("all");
-      setTagFilter("all");
-      setSuiteFilter("all");
-      setError("");
-      setWebsiteGenerationNote(
-        `${data.scenarios.length} scenario${data.scenarios.length === 1 ? "" : "s"} created from ${data.snapshot?.component || websiteComponent}.`,
-      );
-    } catch (generationError) {
-      setWebsiteGenerationNote("");
-      setError(
-        generationError instanceof Error
-          ? generationError.message
-          : "Could not generate website scenarios.",
-      );
-    } finally {
-      setGeneratingWebsite(false);
     }
   };
 
@@ -980,60 +906,6 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
           </button>
         </div>
       </div>
-
-      <section className="rounded-xl border border-violet-200 bg-violet-50/70 p-4 dark:border-violet-500/30 dark:bg-violet-500/10">
-        <div className="grid gap-3 xl:grid-cols-[minmax(240px,1.2fr)_minmax(180px,0.8fr)_150px_170px] xl:items-end">
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-violet-800 dark:text-violet-200">
-              Website URL
-            </label>
-            <input
-              value={websiteUrl}
-              onChange={(event) => setWebsiteUrl(event.target.value)}
-              className="mt-1 w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-violet-600 dark:border-violet-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-              placeholder="https://example.com"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-violet-800 dark:text-violet-200">
-              Component
-            </label>
-            <input
-              value={websiteComponent}
-              onChange={(event) => setWebsiteComponent(event.target.value)}
-              className="mt-1 w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-violet-600 dark:border-violet-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-              placeholder="header, footer, login form"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-violet-800 dark:text-violet-200">
-              Coverage
-            </label>
-            <select
-              value={websiteCoverage}
-              onChange={(event) => setWebsiteCoverage(event.target.value)}
-              className="mt-1 w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-violet-600 dark:border-violet-500/30 dark:bg-zinc-950 dark:text-zinc-50"
-            >
-              <option value="basic">Basic</option>
-              <option value="standard">Standard</option>
-              <option value="thorough">Thorough</option>
-            </select>
-          </div>
-          <button
-            type="button"
-            onClick={() => void handleGenerateFromWebsite()}
-            disabled={!canGenerateFromWebsite}
-            className="inline-flex items-center justify-center rounded-xl border border-violet-700 bg-violet-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-white hover:text-violet-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-violet-300 dark:bg-violet-400 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-violet-100 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
-          >
-            {generatingWebsite ? "Inspecting..." : "Generate from website"}
-          </button>
-        </div>
-        {websiteGenerationNote ? (
-          <p className="mt-3 text-xs font-medium text-violet-800 dark:text-violet-100">
-            {websiteGenerationNote}
-          </p>
-        ) : null}
-      </section>
 
       <section className="space-y-3">
         <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 dark:border-sky-500/30 dark:bg-sky-500/10">
