@@ -32,6 +32,7 @@ Required variables:
 - `GROQ_API_KEY`
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
 - `CLERK_SECRET_KEY`
+- `CASEFORGE_ALLOWED_EMAILS`
 
 Optional / upcoming variables:
 
@@ -73,13 +74,20 @@ CaseForge uses Clerk authentication, matching the NoteGenie project pattern:
 
 The dashboard route keeps a signed-out welcome screen, then loads project data only after Clerk returns a signed-in user.
 
+CaseForge also has a private beta access gate on top of Clerk. Set
+`CASEFORGE_ALLOWED_EMAILS` to a comma-separated list of approved emails, for
+example `owner@example.com,teammate@example.com`. You can also set
+`CASEFORGE_ALLOWED_DOMAINS` for an approved company domain. Signed-in users who
+are not approved are redirected to `/access-pending`, and denied attempts are
+logged on the server as `CASEFORGE_ACCESS_DENIED`.
+
 ### Vercel + Supabase Deployment
 
 Before deploying on Vercel:
 
 1. Create or choose a Supabase project.
 2. Copy the Supabase Postgres connection strings into Vercel as `DATABASE_URL` and `DIRECT_URL`.
-3. Add `GROQ_API_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, and `CLERK_SECRET_KEY` in Vercel project environment variables.
+3. Add `GROQ_API_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `CASEFORGE_ALLOWED_EMAILS` in Vercel project environment variables.
 4. Run Prisma migrations against Supabase:
 
 ```bash

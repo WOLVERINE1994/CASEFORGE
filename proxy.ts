@@ -1,6 +1,16 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import {
+  clerkClient,
+  clerkMiddleware,
+  createRouteMatcher,
+} from "@clerk/nextjs/server";
+import type { SessionAuthObject } from "@clerk/backend";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import {
+  ACCESS_PENDING_PATH,
+  evaluateCaseForgeAccess,
+  extractEmailFromSessionClaims,
+} from "./lib/access-control";
 import { isClerkAuthActive } from "./lib/auth-mode";
 
 const isProtectedRoute = createRouteMatcher([
@@ -11,6 +21,7 @@ const isProtectedRoute = createRouteMatcher([
   "/api/fill-coverage-gap(.*)",
   "/api/generate(.*)",
   "/api/generate-change-impact-cases(.*)",
+  "/api/generate-from-website(.*)",
   "/api/issues(.*)",
   "/api/merge-similar-cases(.*)",
   "/api/projects(.*)",
@@ -59,15 +70,67 @@ function focusedWorkspaceRedirect(request: NextRequest) {
   return null;
 }
 
+async function resolveSignedInEmail(authObject: SessionAuthObject) {
+  const claimedEmail = extractEmailFromSessionClaims(authObject.sessionClaims);
+  if (claimedEmail) return claimedEmail;
+  if (!authObject.userId) return null;
+
+  try {
+    const client = await clerkClient();
+    const user = await client.users.getUser(authObject.userId);
+    return (
+      user.primaryEmailAddress?.emailAddress ||
+      user.emailAddresses[0]?.emailAddress ||
+      null
+    );
+  } catch (error) {
+    console.warn("CASEFORGE_ACCESS_EMAIL_LOOKUP_FAILED", {
+      userId: authObject.userId,
+      message: error instanceof Error ? error.message : "Unknown Clerk error",
+    });
+    return null;
+  }
+}
+
+function deniedAccessResponse(
+  request: NextRequest,
+  email: string | null,
+  reason: string,
+) {
+  console.warn("CASEFORGE_ACCESS_DENIED", {
+    email: email || "unknown",
+    path: request.nextUrl.pathname,
+    reason,
+    at: new Date().toISOString(),
+  });
+
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.json(
+      { error: "Access pending approval" },
+      { status: 403 },
+    );
+  }
+
+  const url = new URL(ACCESS_PENDING_PATH, request.url);
+  if (email) url.searchParams.set("email", email);
+  return NextResponse.redirect(url);
+}
+
 const clerkProxy = clerkMiddleware(async (auth, request) => {
   const redirect = focusedWorkspaceRedirect(request);
   if (redirect) return redirect;
 
   if (isProtectedRoute(request)) {
-    await auth.protect({
+    const authObject = await auth.protect({
       unauthenticatedUrl: new URL("/sign-in", request.url).toString(),
       unauthorizedUrl: new URL("/sign-in", request.url).toString(),
     });
+
+    const email = await resolveSignedInEmail(authObject);
+    const decision = evaluateCaseForgeAccess(email);
+    if (!decision.allowed) {
+      return deniedAccessResponse(request, email, decision.reason);
+    }
   }
 });
 
