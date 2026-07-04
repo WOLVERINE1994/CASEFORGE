@@ -1,4 +1,9 @@
-export type AutomationScenarioStatus = "draft" | "active" | "paused" | "archived";
+export type AutomationScenarioStatus =
+  | "draft"
+  | "active"
+  | "paused"
+  | "completed"
+  | "archived";
 export type AutomationRunStatus =
   | "queued"
   | "running"

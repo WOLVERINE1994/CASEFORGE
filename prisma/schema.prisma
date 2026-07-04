@@ -111,6 +111,7 @@ enum AutomationScenarioStatus {
   draft
   active
   paused
+  completed
   archived
 }
 

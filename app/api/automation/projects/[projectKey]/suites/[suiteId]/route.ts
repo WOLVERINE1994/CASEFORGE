@@ -13,6 +13,7 @@ const isValidStatus = (value: unknown) =>
   value === "draft" ||
   value === "active" ||
   value === "paused" ||
+  value === "completed" ||
   value === "archived";
 
 const stringArray = (value: unknown) =>

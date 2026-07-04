@@ -59,6 +59,7 @@ export async function POST(request: Request, context: RouteContext) {
         body.status === "draft" ||
         body.status === "active" ||
         body.status === "paused" ||
+        body.status === "completed" ||
         body.status === "archived"
           ? body.status
           : undefined,

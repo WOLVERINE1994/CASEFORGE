@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-type SuiteStatus = "draft" | "active" | "paused" | "archived";
+type SuiteStatus = "draft" | "active" | "paused" | "completed" | "archived";
 
 type AutomationSuite = {
   id: string;
@@ -20,11 +20,18 @@ type Props = {
   projectKey: string;
 };
 
-const statusOptions: SuiteStatus[] = ["draft", "active", "paused", "archived"];
+const statusOptions: SuiteStatus[] = [
+  "draft",
+  "active",
+  "paused",
+  "completed",
+  "archived",
+];
 
 const statusTone: Record<SuiteStatus, string> = {
   active: "border-emerald-200 bg-emerald-50 text-emerald-800",
   archived: "border-zinc-200 bg-zinc-100 text-zinc-700",
+  completed: "border-teal-200 bg-teal-50 text-teal-800",
   draft: "border-amber-200 bg-amber-50 text-amber-800",
   paused: "border-sky-200 bg-sky-50 text-sky-800",
 };

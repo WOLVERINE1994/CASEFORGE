@@ -12,6 +12,7 @@ const scenarioStatuses: AutomationScenarioStatus[] = [
   "draft",
   "active",
   "paused",
+  "completed",
   "archived",
 ];
 

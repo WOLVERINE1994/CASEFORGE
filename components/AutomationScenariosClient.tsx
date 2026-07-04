@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ensureBrowserProjectSynced } from "../utils/automation/browser-project-sync";
 
-type ScenarioStatus = "draft" | "active" | "paused" | "archived";
+type ScenarioStatus = "draft" | "active" | "paused" | "completed" | "archived";
 
 export type AutomationLocatorTarget = {
   type: "smart" | "manual";
@@ -89,7 +89,13 @@ type Props = {
   projectKey: string;
 };
 
-const statusOptions: ScenarioStatus[] = ["draft", "active", "paused", "archived"];
+const statusOptions: ScenarioStatus[] = [
+  "draft",
+  "active",
+  "paused",
+  "completed",
+  "archived",
+];
 const bulkTagModes = ["append", "remove", "replace"] as const;
 type BulkTagMode = (typeof bulkTagModes)[number];
 
@@ -98,6 +104,8 @@ const statusTone: Record<ScenarioStatus, string> = {
     "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-100",
   archived:
     "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
+  completed:
+    "border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-500/30 dark:bg-teal-500/15 dark:text-teal-100",
   draft:
     "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-100",
   paused:
