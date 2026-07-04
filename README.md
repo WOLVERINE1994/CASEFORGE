@@ -79,7 +79,8 @@ CaseForge also has a private beta access gate on top of Clerk. Set
 example `owner@example.com,teammate@example.com`. You can also set
 `CASEFORGE_ALLOWED_DOMAINS` for an approved company domain. Signed-in users who
 are not approved are redirected to `/access-pending`, and denied attempts are
-logged on the server as `CASEFORGE_ACCESS_DENIED`.
+logged on the server as `CASEFORGE_ACCESS_DENIED`. In production, an empty
+allowlist fails closed so the workspace does not open by accident.
 
 ### Vercel + Supabase Deployment
 

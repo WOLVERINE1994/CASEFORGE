@@ -43,8 +43,11 @@ export function evaluateCaseForgeAccess(
 ): AccessControlDecision {
   const config = getCaseForgeAccessConfig();
   if (!config.configured) {
+    const shouldFailClosed =
+      process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+
     return {
-      allowed: true,
+      allowed: !shouldFailClosed,
       configured: false,
       reason: "allowlist_not_configured",
     };
