@@ -20,7 +20,6 @@ export default async function AutomationScenariosPage({
         projectKey={projectKey}
         activeSection="scenarios"
         title="Scenario Workspace"
-        description="A lightweight automation IDE shell for scenario authoring."
         layout="workspace"
       >
         <AutomationScenarioWorkspace
@@ -35,7 +34,6 @@ export default async function AutomationScenariosPage({
     <AutomationShell
       projectKey={projectKey}
       activeSection="scenarios"
-      description="Create and manage lightweight automation scenario records."
     >
       <AutomationScenariosClient projectKey={projectKey} />
     </AutomationShell>

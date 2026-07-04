@@ -11,7 +11,6 @@ export default async function AutomationRunsPage({ params }: PageProps) {
     <AutomationShell
       projectKey={projectKey}
       activeSection="runs"
-      description="Review durable automation execution records, status, and artefacts."
     >
       <AutomationRunsClient projectKey={projectKey} />
     </AutomationShell>

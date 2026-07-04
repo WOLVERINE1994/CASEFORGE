@@ -11,7 +11,6 @@ export default async function AutomationRecycleBinPage({ params }: PageProps) {
   return (
     <AutomationShell
       activeSection="recycle-bin"
-      description="Restore deleted automation assets or permanently purge them when you are certain."
       projectKey={projectKey}
       title="Recycle Bin"
     >

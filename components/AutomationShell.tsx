@@ -8,7 +8,6 @@ type Props = {
   projectKey: string;
   activeSection: AutomationSection;
   children?: ReactNode;
-  description?: string;
   layout?: "default" | "workspace";
   title?: string;
 };
@@ -17,43 +16,36 @@ const sections: Array<{
   key: AutomationSection;
   label: string;
   href: string;
-  description: string;
 }> = [
   {
     key: "overview",
     label: "Overview",
     href: "",
-    description: "A clean starting point for the new automation module.",
   },
   {
     key: "suites",
     label: "Suites",
     href: "/suites",
-    description: "Group automation scenarios into tagged suites with lifecycle status.",
   },
   {
     key: "scenarios",
     label: "Scenarios",
     href: "/scenarios",
-    description: "Create and manage lightweight automation scenario records.",
   },
   {
     key: "actions",
     label: "Actions",
     href: "/actions",
-    description: "Placeholder for reusable automation actions.",
   },
   {
     key: "runs",
     label: "Runs",
     href: "/runs",
-    description: "Placeholder for automation run history.",
   },
   {
     key: "recycle-bin",
     label: "Recycle Bin",
     href: "/recycle-bin",
-    description: "Restore or permanently purge deleted automation assets.",
   },
 ];
 
@@ -61,7 +53,6 @@ export default function AutomationShell({
   projectKey,
   activeSection,
   children,
-  description,
   layout = "default",
   title,
 }: Props) {
@@ -69,7 +60,6 @@ export default function AutomationShell({
   const activeItem =
     sections.find((section) => section.key === activeSection) ?? sections[0];
   const pageTitle = title ?? activeItem.label;
-  const pageDescription = description ?? activeItem.description;
 
   if (layout === "workspace") {
     return (
@@ -141,9 +131,6 @@ export default function AutomationShell({
           <h1 className="cf-safe-wrap mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
             {pageTitle}
           </h1>
-          <p className="cf-safe-wrap mt-3 max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-            {pageDescription}
-          </p>
           {children ?? (
             <div className="mt-6 rounded-[20px] border border-zinc-200 bg-white px-4 py-4 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
               This page is intentionally empty. Build the new automation experience here from scratch.

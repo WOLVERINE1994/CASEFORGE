@@ -672,7 +672,7 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
       setSuiteFilter("all");
       setError("");
       setWebsiteGenerationNote(
-        `${data.scenarios.length} website-grounded scenario${data.scenarios.length === 1 ? "" : "s"} created from ${data.snapshot?.component || websiteComponent}. ${data.usedFallback ? "Fallback drafting was used; review locators before playback." : "Review and tune before playback."}`,
+        `${data.scenarios.length} scenario${data.scenarios.length === 1 ? "" : "s"} created from ${data.snapshot?.component || websiteComponent}.`,
       );
     } catch (generationError) {
       setWebsiteGenerationNote("");
@@ -911,9 +911,6 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
           <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
             Scenarios
           </h2>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Organize automation scenarios by status, tags, date, and suite membership.
-          </p>
           {error ? (
             <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
               {error}
@@ -1030,20 +1027,18 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
         ) : null}
       </section>
 
-      <section className="grid gap-3 xl:grid-cols-2">
+      <section className="space-y-3">
         <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 dark:border-sky-500/30 dark:bg-sky-500/10">
-          <div className="grid gap-3 lg:grid-cols-[150px_150px_minmax(180px,1fr)_160px] lg:items-end">
-            <div className="self-center">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-800 dark:text-sky-200">
-                Bulk update
-              </p>
-            </div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-800 dark:text-sky-200">
+            Bulk update
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,180px)_minmax(0,180px)_minmax(0,1fr)_170px] xl:items-end">
             <select
               value={bulkStatus}
               onChange={(event) =>
                 setBulkStatus(event.target.value as ScenarioStatus | "")
               }
-              className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-sky-600 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+              className="min-w-0 rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-sky-600 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
             >
               <option value="">Keep status</option>
               {statusOptions.map((status) => (
@@ -1055,7 +1050,7 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
             <select
               value={bulkTagMode}
               onChange={(event) => setBulkTagMode(event.target.value as BulkTagMode)}
-              className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-sky-600 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+              className="min-w-0 rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-sky-600 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
             >
               {bulkTagModes.map((mode) => (
                 <option key={mode} value={mode}>
@@ -1066,7 +1061,7 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
             <input
               value={bulkTags}
               onChange={(event) => setBulkTags(event.target.value)}
-              className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-sky-600 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+              className="min-w-0 rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-sky-600 dark:border-sky-500/30 dark:bg-zinc-950 dark:text-zinc-50"
               placeholder={
                 bulkTagMode === "replace"
                   ? "New tags, blank clears"
@@ -1077,7 +1072,7 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
               type="button"
               onClick={() => void handleBulkUpdate()}
               disabled={!canBulkUpdate}
-              className="inline-flex items-center justify-center rounded-xl border border-sky-700 bg-sky-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white hover:text-sky-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-sky-300 dark:bg-sky-400 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-sky-100 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
+              className="inline-flex min-w-0 items-center justify-center rounded-xl border border-sky-700 bg-sky-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white hover:text-sky-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-sky-300 dark:bg-sky-400 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-sky-100 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400 sm:col-span-2 xl:col-span-1"
             >
               {savingBulk ? "Updating..." : "Apply bulk update"}
             </button>
@@ -1085,16 +1080,14 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
         </div>
 
         <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
-          <div className="grid gap-3 lg:grid-cols-[180px_180px_minmax(180px,1fr)_160px] lg:items-end">
-            <div className="self-center">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800 dark:text-emerald-200">
-                Suite builder
-              </p>
-            </div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800 dark:text-emerald-200">
+            Suite builder
+          </p>
+          <div className="mt-3 grid max-w-3xl gap-3">
             <select
               value={targetSuiteId}
               onChange={(event) => setTargetSuiteId(event.target.value)}
-              className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+              className="w-full min-w-0 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
             >
               <option value="">Existing suite</option>
               {suites.map((suite) => (
@@ -1106,14 +1099,14 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
             <input
               value={newSuiteName}
               onChange={(event) => setNewSuiteName(event.target.value)}
-              className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+              className="w-full min-w-0 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
               placeholder="Or new suite name"
             />
             <button
               type="button"
               onClick={() => void handleAddSelectedToSuite()}
               disabled={!selectedScenarios.length || savingSuite}
-              className="inline-flex items-center justify-center rounded-xl border border-zinc-950 bg-zinc-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white hover:text-zinc-950 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-white dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
+              className="inline-flex w-full min-w-0 items-center justify-center rounded-xl border border-zinc-950 bg-zinc-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white hover:text-zinc-950 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-white dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400 sm:w-auto sm:justify-self-start"
             >
               {savingSuite ? "Saving..." : "Add to suite"}
             </button>

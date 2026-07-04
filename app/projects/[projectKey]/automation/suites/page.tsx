@@ -11,7 +11,6 @@ export default async function AutomationSuitesPage({ params }: PageProps) {
     <AutomationShell
       projectKey={projectKey}
       activeSection="suites"
-      description="Group automation scenarios into reusable suites with status, tags, creation dates, and scenario counts."
     >
       <AutomationSuitesClient projectKey={projectKey} />
     </AutomationShell>

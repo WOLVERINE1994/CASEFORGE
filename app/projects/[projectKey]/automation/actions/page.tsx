@@ -11,7 +11,6 @@ export default async function AutomationActionsPage({ params }: PageProps) {
     <AutomationShell
       projectKey={projectKey}
       activeSection="actions"
-      description="Reusable no-code command groups created from scenario timelines."
     >
       <AutomationActionsClient projectKey={projectKey} />
     </AutomationShell>
