@@ -1,6 +1,5 @@
-import { generateWebsiteManualTestCases } from "../../../utils/automation/website-drafts";
-
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 export const runtime = "nodejs";
 
 const cleanText = (value: unknown) =>
@@ -57,6 +56,9 @@ export async function POST(request: Request) {
       );
     }
 
+    const { generateWebsiteManualTestCases } = await import(
+      "../../../utils/automation/website-drafts"
+    );
     const generated = await generateWebsiteManualTestCases({
       component,
       coverage: body.coverage,

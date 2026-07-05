@@ -1,8 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
-import { chromium } from "playwright";
-
 import { generateCaseForgeAiText } from "../ai/caseforge-ai";
 import type {
   AutomationLocatorCandidate,
@@ -331,10 +329,212 @@ const extractJson = (text: string) => {
   return JSON.parse(candidate.slice(start, end + 1)) as AiWebsiteResponse;
 };
 
-const inspectWebsite = async (
+const decodeHtmlEntities = (value: string) =>
+  value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+
+const stripHtml = (value: string) =>
+  decodeHtmlEntities(
+    value
+      .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+
+const htmlAttributes = (value: string) => {
+  const attributes: Record<string, string> = {};
+  const attributePattern = /([:\w-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+)))?/g;
+  let match: RegExpExecArray | null;
+  while ((match = attributePattern.exec(value))) {
+    attributes[match[1].toLowerCase()] = decodeHtmlEntities(
+      match[2] ?? match[3] ?? match[4] ?? "",
+    );
+  }
+  return attributes;
+};
+
+const htmlLocatorCandidates = (
+  input: {
+    attributes: Record<string, string>;
+    kind: string;
+    name: string;
+    tag: string;
+  },
+  index: number,
+): AutomationLocatorCandidate[] => {
+  const candidates: AutomationLocatorCandidate[] = [];
+  const push = (strategy: AutomationLocatorStrategy, value: string, score: number) => {
+    const cleaned = cleanText(value);
+    if (!cleaned) return;
+    if (candidates.some((candidate) => candidate.strategy === strategy && candidate.value === cleaned)) {
+      return;
+    }
+    candidates.push({
+      isUnique: false,
+      metadata: { elementIndex: index, extractedFrom: "website-html-fallback" },
+      rank: candidates.length,
+      score,
+      source: "website-html-fallback",
+      strategy,
+      value: cleaned,
+    });
+  };
+
+  const testId =
+    input.attributes["data-testid"] ||
+    input.attributes["data-test"] ||
+    input.attributes["data-cy"];
+  if (testId) push("testid", testId, 92);
+  if (input.attributes.id) push("css", `#${input.attributes.id}`, 82);
+  if (input.attributes.name) push("css", `${input.tag}[name="${input.attributes.name}"]`, 76);
+  if (input.attributes.placeholder) push("placeholder", input.attributes.placeholder, 74);
+  if (input.attributes.alt) push("alt", input.attributes.alt, 72);
+  if (input.name && (input.kind === "button" || input.kind === "link")) {
+    push("role", `${input.kind}:${input.name}`, 70);
+  }
+  if (input.name && input.name.length <= 80) push("text", input.name, 58);
+  return candidates;
+};
+
+const inspectWebsiteFromHtml = async (
   requestedUrl: string,
   component: string,
 ): Promise<WebsiteInspectionSnapshot> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(requestedUrl, {
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        "User-Agent": "CaseForgeWebsiteInspector/1.0",
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Website returned HTTP ${response.status} during inspection.`);
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) {
+      throw new Error("Website did not return an HTML page that can be inspected.");
+    }
+
+    const html = await response.text();
+    const bodyHtml = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] || html;
+    const title = stripHtml(html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "");
+    const headings = Array.from(bodyHtml.matchAll(/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi))
+      .map((match) => stripHtml(match[1]))
+      .filter(Boolean)
+      .slice(0, 12);
+    const visibleText = stripHtml(bodyHtml).slice(0, 2500);
+    const finalUrl = response.url || requestedUrl;
+    const elementMatches = Array.from(
+      bodyHtml.matchAll(
+        /<(a|button|select|textarea|form|h[1-3])\b([^>]*)>([\s\S]*?)<\/\1>|<(input|img)\b([^>]*)\/?>/gi,
+      ),
+    ).slice(0, 90);
+
+    const elements: WebsiteElementSnapshot[] = elementMatches.map((match, index) => {
+      const tag = (match[1] || match[4] || "").toLowerCase();
+      const attributes = htmlAttributes(match[2] || match[5] || "");
+      const text = stripHtml(match[3] || "");
+      const kind =
+        tag === "a"
+          ? "link"
+          : tag === "button"
+            ? "button"
+            : ["input", "select", "textarea"].includes(tag)
+              ? "field"
+              : tag === "form"
+                ? "form"
+                : tag === "img"
+                  ? "image"
+                  : /^h[1-3]$/.test(tag)
+                    ? "heading"
+                    : tag;
+      const name = cleanText(
+        attributes["aria-label"] ||
+          attributes.alt ||
+          attributes.title ||
+          attributes.placeholder ||
+          attributes.value ||
+          text,
+      ).slice(0, 120);
+      const href = attributes.href ? new URL(attributes.href, finalUrl).toString() : "";
+      return {
+        attributes: {
+          "aria-label": attributes["aria-label"] || "",
+          "data-testid": attributes["data-testid"] || "",
+          href: attributes.href || "",
+          id: attributes.id || "",
+          name: attributes.name || "",
+          title: attributes.title || "",
+        },
+        disabled: "disabled" in attributes || attributes["aria-disabled"] === "true",
+        href,
+        id: `html-${index + 1}`,
+        inputType: attributes.type || "",
+        kind,
+        locatorCandidates: htmlLocatorCandidates({ attributes, kind, name, tag }, index),
+        name,
+        placeholder: attributes.placeholder || "",
+        required: "required" in attributes || attributes["aria-required"] === "true",
+        role: attributes.role || "",
+        tag,
+        text: text.slice(0, 160),
+      };
+    });
+    const fields = elements.filter((element) => element.kind === "field");
+    const buttons = elements.filter((element) => element.kind === "button");
+    const forms = elements.some((element) => element.kind === "form") || fields.length
+      ? [
+          {
+            buttons,
+            fields,
+            id: "html-form-1",
+            name: fields.length ? "Observed form fields" : "Observed form",
+          },
+        ]
+      : [];
+
+    return {
+      component: cleanText(component, "homepage"),
+      elements,
+      finalUrl,
+      forms,
+      headings,
+      requestedUrl,
+      rootDescription: "body html fallback",
+      rootSelector: "body",
+      stats: {
+        buttons: buttons.length,
+        fields: fields.length,
+        forms: forms.length,
+        images: elements.filter((element) => element.kind === "image").length,
+        links: elements.filter((element) => element.kind === "link").length,
+      },
+      title,
+      visibleText,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const inspectWebsiteWithBrowser = async (
+  requestedUrl: string,
+  component: string,
+): Promise<WebsiteInspectionSnapshot> => {
+  const { chromium } = await import("playwright");
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { height: 1000, width: 1440 } });
@@ -607,6 +807,18 @@ const inspectWebsite = async (
     return snapshot as WebsiteInspectionSnapshot;
   } finally {
     await browser.close();
+  }
+};
+
+const inspectWebsite = async (
+  requestedUrl: string,
+  component: string,
+): Promise<WebsiteInspectionSnapshot> => {
+  try {
+    return await inspectWebsiteWithBrowser(requestedUrl, component);
+  } catch (error) {
+    console.error("Browser website inspection failed; using HTML fallback:", error);
+    return inspectWebsiteFromHtml(requestedUrl, component);
   }
 };
 
