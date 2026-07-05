@@ -56,7 +56,21 @@ function getRequestNotice(
   }
 
   if (requestResult.status === "recorded") {
-    return "Approval request saved. Email delivery is not configured or failed, so the owner can review it from CaseForge.";
+    return "Approval request saved. The owner can review it from CaseForge.";
+  }
+
+  if (requestResult.status === "email_not_configured") {
+    return "Approval request saved, but this deployment cannot see RESEND_API_KEY yet. Redeploy after adding the env variable.";
+  }
+
+  if (requestResult.status === "email_rejected") {
+    return `Approval request saved, but Resend rejected the email. ${
+      requestResult.detail || "Check the Resend email logs."
+    }`;
+  }
+
+  if (requestResult.status === "email_network_error") {
+    return "Approval request saved, but the email provider request failed. Check production network logs or retry after redeploy.";
   }
 
   if (requestResult.status === "not_ready") {

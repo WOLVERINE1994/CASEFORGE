@@ -7,6 +7,10 @@ type AccessNotificationInput = {
   origin: string;
 };
 
+type AccessNotificationResult =
+  | { sent: true }
+  | { sent: false; reason: "missing_api_key" | "provider_rejected" | "network_error"; detail?: string };
+
 const getNotificationRecipients = () => getAccessRequestNotificationEmails();
 
 const getEmailFromAddress = () =>
@@ -25,7 +29,7 @@ export async function sendAccessRequestNotification({
   request,
   decisionToken,
   origin,
-}: AccessNotificationInput) {
+}: AccessNotificationInput): Promise<AccessNotificationResult> {
   const apiKey = process.env.RESEND_API_KEY;
   const recipients = getNotificationRecipients();
   const approveUrl = new URL("/api/access-request-decision", origin);
@@ -44,7 +48,7 @@ export async function sendAccessRequestNotification({
       to: recipients,
       email: request.email,
     });
-    return false;
+    return { sent: false, reason: "missing_api_key" };
   }
 
   const html = `
@@ -60,19 +64,29 @@ export async function sendAccessRequestNotification({
     </div>
   `;
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: getEmailFromAddress(),
-      to: recipients,
-      subject: `CaseForge access request: ${request.email}`,
-      html,
-    }),
-  });
+  let response: Response;
+
+  try {
+    response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: getEmailFromAddress(),
+        to: recipients,
+        subject: `CaseForge access request: ${request.email}`,
+        html,
+      }),
+    });
+  } catch (error) {
+    console.warn("CASEFORGE_ACCESS_REQUEST_EMAIL_NETWORK_ERROR", {
+      email: request.email,
+      message: error instanceof Error ? error.message : "Unknown network error",
+    });
+    return { sent: false, reason: "network_error" };
+  }
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
@@ -81,8 +95,12 @@ export async function sendAccessRequestNotification({
       body,
       email: request.email,
     });
-    return false;
+    return {
+      sent: false,
+      reason: "provider_rejected",
+      detail: `Resend returned HTTP ${response.status}.`,
+    };
   }
 
-  return true;
+  return { sent: true };
 }

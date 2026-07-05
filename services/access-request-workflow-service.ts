@@ -14,7 +14,16 @@ type RecordAndNotifyAccessRequestInput = {
 };
 
 export type RecordAndNotifyAccessRequestResult = {
-  status: "skipped" | "recorded" | "notified" | "not_ready" | "failed";
+  status:
+    | "skipped"
+    | "recorded"
+    | "notified"
+    | "email_not_configured"
+    | "email_rejected"
+    | "email_network_error"
+    | "not_ready"
+    | "failed";
+  detail?: string;
   request?: AccessRequestRecord;
 };
 
@@ -39,18 +48,30 @@ export async function recordAndNotifyAccessRequest({
       return { status: "recorded", request: result.request };
     }
 
-    const sent = await sendAccessRequestNotification({
+    const emailResult = await sendAccessRequestNotification({
       request: result.request,
       decisionToken: result.decisionToken,
       origin,
     });
 
-    if (sent) {
+    if (emailResult.sent) {
       await markAccessRequestNotificationSent(result.request.id);
       return { status: "notified", request: result.request };
     }
 
-    return { status: "recorded", request: result.request };
+    if (emailResult.reason === "missing_api_key") {
+      return { status: "email_not_configured", request: result.request };
+    }
+
+    if (emailResult.reason === "provider_rejected") {
+      return {
+        status: "email_rejected",
+        detail: emailResult.detail,
+        request: result.request,
+      };
+    }
+
+    return { status: "email_network_error", request: result.request };
   } catch (error) {
     if (error instanceof AccessRequestServiceNotReadyError) {
       console.warn("CASEFORGE_ACCESS_REQUEST_STORAGE_NOT_READY", {
