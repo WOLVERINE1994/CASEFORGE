@@ -19,15 +19,16 @@ export default async function AccessPendingPage({
           Access review
         </p>
         <h1 className="mt-4 text-3xl font-black tracking-tight">
-          CaseForge access is pending approval
+          CaseForge access is private
         </h1>
         <p className="mt-4 text-sm leading-6 text-slate-200">
-          This workspace is private. Your sign-in worked, but this email is not
-          on the approved access list yet.
+          You are signed in, but this account has not been approved for
+          CaseForge yet. The workspace will open only after the owner adds this
+          email to the approved list.
         </p>
         {email ? (
           <p className="mt-5 rounded-xl border border-cyan-200/20 bg-cyan-200/10 px-4 py-3 text-sm font-semibold text-cyan-50">
-            Current signed-in account: {email}
+            Account waiting for approval: {email}
           </p>
         ) : null}
         <AccessPendingActions />
