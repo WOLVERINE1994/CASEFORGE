@@ -4866,6 +4866,33 @@ export default function ProjectWorkspace({
       return;
     }
 
+    const isLocalTarget = (() => {
+      try {
+        const parsed = new URL(url);
+        const hostname = parsed.hostname.toLowerCase();
+        return (
+          hostname === "localhost" ||
+          hostname === "127.0.0.1" ||
+          hostname === "::1" ||
+          hostname.endsWith(".localhost")
+        );
+      } catch {
+        return false;
+      }
+    })();
+    const isRunningLocally =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1" ||
+      window.location.hostname.endsWith(".localhost");
+
+    if (isLocalTarget && !isRunningLocally) {
+      showWorkspaceNotice(
+        "error",
+        "The deployed app cannot inspect a localhost URL from your laptop. Use a public staging URL or expose the local site with a tunnel, then generate manual cases again.",
+      );
+      return;
+    }
+
     const websiteSourceSummary = [
       `Website URL: ${url}`,
       `Component: ${component}`,
@@ -4889,6 +4916,10 @@ export default function ProjectWorkspace({
         method: "POST",
       });
       const rawResponse = await response.text();
+      const responsePreview = rawResponse
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 180);
       let data: {
         error?: string;
         result?: string;
@@ -4898,7 +4929,14 @@ export default function ProjectWorkspace({
       try {
         data = rawResponse ? JSON.parse(rawResponse) : {};
       } catch {
-        throw new Error("Website case generation returned an invalid response.");
+        const redirectNote = response.redirected
+          ? " The request was redirected, so your session or access may need refresh."
+          : "";
+        throw new Error(
+          `Website case generation returned a non-JSON response (HTTP ${response.status}).${redirectNote}${
+            responsePreview ? ` Response preview: ${responsePreview}` : ""
+          }`,
+        );
       }
 
       if (!response.ok) {
