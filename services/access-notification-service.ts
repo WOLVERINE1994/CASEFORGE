@@ -30,7 +30,7 @@ export async function sendAccessRequestNotification({
   decisionToken,
   origin,
 }: AccessNotificationInput): Promise<AccessNotificationResult> {
-  const apiKey = process.env.RESEND_API_KEY;
+  const apiKey = process.env.RESEND_API_KEY?.trim();
   const recipients = getNotificationRecipients();
   const approveUrl = new URL("/api/access-request-decision", origin);
   approveUrl.searchParams.set("token", decisionToken);
@@ -98,7 +98,10 @@ export async function sendAccessRequestNotification({
     return {
       sent: false,
       reason: "provider_rejected",
-      detail: `Resend returned HTTP ${response.status}.`,
+      detail:
+        response.status === 401
+          ? "Resend returned HTTP 401. Check that RESEND_API_KEY contains only the full re_ token, then redeploy."
+          : `Resend returned HTTP ${response.status}.`,
     };
   }
 
