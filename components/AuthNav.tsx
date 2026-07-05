@@ -30,7 +30,7 @@ export default function AuthNav() {
         </SignUpButton>
       </Show>
       <Show when="signed-in">
-        <Link href="/projects" className={signInClassName}>
+        <Link href="/projects?open=workspace" className={signInClassName}>
           Workspace
         </Link>
         <UserButton />

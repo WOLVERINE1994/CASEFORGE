@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import AppSidebar from "../../components/AppSidebar";
 import DeleteProjectButton from "../../components/DeleteProjectButton";
 import ResponsiveShell from "../../components/ResponsiveShell";
@@ -9,15 +10,30 @@ export const dynamic = "force-dynamic";
 const projectRouteKey = (project: { id: string; projectKey?: string }) =>
   encodeURIComponent(project.projectKey?.trim() || project.id);
 
-export default async function ProjectsPage() {
+type ProjectsPageProps = {
+  searchParams?: Promise<{
+    open?: string;
+  }>;
+};
+
+export default async function ProjectsPage({ searchParams }: ProjectsPageProps) {
   let projects: Awaited<ReturnType<typeof readProjects>> = [];
   let projectLoadError = false;
+  const params = await searchParams;
 
   try {
     projects = await readProjects();
   } catch (error) {
     projectLoadError = true;
     console.error("Failed to load projects:", error);
+  }
+
+  if (!projectLoadError && params?.open === "workspace") {
+    const activeProject = projects[projects.length - 1];
+    if (activeProject) {
+      redirect(`/projects/${projectRouteKey(activeProject)}/workspace`);
+    }
+    redirect("/projects/new?focus=requirement");
   }
 
   return (
