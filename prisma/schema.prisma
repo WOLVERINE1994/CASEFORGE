@@ -154,6 +154,12 @@ enum AutomationArtifactType {
   auth_state
 }
 
+enum AccessRequestStatus {
+  pending
+  approved
+  rejected
+}
+
 model User {
   id                  String        @id @default(cuid())
   name                String
@@ -319,6 +325,26 @@ model ActivityLog {
   beforeJson Json?
   afterJson  Json?
   createdAt  DateTime @default(now())
+}
+
+model AccessRequest {
+  id                 String              @id @default(cuid())
+  email              String              @unique
+  clerkUserId        String?
+  status             AccessRequestStatus @default(pending)
+  requestCount       Int                 @default(1)
+  firstRequestedAt   DateTime            @default(now())
+  lastRequestedAt    DateTime            @default(now())
+  lastPath           String              @default("")
+  decisionTokenHash  String              @unique
+  notificationSentAt DateTime?
+  decidedAt          DateTime?
+  decidedByEmail     String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([status, lastRequestedAt])
+  @@index([email])
 }
 
 model ChangeComparison {

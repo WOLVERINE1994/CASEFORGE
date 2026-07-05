@@ -23,8 +23,8 @@ export default async function AccessPendingPage({
         </h1>
         <p className="mt-4 text-sm leading-6 text-slate-200">
           You are signed in, but this account has not been approved for
-          CaseForge yet. The workspace will open only after the owner adds this
-          email to the approved list.
+          CaseForge yet. The workspace will open only after the owner approves
+          this access request.
         </p>
         {email ? (
           <p className="mt-5 rounded-xl border border-cyan-200/20 bg-cyan-200/10 px-4 py-3 text-sm font-semibold text-cyan-50">

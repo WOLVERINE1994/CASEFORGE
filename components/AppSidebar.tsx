@@ -9,7 +9,7 @@ type AppSidebarProps = {
   projectCount?: number;
 };
 
-type AppNavKind = "dashboard" | "automation" | "new-workspace";
+type AppNavKind = "dashboard" | "automation" | "new-workspace" | "access";
 
 function NavIcon({ kind }: { kind: AppNavKind }) {
   const commonProps = {
@@ -41,6 +41,13 @@ function NavIcon({ kind }: { kind: AppNavKind }) {
         <svg {...commonProps}>
           <path d="M12 5v14" />
           <path d="M5 12h14" />
+        </svg>
+      );
+    case "access":
+      return (
+        <svg {...commonProps}>
+          <path d="M12 3.5 19 7v5.5c0 4.2-2.8 6.8-7 8-4.2-1.2-7-3.8-7-8V7l7-3.5Z" />
+          <path d="m9.5 12.2 1.7 1.7 3.4-3.8" />
         </svg>
       );
   }
@@ -94,6 +101,12 @@ export default function AppSidebar({ projectCount = 0 }: AppSidebarProps) {
         label: "New Workspace",
         kind: "new-workspace" as const,
         active: pathname === "/projects/new",
+      },
+      {
+        href: "/access-requests",
+        label: "Access Requests",
+        kind: "access" as const,
+        active: pathname === "/access-requests",
       },
     ],
     [pathname, projectCount],

@@ -37,6 +37,10 @@ Required variables:
 Optional / upcoming variables:
 
 - `NEXT_PUBLIC_APP_URL`
+- `CASEFORGE_OWNER_EMAILS`
+- `CASEFORGE_ACCESS_REQUEST_EMAIL_TO`
+- `CASEFORGE_EMAIL_FROM`
+- `RESEND_API_KEY`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `NEXT_PUBLIC_RAZORPAY_KEY_ID`
@@ -82,13 +86,19 @@ are not approved are redirected to `/access-pending`, and denied attempts are
 logged on the server as `CASEFORGE_ACCESS_DENIED`. In production, an empty
 allowlist fails closed so the workspace does not open by accident.
 
+Access requests are stored in the `AccessRequest` table and can be reviewed at
+`/access-requests` by the owner. Set `CASEFORGE_OWNER_EMAILS` to the email
+allowed to administer requests. When `RESEND_API_KEY` is configured, CaseForge
+emails approval/rejection links to `CASEFORGE_ACCESS_REQUEST_EMAIL_TO`; otherwise
+requests are still stored in the app for manual review.
+
 ### Vercel + Supabase Deployment
 
 Before deploying on Vercel:
 
 1. Create or choose a Supabase project.
 2. Copy the Supabase Postgres connection strings into Vercel as `DATABASE_URL` and `DIRECT_URL`.
-3. Add `GROQ_API_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `CASEFORGE_ALLOWED_EMAILS` in Vercel project environment variables.
+3. Add `GROQ_API_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CASEFORGE_ALLOWED_EMAILS`, `CASEFORGE_OWNER_EMAILS`, and optionally `RESEND_API_KEY` in Vercel project environment variables.
 4. Run Prisma migrations against Supabase:
 
 ```bash

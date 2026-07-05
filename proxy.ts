@@ -12,10 +12,19 @@ import {
   extractEmailFromSessionClaims,
 } from "./lib/access-control";
 import { isClerkAuthActive } from "./lib/auth-mode";
+import {
+  AccessRequestServiceNotReadyError,
+  hasApprovedDatabaseAccess,
+  markAccessRequestNotificationSent,
+  recordAccessRequest,
+} from "./services/access-request-service";
+import { sendAccessRequestNotification } from "./services/access-notification-service";
 
 const isProtectedRoute = createRouteMatcher([
+  "/access-requests(.*)",
   "/projects(.*)",
   "/settings(.*)",
+  "/api/access-requests(.*)",
   "/api/automation(.*)",
   "/api/fill-bug-prediction(.*)",
   "/api/fill-coverage-gap(.*)",
@@ -92,10 +101,53 @@ async function resolveSignedInEmail(authObject: SessionAuthObject) {
   }
 }
 
-function deniedAccessResponse(
+async function maybeRecordDeniedAccess(
+  request: NextRequest,
+  email: string | null,
+  clerkUserId: string | null,
+) {
+  if (!email) return;
+
+  try {
+    const result = await recordAccessRequest({
+      email,
+      clerkUserId,
+      path: request.nextUrl.pathname,
+    });
+
+    if (!result?.shouldNotify || !result.decisionToken) return;
+
+    const sent = await sendAccessRequestNotification({
+      request: result.request,
+      decisionToken: result.decisionToken,
+      origin: request.nextUrl.origin,
+    });
+
+    if (sent) {
+      await markAccessRequestNotificationSent(result.request.id);
+    }
+  } catch (error) {
+    if (error instanceof AccessRequestServiceNotReadyError) {
+      console.warn("CASEFORGE_ACCESS_REQUEST_STORAGE_NOT_READY", {
+        email,
+        path: request.nextUrl.pathname,
+      });
+      return;
+    }
+
+    console.warn("CASEFORGE_ACCESS_REQUEST_RECORD_FAILED", {
+      email,
+      path: request.nextUrl.pathname,
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+}
+
+async function deniedAccessResponse(
   request: NextRequest,
   email: string | null,
   reason: string,
+  clerkUserId: string | null,
 ) {
   console.warn("CASEFORGE_ACCESS_DENIED", {
     email: email || "unknown",
@@ -103,6 +155,8 @@ function deniedAccessResponse(
     reason,
     at: new Date().toISOString(),
   });
+
+  await maybeRecordDeniedAccess(request, email, clerkUserId);
 
   if (request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.json(
@@ -129,7 +183,25 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
     const email = await resolveSignedInEmail(authObject);
     const decision = evaluateCaseForgeAccess(email);
     if (!decision.allowed) {
-      return deniedAccessResponse(request, email, decision.reason);
+      try {
+        if (await hasApprovedDatabaseAccess(email)) {
+          return;
+        }
+      } catch (error) {
+        if (!(error instanceof AccessRequestServiceNotReadyError)) {
+          console.warn("CASEFORGE_DATABASE_ACCESS_CHECK_FAILED", {
+            email: email || "unknown",
+            message: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+
+      return deniedAccessResponse(
+        request,
+        email,
+        decision.reason,
+        authObject.userId,
+      );
     }
   }
 });

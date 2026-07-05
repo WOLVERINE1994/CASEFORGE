@@ -20,6 +20,7 @@ function parseAccessList(value: string | undefined) {
 
 export function getCaseForgeAccessConfig() {
   const emails = new Set(parseAccessList(process.env.CASEFORGE_ALLOWED_EMAILS));
+  const owners = getCaseForgeOwnerEmails();
   const domains = new Set(
     parseAccessList(process.env.CASEFORGE_ALLOWED_DOMAINS).map((entry) =>
       entry.replace(/^@/, ""),
@@ -27,10 +28,33 @@ export function getCaseForgeAccessConfig() {
   );
 
   return {
-    configured: emails.size > 0 || domains.size > 0,
+    configured: emails.size > 0 || domains.size > 0 || owners.size > 0,
     emails,
+    owners,
     domains,
   };
+}
+
+export function getCaseForgeOwnerEmails() {
+  const configuredOwners = parseAccessList(
+    process.env.CASEFORGE_OWNER_EMAILS ||
+      process.env.CASEFORGE_ACCESS_REQUEST_EMAIL_TO,
+  );
+  const owners = configuredOwners.length
+    ? configuredOwners
+    : ["shivora.ai.tech@gmail.com"];
+
+  return new Set(owners);
+}
+
+export function getAccessRequestNotificationEmails() {
+  const configuredRecipients = parseAccessList(
+    process.env.CASEFORGE_ACCESS_REQUEST_EMAIL_TO ||
+      process.env.CASEFORGE_OWNER_EMAILS,
+  );
+  return configuredRecipients.length
+    ? configuredRecipients
+    : ["shivora.ai.tech@gmail.com"];
 }
 
 export function normalizeAccessEmail(email: string | null | undefined) {
@@ -58,7 +82,7 @@ export function evaluateCaseForgeAccess(
     return { allowed: false, configured: true, reason: "missing_email" };
   }
 
-  if (config.emails.has(normalizedEmail)) {
+  if (config.emails.has(normalizedEmail) || config.owners.has(normalizedEmail)) {
     return { allowed: true, configured: true, reason: "email_allowed" };
   }
 
