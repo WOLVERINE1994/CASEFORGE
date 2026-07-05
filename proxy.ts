@@ -189,6 +189,7 @@ export default hasClerkServerConfig
 
 export const config = {
   matcher: [
+    "/access-pending(.*)",
     "/projects(.*)",
     "/settings(.*)",
     "/api/:path*",
