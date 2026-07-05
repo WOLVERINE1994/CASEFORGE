@@ -6,6 +6,21 @@ export const runtime = "nodejs";
 const cleanText = (value: unknown) =>
   typeof value === "string" ? value.trim() : "";
 
+function isLocalhostUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    const hostname = parsed.hostname.toLowerCase();
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname.endsWith(".localhost")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function websiteManualGenerationErrorResponse(error: unknown) {
   const message =
     error instanceof Error && error.message.trim()
@@ -29,6 +44,15 @@ export async function POST(request: Request) {
     if (!component) {
       return Response.json(
         { error: "Component name is required, for example homepage, login form, header, footer, or pricing." },
+        { status: 400 },
+      );
+    }
+    if (process.env.NODE_ENV === "production" && isLocalhostUrl(url)) {
+      return Response.json(
+        {
+          error:
+            "Localhost URLs cannot be inspected from production. Use a public staging URL or expose your local app with a tunnel, then generate manual cases again.",
+        },
         { status: 400 },
       );
     }

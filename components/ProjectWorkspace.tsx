@@ -680,6 +680,8 @@ export default function ProjectWorkspace({
     useState<GenerationMode>("functional");
   const [coverageDepth, setCoverageDepth] =
     useState<CoverageDepth>("standard");
+  const [websiteCoverageDepth, setWebsiteCoverageDepth] =
+    useState<CoverageDepth>("standard");
   const [persona, setPersona] = useState<Persona>("all");
   const [sourceArtifacts, setSourceArtifacts] = useState<SourceArtifact[]>([]);
   const [oldRequirement, setOldRequirement] = useState("");
@@ -4864,7 +4866,7 @@ export default function ProjectWorkspace({
       return;
     }
 
-    const websiteRequirement = [
+    const websiteSourceSummary = [
       `Website URL: ${url}`,
       `Component: ${component}`,
       `Goal: Generate manual QA test cases for the inspected website component before any automation is created.`,
@@ -4876,8 +4878,8 @@ export default function ProjectWorkspace({
       const response = await fetch("/api/generate-from-website", {
         body: JSON.stringify({
           component,
-          coverage: coverageDepth,
-          mode: generationMode,
+          coverage: websiteCoverageDepth,
+          mode: "functional",
           orchestration: cognitiveOrchestrationPlan.promptDirective,
           persona,
           url,
@@ -4905,7 +4907,7 @@ export default function ProjectWorkspace({
 
       const { preparedRows, duplicateCount } = parseGeneratedResult(
         data.result || "",
-        websiteRequirement,
+        websiteSourceSummary,
       );
       const websiteRows = preparedRows.map((row) => ({
         ...row,
@@ -4922,7 +4924,6 @@ export default function ProjectWorkspace({
         return;
       }
 
-      setInput(websiteRequirement);
       if (!projectName.trim()) {
         setProjectName(`${component} Website QA`);
       }
@@ -8719,9 +8720,9 @@ export default function ProjectWorkspace({
         <label className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-800 dark:text-violet-200">
           Coverage
           <select
-            value={coverageDepth}
+            value={websiteCoverageDepth}
             onChange={(event) =>
-              setCoverageDepth(event.target.value as CoverageDepth)
+              setWebsiteCoverageDepth(event.target.value as CoverageDepth)
             }
             className="mt-2 min-h-[44px] w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-zinc-800 shadow-sm outline-none transition focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-violet-500/30 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:ring-violet-500/10"
           >
