@@ -20,7 +20,14 @@ export default async function ProjectRouteLayout({
   params,
 }: ProjectRouteLayoutProps) {
   const { projectKey } = await params;
-  const project = await readProjectShellByRef(projectKey);
+  let project: Awaited<ReturnType<typeof readProjectShellByRef>> = null;
+
+  try {
+    project = await readProjectShellByRef(projectKey);
+  } catch (error) {
+    console.error("Failed to load project shell:", error);
+  }
+
   const initialIssues: SharedIssueRecord[] = [];
   const issueCount = 0;
 

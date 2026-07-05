@@ -68,8 +68,11 @@ const createDecisionToken = () => randomBytes(32).toString("base64url");
 
 const isAccessRequestNotReadyError = (error: unknown) =>
   error instanceof Error &&
-  (error.message.includes('relation "AccessRequest" does not exist') ||
-    error.message.includes('type "AccessRequestStatus" does not exist'));
+  (String((error as { code?: unknown }).code) === "P2021" ||
+    String((error as { code?: unknown }).code) === "42P01" ||
+    String((error as { meta?: { code?: unknown } }).meta?.code) === "42P01" ||
+    /AccessRequest|AccessRequestStatus/i.test(error.message)) &&
+    /does not exist|not exist|missing|relation|table|type/i.test(error.message);
 
 export class AccessRequestServiceNotReadyError extends Error {
   constructor() {
