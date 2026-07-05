@@ -1,5 +1,6 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { headers } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import AccessPendingActions from "../../components/AccessPendingActions";
 import {
@@ -55,7 +56,7 @@ function getRequestNotice(
   }
 
   if (requestResult.status === "recorded") {
-    return "Approval request saved. The owner can review it from CaseForge.";
+    return "Approval request saved. Email delivery is not configured or failed, so the owner can review it from CaseForge.";
   }
 
   if (requestResult.status === "not_ready") {
@@ -124,6 +125,15 @@ export default async function AccessPendingPage({
           </p>
         ) : null}
         <AccessPendingActions />
+        <p className="mt-5 text-xs leading-5 text-slate-300">
+          Owner review page:{" "}
+          <Link
+            href="/access-requests"
+            className="font-bold text-cyan-200 underline decoration-cyan-200/50 underline-offset-4"
+          >
+            Access requests
+          </Link>
+        </p>
       </section>
     </main>
   );
