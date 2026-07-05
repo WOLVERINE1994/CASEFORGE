@@ -1,4 +1,4 @@
-import Link from "next/link";
+import AccessPendingActions from "../../components/AccessPendingActions";
 
 type AccessPendingPageProps = {
   searchParams?: Promise<{
@@ -27,23 +27,10 @@ export default async function AccessPendingPage({
         </p>
         {email ? (
           <p className="mt-5 rounded-xl border border-cyan-200/20 bg-cyan-200/10 px-4 py-3 text-sm font-semibold text-cyan-50">
-            Signed in as {email}
+            Current signed-in account: {email}
           </p>
         ) : null}
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Link
-            href="/sign-in"
-            className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
-          >
-            Try another account
-          </Link>
-          <Link
-            href="/"
-            className="rounded-xl bg-cyan-200 px-4 py-2 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-100"
-          >
-            Back home
-          </Link>
-        </div>
+        <AccessPendingActions />
       </section>
     </main>
   );
