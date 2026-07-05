@@ -15,10 +15,8 @@ import { isClerkAuthActive } from "./lib/auth-mode";
 import {
   AccessRequestServiceNotReadyError,
   hasApprovedDatabaseAccess,
-  markAccessRequestNotificationSent,
-  recordAccessRequest,
 } from "./services/access-request-service";
-import { sendAccessRequestNotification } from "./services/access-notification-service";
+import { recordAndNotifyAccessRequest } from "./services/access-request-workflow-service";
 
 const isProtectedRoute = createRouteMatcher([
   "/access-requests(.*)",
@@ -107,40 +105,12 @@ async function maybeRecordDeniedAccess(
   clerkUserId: string | null,
 ) {
   if (!email) return;
-
-  try {
-    const result = await recordAccessRequest({
-      email,
-      clerkUserId,
-      path: request.nextUrl.pathname,
-    });
-
-    if (!result?.shouldNotify || !result.decisionToken) return;
-
-    const sent = await sendAccessRequestNotification({
-      request: result.request,
-      decisionToken: result.decisionToken,
-      origin: request.nextUrl.origin,
-    });
-
-    if (sent) {
-      await markAccessRequestNotificationSent(result.request.id);
-    }
-  } catch (error) {
-    if (error instanceof AccessRequestServiceNotReadyError) {
-      console.warn("CASEFORGE_ACCESS_REQUEST_STORAGE_NOT_READY", {
-        email,
-        path: request.nextUrl.pathname,
-      });
-      return;
-    }
-
-    console.warn("CASEFORGE_ACCESS_REQUEST_RECORD_FAILED", {
-      email,
-      path: request.nextUrl.pathname,
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
+  await recordAndNotifyAccessRequest({
+    email,
+    clerkUserId,
+    path: request.nextUrl.pathname,
+    origin: request.nextUrl.origin,
+  });
 }
 
 async function deniedAccessResponse(
