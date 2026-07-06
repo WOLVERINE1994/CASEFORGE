@@ -299,6 +299,7 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
   const [loading, setLoading] = useState(true);
   const [savingSuite, setSavingSuite] = useState(false);
   const [savingBulk, setSavingBulk] = useState(false);
+  const [deletingBulk, setDeletingBulk] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ScenarioStatus | "all">("all");
@@ -507,7 +508,9 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
   const canBulkUpdate =
     selectedScenarios.length > 0 &&
     !savingBulk &&
+    !deletingBulk &&
     (Boolean(bulkStatus) || Boolean(bulkTags.trim()) || bulkTagMode === "replace");
+  const canBulkDelete = selectedScenarios.length > 0 && !savingBulk && !deletingBulk;
   const navigateToScenario = (scenarioId: string) => {
     router.push(
       `/projects/${encodedProjectKey}/automation/scenarios?scenarioId=${encodeURIComponent(scenarioId)}`,
@@ -678,7 +681,7 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
   };
 
   const handleBulkUpdate = async () => {
-    if (!selectedScenarios.length || savingBulk) return;
+    if (!selectedScenarios.length || savingBulk || deletingBulk) return;
 
     const trimmedTagInput = bulkTags.trim();
     const parsedTags = parseTags(bulkTags);
@@ -772,6 +775,71 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
       );
     } finally {
       setSavingBulk(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selectedScenarios.length || deletingBulk) return;
+
+    const confirmed =
+      typeof window === "undefined"
+        ? true
+        : window.confirm(
+            `Delete ${selectedScenarios.length} selected scenario${
+              selectedScenarios.length === 1 ? "" : "s"
+            }? They will be moved to the recycle bin.`,
+          );
+    if (!confirmed) return;
+
+    const selectedScenarioIds = selectedScenarios.map((scenario) => scenario.id);
+    const selectedScenarioIdSet = new Set(selectedScenarioIds);
+    const previousScenarios = scenarios;
+    const previousTagDrafts = tagDrafts;
+
+    setDeletingBulk(true);
+    setScenarios((current) =>
+      current.filter((scenario) => !selectedScenarioIdSet.has(scenario.id)),
+    );
+    setSelectedIds(new Set());
+    setTagDrafts((current) => {
+      const next = { ...current };
+      for (const scenarioId of selectedScenarioIds) {
+        delete next[scenarioId];
+      }
+      return next;
+    });
+
+    try {
+      await Promise.all(
+        selectedScenarioIds.map(async (scenarioId) => {
+          const response = await fetch(
+            `${scenariosApi}/${encodeURIComponent(scenarioId)}`,
+            { method: "DELETE" },
+          );
+          const data = await readApiJson<{ error?: string }>(response);
+          if (!response.ok) {
+            throw new Error(
+              data.error || "Could not move selected scenarios to recycle bin.",
+            );
+          }
+        }),
+      );
+      setError(
+        `${selectedScenarioIds.length} scenario${
+          selectedScenarioIds.length === 1 ? "" : "s"
+        } moved to recycle bin.`,
+      );
+    } catch (deleteError) {
+      setScenarios(previousScenarios);
+      setTagDrafts(previousTagDrafts);
+      setSelectedIds(new Set(selectedScenarioIds));
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Could not move selected scenarios to recycle bin.",
+      );
+    } finally {
+      setDeletingBulk(false);
     }
   };
 
@@ -1020,6 +1088,83 @@ export default function AutomationScenariosClient({ projectKey }: Props) {
       </section>
 
       <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+        {selectedScenarios.length ? (
+          <div className="sticky top-0 z-10 border-b border-emerald-200 bg-emerald-50/95 px-4 py-3 shadow-sm backdrop-blur dark:border-emerald-500/30 dark:bg-emerald-950/90">
+            <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-emerald-950 dark:text-emerald-50">
+                  {selectedScenarios.length} selected
+                </p>
+                <p className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">
+                  Bulk update status/tags or move selected scenarios to the
+                  recycle bin.
+                </p>
+              </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <select
+                  value={bulkStatus}
+                  onChange={(event) =>
+                    setBulkStatus(event.target.value as ScenarioStatus | "")
+                  }
+                  className="min-h-[40px] min-w-[150px] rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                >
+                  <option value="">Keep status</option>
+                  {statusOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {statusLabel(status)}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={bulkTagMode}
+                  onChange={(event) =>
+                    setBulkTagMode(event.target.value as BulkTagMode)
+                  }
+                  className="min-h-[40px] min-w-[150px] rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                >
+                  {bulkTagModes.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {bulkTagModeLabel(mode)}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={bulkTags}
+                  onChange={(event) => setBulkTags(event.target.value)}
+                  className="min-h-[40px] min-w-[210px] rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-emerald-600 dark:border-emerald-500/30 dark:bg-zinc-950 dark:text-zinc-50"
+                  placeholder={
+                    bulkTagMode === "replace"
+                      ? "New tags, blank clears"
+                      : "Tags, comma separated"
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleBulkUpdate()}
+                  disabled={!canBulkUpdate}
+                  className="inline-flex min-h-[40px] min-w-[132px] items-center justify-center rounded-xl border border-emerald-700 bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white hover:text-emerald-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-emerald-300 dark:bg-emerald-400 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-emerald-100 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
+                >
+                  {savingBulk ? "Updating..." : "Update selected"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleBulkDelete()}
+                  disabled={!canBulkDelete}
+                  className="inline-flex min-h-[40px] min-w-[124px] items-center justify-center rounded-xl border border-rose-600 bg-white px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-rose-400 dark:bg-zinc-950 dark:text-rose-200 dark:hover:bg-rose-500 dark:hover:text-white dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
+                >
+                  {deletingBulk ? "Deleting..." : "Delete selected"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set())}
+                  className="inline-flex min-h-[40px] items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:border-zinc-500"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <div className="overflow-x-auto">
           <div className="min-w-[1240px]">
             <div className="grid grid-cols-[28px_minmax(220px,1.3fr)_128px_minmax(180px,0.8fr)_minmax(160px,0.8fr)_132px_132px_170px] items-center gap-3 border-b border-zinc-100 bg-zinc-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400">
