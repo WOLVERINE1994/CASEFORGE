@@ -62,6 +62,30 @@ type AiDraftStep = {
   matchType?: string;
   durationMs?: number;
   variableName?: string;
+  objectApiName?: string;
+  fieldApiName?: string;
+  setupArea?: string;
+  setupItem?: string;
+  layoutName?: string;
+  expectedSections?: string;
+  fieldValues?: unknown;
+  recordLocator?: string;
+  ruleName?: string;
+  invalidData?: unknown;
+  expectedError?: string;
+  flowName?: string;
+  inputValues?: unknown;
+  userAlias?: string;
+  permissionSetName?: string;
+  accessExpectation?: string;
+  reportName?: string;
+  dashboardName?: string;
+  expectedWidgets?: string;
+  sourceFile?: string;
+  mappingName?: string;
+  packageName?: string;
+  installFor?: string;
+  expectedChange?: string;
   locatorCandidates?: AiLocatorCandidate[];
 };
 
@@ -93,6 +117,45 @@ const SUPPORTED_ACTIONS = new Set([
   "compareValues",
   "wait",
   "logMessage",
+  "salesforceOpenSetup",
+  "salesforceSearchSetup",
+  "salesforceOpenObjectManager",
+  "salesforceVerifyFieldConfig",
+  "salesforceVerifyPageLayout",
+  "salesforceCreateRecord",
+  "salesforceUpdateRecord",
+  "salesforceVerifyRecordField",
+  "salesforceVerifyValidationRule",
+  "salesforceRunFlow",
+  "salesforceVerifyPermissionAccess",
+  "salesforceAssignPermissionSet",
+  "salesforceLoginAsUser",
+  "salesforceRunReport",
+  "salesforceVerifyDashboard",
+  "salesforceImportData",
+  "salesforceInstallAppExchangePackage",
+  "salesforceVerifySetupAuditTrail",
+]);
+
+const SALESFORCE_ACTIONS = new Set([
+  "salesforceOpenSetup",
+  "salesforceSearchSetup",
+  "salesforceOpenObjectManager",
+  "salesforceVerifyFieldConfig",
+  "salesforceVerifyPageLayout",
+  "salesforceCreateRecord",
+  "salesforceUpdateRecord",
+  "salesforceVerifyRecordField",
+  "salesforceVerifyValidationRule",
+  "salesforceRunFlow",
+  "salesforceVerifyPermissionAccess",
+  "salesforceAssignPermissionSet",
+  "salesforceLoginAsUser",
+  "salesforceRunReport",
+  "salesforceVerifyDashboard",
+  "salesforceImportData",
+  "salesforceInstallAppExchangePackage",
+  "salesforceVerifySetupAuditTrail",
 ]);
 
 const LOCATOR_STRATEGIES = new Set<AutomationLocatorStrategy>([
@@ -274,6 +337,63 @@ const makeStep = (
   const expectedText = cleanText(raw.expectedText || raw.expectedValue || raw.text || raw.value);
   const url = cleanText(raw.url || raw.value);
   const duration = Number(raw.durationMs);
+
+  if (SALESFORCE_ACTIONS.has(action)) {
+    const options = {
+      accessExpectation: cleanText(raw.accessExpectation),
+      dashboardName: cleanText(raw.dashboardName),
+      expectedChange: cleanText(raw.expectedChange || raw.expectedText || raw.expectedValue),
+      expectedError: cleanText(raw.expectedError || raw.expectedText || raw.expectedValue),
+      expectedResult: cleanText(raw.expectedValue || raw.expectedText),
+      expectedSections: cleanText(raw.expectedSections || raw.expectedText || raw.expectedValue),
+      expectedValue: cleanText(raw.expectedValue || raw.expectedText || raw.value),
+      expectedWidgets: cleanText(raw.expectedWidgets || raw.expectedText || raw.expectedValue),
+      fieldApiName: cleanText(raw.fieldApiName),
+      fieldValues: raw.fieldValues ?? raw.value,
+      flowName: cleanText(raw.flowName || raw.value),
+      inputValues: raw.inputValues ?? {},
+      installFor: cleanText(raw.installFor, "adminsOnly"),
+      invalidData: raw.invalidData ?? {},
+      layoutName: cleanText(raw.layoutName),
+      mappingName: cleanText(raw.mappingName),
+      matchType: cleanText(raw.matchType, "contains"),
+      objectApiName: cleanText(raw.objectApiName || raw.value),
+      packageName: cleanText(raw.packageName || raw.value),
+      permissionSetName: cleanText(raw.permissionSetName || raw.value),
+      recordLocator: cleanText(raw.recordLocator),
+      reportName: cleanText(raw.reportName || raw.value),
+      ruleName: cleanText(raw.ruleName),
+      setupArea: cleanText(raw.setupArea || raw.value),
+      setupItem: cleanText(raw.setupItem || raw.value),
+      sourceFile: cleanText(raw.sourceFile),
+      userAlias: cleanText(raw.userAlias),
+    };
+    const displayName =
+      options.objectApiName ||
+      options.setupItem ||
+      options.setupArea ||
+      options.flowName ||
+      options.reportName ||
+      options.dashboardName ||
+      options.packageName ||
+      options.userAlias ||
+      action;
+    return {
+      action,
+      commandText: description,
+      description,
+      expectedValue: options.expectedValue || options.expectedResult || options.expectedError,
+      inputValue: value || displayName,
+      locatorCandidates: [],
+      options,
+      target: targetFor({
+        displayName,
+        elementKind: "salesforce admin",
+        locatorType: "salesforce",
+        value: displayName,
+      }),
+    };
+  }
 
   if (action === "navigate") {
     const targetUrl = resolveNavigateUrl(url, context);
@@ -552,11 +672,30 @@ Allowed command actions:
 - compareValues: use value, expectedValue, matchType
 - wait: use durationMs
 - logMessage: use text
+- salesforceOpenSetup: use setupArea
+- salesforceSearchSetup: use setupItem
+- salesforceOpenObjectManager: use objectApiName
+- salesforceVerifyFieldConfig: use objectApiName, fieldApiName, expectedType, expectedBehavior
+- salesforceVerifyPageLayout: use objectApiName, layoutName, expectedSections
+- salesforceCreateRecord: use objectApiName, fieldValues
+- salesforceUpdateRecord: use objectApiName, recordLocator, fieldValues
+- salesforceVerifyRecordField: use objectApiName, recordLocator, fieldApiName, expectedValue, matchType
+- salesforceVerifyValidationRule: use objectApiName, ruleName, invalidData, expectedError
+- salesforceRunFlow: use flowName, inputValues
+- salesforceVerifyPermissionAccess: use userAlias, objectApiName, accessExpectation, fieldApiName
+- salesforceAssignPermissionSet: use userAlias, permissionSetName
+- salesforceLoginAsUser: use userAlias
+- salesforceRunReport: use reportName, expectedResult
+- salesforceVerifyDashboard: use dashboardName, expectedWidgets
+- salesforceImportData: use objectApiName, sourceFile, mappingName
+- salesforceInstallAppExchangePackage: use packageName, installFor
+- salesforceVerifySetupAuditTrail: use expectedChange, matchType
 
 Prefer reviewable CaseForge commands over code. Do not output Playwright, Selenium, JavaScript, or prose.
 Use variables like {{baseUrl}}, {{email}}, {{password}} for reusable data.
 Never guess the target URL. Use {{baseUrl}} for navigation and include a baseUrl variable from automation context when available.
 If authMode is login-form, saved-session, sso, otp, or manual, create reviewable login/precondition steps and warnings instead of assuming credentials or bypassing auth.
+For Salesforce admin cases, prefer salesforce* commands for Setup, Object Manager, object fields, validation rules, flows, permissions, users, reports, dashboards, data import, AppExchange, and Setup Audit Trail.
 Add validation steps for the expected result and the automation validation goals.
 Add logMessage steps for important captured values or unresolved blockers.
 Use loops/conditions only when the manual case or context clearly requires repeated rows, lists, responsive branches, or optional UI states.

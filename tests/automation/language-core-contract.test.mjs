@@ -47,6 +47,15 @@ test("language core exposes command catalog families from the provided command s
   assert.match(languageCoreSource, /Get JSON Node value/);
   assert.match(languageCoreSource, /Verify File Exists/);
   assert.match(languageCoreSource, /Execute Salesforce query/);
+  assert.match(languageCoreSource, /Open Salesforce Setup/);
+  assert.match(languageCoreSource, /Search Salesforce Setup Quick Find/);
+  assert.match(languageCoreSource, /Open Object Manager for object/);
+  assert.match(languageCoreSource, /Verify Salesforce field configuration/);
+  assert.match(languageCoreSource, /Verify Salesforce validation rule/);
+  assert.match(languageCoreSource, /Verify Salesforce permission access/);
+  assert.match(languageCoreSource, /Run Salesforce report/);
+  assert.match(languageCoreSource, /Install AppExchange package/);
+  assert.match(languageCoreSource, /Verify Salesforce Setup Audit Trail/);
   assert.match(languageCoreSource, /Global Search in Workday/);
   assert.match(languageCoreSource, /Navigate to Transaction from Current SAP Screen/);
   assert.match(languageCoreSource, /Get Random Email/);
@@ -114,10 +123,9 @@ test("workspace command picker and live library use the shared command registry"
   assert.match(workspaceSource, /commandDefinitionForAction/);
   assert.match(workspaceSource, /normalizeAutomationAction/);
   assert.match(workspaceSource, /valueSourceOptions/);
-  assert.match(workspaceSource, /Runtime bindings and outputs/);
   assert.match(workspaceSource, /Value source/);
-  assert.match(workspaceSource, /Save output as/);
-  assert.match(workspaceSource, /Run condition/);
+  assert.match(workspaceSource, /Save \{selectedCommandOutputTypeLabel\} as variable/);
+  assert.match(workspaceSource, /Optional condition expression/);
   assert.match(workspaceSource, /Failure behavior/);
   assert.match(workspaceSource, /Screenshot on failure/);
   assert.match(workspaceSource, /phaseFailureBehavior/);
@@ -128,7 +136,6 @@ test("workspace command picker and live library use the shared command registry"
   assert.match(workspaceSource, /const selectedCommandDefinition =/);
   assert.match(workspaceSource, /selectedCommandDefinition\.inputs\.filter/);
   assert.match(workspaceSource, /shouldRenderCommandSchemaParameter/);
-  assert.match(workspaceSource, /Command parameters/);
   assert.match(workspaceSource, /Fields are generated from the shared CaseForge command registry/);
   assert.match(workspaceSource, /updateCommandSchemaParameter/);
   assert.match(workspaceSource, /Coming soon/);
