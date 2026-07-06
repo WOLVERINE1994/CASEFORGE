@@ -179,6 +179,48 @@ const splitManualSteps = (value: string) =>
 const cleanText = (value: unknown, fallback = "") =>
   typeof value === "string" ? value.replace(/\s+/g, " ").trim() : fallback;
 
+const isTextCaptureIntent = (value: string) =>
+  /\b(review|inspect|read|capture|collect|note|observe|get)\b/i.test(value) &&
+  /\b(heading|title|label|text|copy|message|content|summary|hero)\b/i.test(value);
+
+const captureVariableNameForStep = (value: string) => {
+  const tokens = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/)
+    .filter(
+      (token) =>
+        token &&
+        !new Set([
+          "a",
+          "an",
+          "and",
+          "as",
+          "capture",
+          "check",
+          "collect",
+          "confirm",
+          "ensure",
+          "get",
+          "inspect",
+          "note",
+          "observe",
+          "page",
+          "read",
+          "review",
+          "the",
+          "validate",
+          "verify",
+          "web",
+        ]).has(token),
+    );
+  const usefulTokens = tokens.length ? tokens : ["captured"];
+  const camel = usefulTokens
+    .map((token, index) => (index === 0 ? token : `${token[0]?.toUpperCase() || ""}${token.slice(1)}`))
+    .join("");
+  return /text$/i.test(camel) ? camel : `${camel}Text`;
+};
+
 const clampConfidence = (value: unknown) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 45;
@@ -329,8 +371,12 @@ const makeStep = (
   index: number,
   context?: AutomationDraftContext,
 ): AutomationStep => {
-  const action = normalizeAction(raw.action);
-  const description = cleanText(raw.description || raw.commandText, `${action} ${index + 1}`);
+  const normalizedAction = normalizeAction(raw.action);
+  const description = cleanText(raw.description || raw.commandText, `${normalizedAction} ${index + 1}`);
+  const action =
+    normalizedAction === "click" && isTextCaptureIntent(description)
+      ? "getText"
+      : normalizedAction;
   const locator = cleanText(raw.locator);
   const locatorType = inferLocatorType(locator, raw.locatorType);
   const value = cleanText(raw.value || raw.text);
@@ -538,12 +584,14 @@ const makeStep = (
   }
 
   if (action === "getText") {
+    const outputVariableName = cleanText(raw.variableName, captureVariableNameForStep(description));
     return {
       ...common,
       action,
+      inputValue: outputVariableName,
       options: {
         locator: targetLocator,
-        outputVariableName: cleanText(raw.variableName, "text"),
+        outputVariableName,
       },
     } as AutomationStep;
   }
@@ -583,10 +631,10 @@ const fallbackDraftForCase = (
   context?: AutomationDraftContext,
 ): GeneratedAutomationDraft => {
   const manualSteps = splitManualSteps(manualCase.steps);
-  const steps: AutomationStep[] = manualSteps.map((step, index) => {
+  const steps: AutomationStep[] = manualSteps.flatMap((step, index) => {
     const lower = step.toLowerCase();
     if (/\b(open|navigate|go to|launch|load)\b/.test(lower)) {
-      return makeStep(
+      return [makeStep(
         {
           action: "navigate",
           description: step,
@@ -596,16 +644,44 @@ const fallbackDraftForCase = (
         },
         index,
         context,
+      )];
+    }
+    if (isTextCaptureIntent(step)) {
+      const outputVariableName = captureVariableNameForStep(step);
+      const captureStep = makeStep(
+        {
+          action: "getText",
+          description: step,
+          variableName: outputVariableName,
+        },
+        index,
+        context,
       );
+      const expectedResult = cleanText(manualCase.expectedResult);
+      if (!expectedResult) return [captureStep];
+      return [
+        captureStep,
+        makeStep(
+          {
+            action: "compareValues",
+            description: `Compare captured ${outputVariableName} with expected result`,
+            expectedValue: expectedResult,
+            matchType: "contains",
+            value: `{{${outputVariableName}}}`,
+          },
+          index + 1,
+          context,
+        ),
+      ];
     }
     if (/\b(enter|type|fill|input)\b/.test(lower)) {
-      return makeStep({ action: "fill", description: step, text: "" }, index, context);
+      return [makeStep({ action: "fill", description: step, text: "" }, index, context)];
     }
     if (/\b(select|choose)\b/.test(lower)) {
-      return makeStep({ action: "select", description: step, option: "" }, index, context);
+      return [makeStep({ action: "select", description: step, option: "" }, index, context)];
     }
     if (/\b(verify|validate|check|confirm|ensure)\b/.test(lower)) {
-      return makeStep(
+      return [makeStep(
         {
           action: "verifyPageText",
           description: step,
@@ -613,12 +689,16 @@ const fallbackDraftForCase = (
         },
         index,
         context,
-      );
+      )];
     }
-    return makeStep({ action: "click", description: step }, index, context);
+    return [makeStep({ action: "click", description: step }, index, context)];
   });
 
-  if (!steps.some((step) => step.action === "verifyPageText" || step.action === "assertText")) {
+  if (
+    !steps.some((step) =>
+      ["verifyPageText", "assertText", "compareValues"].includes(step.action),
+    )
+  ) {
     steps.push(
       makeStep(
         {
@@ -696,6 +776,7 @@ Use variables like {{baseUrl}}, {{email}}, {{password}} for reusable data.
 Never guess the target URL. Use {{baseUrl}} for navigation and include a baseUrl variable from automation context when available.
 If authMode is login-form, saved-session, sso, otp, or manual, create reviewable login/precondition steps and warnings instead of assuming credentials or bypassing auth.
 For Salesforce admin cases, prefer salesforce* commands for Setup, Object Manager, object fields, validation rules, flows, permissions, users, reports, dashboards, data import, AppExchange, and Setup Audit Trail.
+For review/read/inspect steps such as "Review the hero heading", do not use click. Use getText with a clear variableName such as heroHeadingText, then add compareValues using {{heroHeadingText}} when the expected value is known.
 Add validation steps for the expected result and the automation validation goals.
 Add logMessage steps for important captured values or unresolved blockers.
 Use loops/conditions only when the manual case or context clearly requires repeated rows, lists, responsive branches, or optional UI states.
