@@ -5084,6 +5084,22 @@ async function executePlaybackStep(page, step) {
   if (action === "getTitle") {
     return await page.title();
   }
+  if (action === "verifyPageText") {
+    const expectedText = String(options.expectedText || expectedValue || inputValue || "").trim();
+    if (!expectedText) throw new Error("Verify Page Contains Text requires expected text.");
+    const matchType = String(options.matchType || "contains");
+    const pageText = await page.locator("body").innerText({ timeout });
+    const passed = matchText(pageText, expectedText, matchType, options);
+    if (!passed) {
+      throw new Error(`Expected page text to ${matchType} "${expectedText}".`);
+    }
+    return {
+      actual: pageText.replace(/\s+/g, " ").trim().slice(0, 500),
+      expected: expectedText,
+      matchType,
+      passed: true,
+    };
+  }
   if (action === "scroll") {
     await page.mouse.wheel(0, Number(inputValue || options.deltaY || 600));
     return;

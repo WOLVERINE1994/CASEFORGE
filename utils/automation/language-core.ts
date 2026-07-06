@@ -642,7 +642,6 @@ export const AUTOMATION_COMMAND_CATALOG: AutomationCommandDefinition[] = [
   command("verifyPageText", "Verify Page Contains Text", [param("expectedText", "string", { required: true }), matchTypeParam, timeoutParam], {
     aliases: ["Verify Page does not Contain Text"],
     category: "browser.verify",
-    executable: false,
     outputDefinition: passFailOutput,
     runtimeHandler: "web.verifyPageText",
     stepKind: "assertion",

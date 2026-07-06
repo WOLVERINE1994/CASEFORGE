@@ -3273,6 +3273,21 @@ async function executeStep(session, step, index, context = {}) {
     stepOutput = await workerRunJavaScriptSnippet(session, page, step, timeout);
   } else if (tableActionNames.has(action)) {
     stepOutput = await workerExecuteTableCommand(page, step, timeout);
+  } else if (action === "verifyPageText") {
+    const expectedText = String(options.expectedText || expectedValue || inputValue || "").trim();
+    if (!expectedText) throw new Error("Verify Page Contains Text requires expected text.");
+    const matchType = String(options.matchType || "contains");
+    const pageText = await page.locator("body").innerText({ timeout });
+    const passed = workerMatch(pageText, expectedText, matchType, options);
+    if (!passed) {
+      throw new Error(`Expected page text to ${matchType} "${expectedText}".`);
+    }
+    stepOutput = {
+      actual: pageText.replace(/\s+/g, " ").trim().slice(0, 500),
+      expected: expectedText,
+      matchType,
+      passed: true,
+    };
   } else {
     if (action === "click") {
       try {

@@ -36,6 +36,8 @@ test("language core exposes command catalog families from the provided command s
   assert.match(languageCoreSource, /Click on a Web Element/);
   assert.match(languageCoreSource, /Double click on a Web Element/);
   assert.match(languageCoreSource, /Right click on a Web Element/);
+  assert.match(languageCoreSource, /Verify Page Contains Text[\s\S]{0,220}runtimeHandler: "web\.verifyPageText"/);
+  assert.doesNotMatch(languageCoreSource, /Verify Page Contains Text[\s\S]{0,220}executable: false/);
   assert.match(languageCoreSource, /Select an item from a Web Dropdown/);
   assert.match(languageCoreSource, /Enter text in a Web Input/);
   assert.match(languageCoreSource, /Upload file with Web Element/);
