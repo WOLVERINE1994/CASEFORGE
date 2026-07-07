@@ -10,6 +10,7 @@ const HOST = process.env.CASEFORGE_AGENT_HOST || "127.0.0.1";
 const AGENT_VERSION = "0.1.46";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const glowCartDistRoot = path.resolve(SCRIPT_DIR, "../glowcart-demo-dist");
+const forceLabDistRoot = path.resolve(SCRIPT_DIR, "../forcelab-demo-dist");
 
 const commandName = {
   navigate: "Navigate",
@@ -32,6 +33,7 @@ const state = {
   browser: null,
   context: null,
   demo: null,
+  forceLabDemo: null,
   livePreviewClients: new Set(),
   pages: new Map(),
   page: null,
@@ -420,6 +422,37 @@ const sendGlowCartDistFile = async (res, pathname, origin) => {
   return true;
 };
 
+const forceLabDistFilePath = (pathname) => {
+  const normalizedPathname =
+    pathname === "/" || pathname === "/demo/forcelab"
+      ? "/index.html"
+      : pathname.startsWith("/demo/forcelab/")
+        ? pathname.slice("/demo/forcelab".length)
+        : pathname;
+  let relativePath;
+  try {
+    relativePath = decodeURIComponent(normalizedPathname).replace(/^\/+/, "");
+  } catch {
+    return null;
+  }
+  if (!relativePath || relativePath.includes("\0")) return null;
+  const filePath = path.resolve(forceLabDistRoot, relativePath);
+  const rootWithSeparator = `${forceLabDistRoot}${path.sep}`;
+  if (filePath !== forceLabDistRoot && !filePath.startsWith(rootWithSeparator)) {
+    return null;
+  }
+  return filePath;
+};
+
+const sendForceLabDistFile = async (res, pathname, origin) => {
+  const filePath = forceLabDistFilePath(pathname);
+  if (!filePath || !(await fileExists(filePath))) return false;
+  const body = await readFile(filePath);
+  res.writeHead(200, staticHeaders(origin, mimeTypeForPath(filePath)));
+  res.end(body);
+  return true;
+};
+
 const startGlowCartDemo = () =>
   new Promise((resolve, reject) => {
     if (state.demo?.server?.listening && state.demo.url) {
@@ -498,6 +531,84 @@ const closeGlowCartDemo = () =>
     }
     const server = state.demo.server;
     state.demo = null;
+    server.close(() => resolve());
+  });
+
+const startForceLabDemo = () =>
+  new Promise((resolve, reject) => {
+    if (state.forceLabDemo?.server?.listening && state.forceLabDemo.url) {
+      resolve(state.forceLabDemo);
+      return;
+    }
+
+    const demoServer = createServer(async (req, res) => {
+      const origin = req.headers.origin || "*";
+
+      if (req.method === "OPTIONS") {
+        res.writeHead(204, htmlHeaders(origin));
+        res.end();
+        return;
+      }
+
+      const url = new URL(req.url || "/", "http://127.0.0.1");
+      if (req.method === "GET" && url.pathname === "/health") {
+        sendJson(
+          res,
+          200,
+          {
+            name: "ForceLab Sandbox",
+            ok: true,
+            servedBy: "CaseForge Companion",
+          },
+          origin
+        );
+        return;
+      }
+
+      if (
+        req.method === "GET" &&
+        (await sendForceLabDistFile(res, url.pathname, origin))
+      ) {
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname.startsWith("/demo/forcelab")) {
+        await sendForceLabDistFile(res, "/index.html", origin);
+        return;
+      }
+
+      sendHtml(
+        res,
+        404,
+        "<!doctype html><title>Not found</title><h1>ForceLab route not found</h1>",
+        origin
+      );
+    });
+
+    demoServer.once("error", reject);
+    demoServer.listen(0, HOST, () => {
+      demoServer.off("error", reject);
+      const address = demoServer.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      const url = `http://${HOST}:${port}/demo/forcelab/login`;
+      state.forceLabDemo = {
+        port,
+        server: demoServer,
+        startedAt: Date.now(),
+        url,
+      };
+      resolve(state.forceLabDemo);
+    });
+  });
+
+const closeForceLabDemo = () =>
+  new Promise((resolve) => {
+    if (!state.forceLabDemo?.server) {
+      resolve();
+      return;
+    }
+    const server = state.forceLabDemo.server;
+    state.forceLabDemo = null;
     server.close(() => resolve());
   });
 
@@ -5822,6 +5933,7 @@ const server = createServer(async (req, res) => {
           name: "CaseForge Companion",
           version: AGENT_VERSION,
           activeSessionId: state.session?.id ?? null,
+          forceLabDemoUrl: state.forceLabDemo?.url ?? null,
           glowCartDemoUrl: state.demo?.url ?? null,
           status: state.session?.status ?? "idle",
         },
@@ -5839,6 +5951,36 @@ const server = createServer(async (req, res) => {
           ok: true,
           port: demo.port,
           url: demo.url,
+        },
+        origin
+      );
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/demo/forcelab/start") {
+      const demo = await startForceLabDemo();
+      sendJson(
+        res,
+        200,
+        {
+          ok: true,
+          port: demo.port,
+          url: demo.url,
+        },
+        origin
+      );
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/demo/forcelab/status") {
+      sendJson(
+        res,
+        200,
+        {
+          ok: true,
+          port: state.forceLabDemo?.port ?? null,
+          running: Boolean(state.forceLabDemo?.server?.listening),
+          url: state.forceLabDemo?.url ?? null,
         },
         origin
       );

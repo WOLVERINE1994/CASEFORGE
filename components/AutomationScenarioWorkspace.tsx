@@ -4434,6 +4434,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [providerEventCaptureAfter, setProviderEventCaptureAfter] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [glowCartPreparing, setGlowCartPreparing] = useState(false);
+  const [forceLabPreparing, setForceLabPreparing] = useState(false);
   const [runStatus, setRunStatus] = useState<"idle" | "running" | "paused" | "failed" | "completed">("idle");
   const [failedStepResult, setFailedStepResult] = useState<StepExecutionResult | null>(null);
   const [commandRunStates, setCommandRunStates] = useState<Record<string, CommandRunState>>({});
@@ -4531,6 +4532,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const [liveCommandMenu, setLiveCommandMenu] = useState<LiveCommandMenu>(null);
   const [authoringPreviewUrl, setAuthoringPreviewUrl] = useState("");
   const [authoringPreviewError, setAuthoringPreviewError] = useState("");
+  const [authoringPreviewLabel, setAuthoringPreviewLabel] = useState("Authoring preview");
   const [canvasView, setCanvasView] = useState<CanvasView | null>(null);
   const [canvasElements, setCanvasElements] = useState<CanvasElement[]>([]);
   const [canvasMenu, setCanvasMenu] = useState<CanvasContextMenu>(null);
@@ -8138,6 +8140,27 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     }
   };
 
+  const resolveForceLabDemoUrl = async () => {
+    const configuredUrl = process.env.NEXT_PUBLIC_FORCELAB_DEMO_URL?.trim();
+    if (configuredUrl) return normalizeUrl(configuredUrl);
+
+    try {
+      const response = await fetch(`${localAgentUrl}/demo/forcelab/start`, {
+        method: "POST",
+      });
+      const data = await readJsonResponse<{ error?: string; url?: string }>(
+        response,
+        {},
+      );
+      if (!response.ok || !data.url) {
+        throw new Error(data.error || "CaseForge Companion could not start ForceLab.");
+      }
+      return normalizeUrl(data.url);
+    } catch (error) {
+      throw new Error(companionOfflineMessage(error));
+    }
+  };
+
   const startHiddenLivePreview = async (
     previewUrl: string,
     sizeKey: LivePreviewSizeKey,
@@ -8180,8 +8203,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     } catch (error) {
       appendLog(
         error instanceof Error
-          ? `GlowCart preview opened, but navigation refresh failed: ${error.message}`
-          : "GlowCart preview opened, but navigation refresh failed.",
+          ? `Live Preview opened, but navigation refresh failed: ${error.message}`
+          : "Live Preview opened, but navigation refresh failed.",
       );
     }
     companionCursorRef.current = sessionData.cursor ?? 0;
@@ -8209,6 +8232,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       const demoEnvironment = environmentDraftFromUrl(demoUrl);
       setTargetUrl(demoUrl);
       setAuthoringPreviewUrl(demoUrl);
+      setAuthoringPreviewLabel("GlowCart");
       setRunConfig({
         ...defaultRunConfig(demoUrl),
         browserMode,
@@ -8236,18 +8260,62 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
     }
   };
 
+  const prepareForceLabDemoAuthoring = async () => {
+    if (busy) return;
+    setBusy(true);
+    setForceLabPreparing(true);
+    setWorkspaceTab("browser");
+    setAuthoringPreviewError("");
+    try {
+      const demoUrl = await resolveForceLabDemoUrl();
+      const demoEnvironment = environmentDraftFromUrl(demoUrl);
+      setTargetUrl(demoUrl);
+      setAuthoringPreviewUrl(demoUrl);
+      setAuthoringPreviewLabel("ForceLab Sandbox");
+      setRunConfig({
+        ...defaultRunConfig(demoUrl),
+        browserMode,
+        environments: [
+          {
+            ...demoEnvironment,
+            name: "ForceLab Sandbox",
+          },
+        ],
+      });
+      setRunModalError("");
+      appendLog(`ForceLab Sandbox selected at ${demoUrl}. Starting hidden Live Preview session.`);
+      const previewSize = await startHiddenLivePreview(demoUrl, livePreviewSize);
+      appendLog(`Hidden Live Preview started at ${demoUrl} (${previewSize.label}). Right-click Salesforce CRM elements to add commands, then use Run when ready.`);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "CaseForge Companion could not start ForceLab.";
+      setAuthoringPreviewError(message);
+      appendLog(message);
+    } finally {
+      setForceLabPreparing(false);
+      setBusy(false);
+    }
+  };
+
   useEffect(() => {
-    const handleGlowCartDemoClick = (event: globalThis.MouseEvent) => {
+    const handleDemoClick = (event: globalThis.MouseEvent) => {
       const target = event.target instanceof Element ? event.target : null;
-      const actionButton = target?.closest('[data-live-preview-action="glowcart-demo"]');
-      if (!actionButton) return;
-      event.preventDefault();
-      void prepareGlowCartDemoAuthoring();
+      if (target?.closest('[data-live-preview-action="glowcart-demo"]')) {
+        event.preventDefault();
+        void prepareGlowCartDemoAuthoring();
+        return;
+      }
+      if (target?.closest('[data-live-preview-action="forcelab-demo"]')) {
+        event.preventDefault();
+        void prepareForceLabDemoAuthoring();
+      }
     };
 
-    document.addEventListener("click", handleGlowCartDemoClick);
-    return () => document.removeEventListener("click", handleGlowCartDemoClick);
-  }, [prepareGlowCartDemoAuthoring]);
+    document.addEventListener("click", handleDemoClick);
+    return () => document.removeEventListener("click", handleDemoClick);
+  }, [prepareForceLabDemoAuthoring, prepareGlowCartDemoAuthoring]);
 
   const cycleLivePreviewSize = async () => {
     if (busy) return;
@@ -12501,6 +12569,19 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
           >
             {glowCartPreparing ? "Preparing Demo..." : "Try GlowCart Demo"}
           </button>
+          <button
+            type="button"
+            data-live-preview-action="forcelab-demo"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void prepareForceLabDemoAuthoring();
+            }}
+            disabled={busy || recordingActive || verifyPicking}
+            className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-50 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100 dark:hover:bg-sky-500/20"
+          >
+            {forceLabPreparing ? "Preparing Sandbox..." : "Try ForceLab Sandbox"}
+          </button>
           {advancedRecordingUiEnabled ? (
             <button
               type="button"
@@ -13111,10 +13192,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                     <div className="flex flex-1 items-center justify-center px-6 text-center">
                       <div className="max-w-lg rounded-2xl border border-amber-300/30 bg-amber-50 px-5 py-4 text-amber-950 shadow-lg dark:bg-amber-500/15 dark:text-amber-100">
                         <p className="text-xs font-semibold uppercase tracking-[0.14em]">
-                          GlowCart preview unavailable
+                          {authoringPreviewLabel} unavailable
                         </p>
                         <h3 className="mt-2 text-xl font-semibold">
-                          CaseForge Companion could not start the local demo.
+                          CaseForge Companion could not start the local preview.
                         </h3>
                         <p className="mt-3 text-sm leading-6">
                           {authoringPreviewError}
@@ -13125,7 +13206,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                     <iframe
                       key={authoringPreviewUrl}
                       src={authoringPreviewUrl}
-                      title="GlowCart authoring preview"
+                      title={`${authoringPreviewLabel} authoring preview`}
                       className="h-full min-h-[520px] w-full flex-1 border-0 bg-white"
                     />
                   )}
