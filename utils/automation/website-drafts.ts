@@ -1158,7 +1158,9 @@ Rules:
 - Steps must be human-executable manual QA actions separated with semicolons.
 - Preconditions should describe starting state, page availability, access, or setup only.
 - Expected Result must be observable and concise.
-- Test Data must include concrete visible labels, field values, URLs, or "None" when no data is needed.
+- Test Data is only for values a tester must enter, select, upload, or prepare before execution.
+- For click-only, link-only, navigation-only, content review, layout, keyboard, and visual checks, Test Data must be "None".
+- Do not put button names, link labels, hrefs, locators, selectors, or page URLs in Test Data for click/navigation cases; keep those details in Steps or Expected Result.
 - Include functional, negative, UI/accessibility, link/navigation, form, and regression coverage only where supported by observed evidence.
 - Target ${targetManualCaseCount(input.coverage)} useful manual cases.
 - Persona: ${cleanText(input.persona, "all users")}
@@ -1252,7 +1254,7 @@ const fallbackManualWebsiteCases = (
     ),
   ];
 
-  links.slice(0, coverage === "basic" ? 2 : 4).forEach((link, index) => {
+  links.slice(0, coverage === "basic" ? 2 : 4).forEach((link) => {
     rows.push(
       caseLine(
         `TC${String(rows.length + 1).padStart(3, "0")}`,
@@ -1261,12 +1263,12 @@ const fallbackManualWebsiteCases = (
         `${component} page is open; Link is visible`,
         `Locate ${link.name || link.text || "the observed link"}; Open the link; Review the destination page or URL`,
         "The link opens the expected destination without a broken page or unexpected error.",
-        `Link text=${link.name || link.text || `Link ${index + 1}`}; href=${link.href}`,
+        "None",
       ),
     );
   });
 
-  buttons.slice(0, coverage === "basic" ? 2 : 4).forEach((button, index) => {
+  buttons.slice(0, coverage === "basic" ? 2 : 4).forEach((button) => {
     rows.push(
       caseLine(
         `TC${String(rows.length + 1).padStart(3, "0")}`,
@@ -1275,7 +1277,7 @@ const fallbackManualWebsiteCases = (
         `${component} page is open; Button is visible`,
         `Locate ${button.name || button.text || "the observed button"}; Activate the button; Review the visible response`,
         "The button responds with a clear state change, navigation, or feedback appropriate to the visible UI.",
-        `Button=${button.name || button.text || `Button ${index + 1}`}`,
+        "None",
       ),
     );
   });
@@ -1318,7 +1320,7 @@ const fallbackManualWebsiteCases = (
         `${component} page is open; Keyboard is available`,
         "Start at the browser address bar; Use Tab to move through links, buttons, and fields; Activate reachable controls with keyboard only",
         "Focus order is logical, focus is visible, and interactive controls can be reached without a mouse.",
-        `Interactive controls=${links.length + buttons.length + fields.length}`,
+        "None",
       ),
     );
   }
@@ -1332,7 +1334,7 @@ const fallbackManualWebsiteCases = (
         `${component} page is open; Images are visible`,
         "Review visible images; Check whether each informative image has meaningful alternative text or surrounding context; Check decorative images do not distract assistive review",
         "Images have appropriate alt text or surrounding accessible context based on their purpose.",
-        `Images=${images.length}`,
+        "None",
       ),
     );
   }
@@ -1347,8 +1349,33 @@ const normalizeManualCaseResult = (text: string) =>
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.includes("|"))
+    .map((line) => cleanManualWebsiteCaseLine(line))
     .join("\n")
     .trim();
+
+const clickOnlyTestDataPattern =
+  /(?:^|[;\n]\s*)(?:button|link(?:\s*text)?|href|url|page|route|destination|selector|locator)\s*=/i;
+
+const hasManualInputDataNeed = (value: string) =>
+  /\b(?:enter|type|input|fill|select|choose|upload|provide|sample data|valid value|invalid value|email|password|field|form|required field|csv|payload)\b/i.test(
+    value,
+  );
+
+const cleanManualWebsiteCaseLine = (line: string) => {
+  const columns = line.split("|").map((cell) => cleanCaseCell(cell));
+  if (columns.length !== 7) return line;
+
+  const [id, type, title, preconditions, steps, expectedResult, testData] = columns;
+  const rowText = `${title} ${preconditions} ${steps} ${expectedResult}`;
+  if (
+    clickOnlyTestDataPattern.test(testData) &&
+    !hasManualInputDataNeed(rowText)
+  ) {
+    return [id, type, title, preconditions, steps, expectedResult, "None"].join(" | ");
+  }
+
+  return columns.join(" | ");
+};
 
 const normalizeWebsiteMode = (value: unknown): WebsiteGenerationMode => {
   const allowed = new Set<WebsiteGenerationMode>([
