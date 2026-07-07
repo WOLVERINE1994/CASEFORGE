@@ -33,11 +33,12 @@ const isWeakTestData = (value?: string) => {
   ].some((phrase) => normalized.includes(phrase));
 };
 
-export const suggestTestData = (row: TestCaseRow) => {
-  if (row.testData?.trim() && !isWeakTestData(row.testData)) {
-    return row.testData.trim();
-  }
+const requiresManualInputData = (content: string) =>
+  /\b(?:enter|type|input|fill|select|choose|upload|provide|submit|search|valid value|invalid value|sample data|email|password|phone|mobile|field|form|payload|csv|file|date of birth|gender|address|token|role|permission|authorized|unauthorized|required)\b/.test(
+    content,
+  );
 
+export const suggestTestData = (row: TestCaseRow) => {
   const content = [
     row.type ?? "",
     row.title ?? "",
@@ -47,6 +48,14 @@ export const suggestTestData = (row: TestCaseRow) => {
   ]
     .join(" ")
     .toLowerCase();
+
+  if (!requiresManualInputData(content)) {
+    return "None";
+  }
+
+  if (row.testData?.trim() && !isWeakTestData(row.testData)) {
+    return row.testData.trim();
+  }
 
   const suggestions: string[] = [];
 

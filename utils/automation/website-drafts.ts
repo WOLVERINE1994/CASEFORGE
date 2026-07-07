@@ -1159,6 +1159,8 @@ Rules:
 - Preconditions should describe starting state, page availability, access, or setup only.
 - Expected Result must be observable and concise.
 - Test Data is only for values a tester must enter, select, upload, or prepare before execution.
+- If the tester only opens, clicks, reviews, verifies, scans, checks, navigates, or observes existing content, Test Data must be "None".
+- Do not create generic valid/invalid/boundary text values unless a visible field or form requires typed input.
 - For click-only, link-only, navigation-only, content review, layout, keyboard, and visual checks, Test Data must be "None".
 - Do not put button names, link labels, hrefs, locators, selectors, or page URLs in Test Data for click/navigation cases; keep those details in Steps or Expected Result.
 - Include functional, negative, UI/accessibility, link/navigation, form, and regression coverage only where supported by observed evidence.
@@ -1171,7 +1173,7 @@ Rules:
 }
 
 Format example:
-TC001 | Functional | Homepage hero content appears correctly | Website is reachable; Homepage component is open | Open the homepage URL; Review the hero heading; Review primary call to action | The hero content and primary action are visible and understandable | URL=https://example.com; Heading=Observed heading
+TC001 | Functional | Homepage hero content appears correctly | Website is reachable; Homepage component is open | Open the homepage URL; Review the hero heading; Review primary call to action | The hero content and primary action are visible and understandable | None
 
 Inspected component evidence:
 ${JSON.stringify(
@@ -1228,7 +1230,6 @@ const fallbackManualWebsiteCases = (
 ) => {
   const component = snapshot.component || "website component";
   const url = snapshot.finalUrl || snapshot.requestedUrl;
-  const heading = snapshot.headings[0] || snapshot.title || component;
   const links = snapshot.elements.filter((element) => element.kind === "link" && element.href);
   const buttons = snapshot.elements.filter((element) => element.kind === "button");
   const fields = snapshot.elements.filter((element) => element.kind === "field");
@@ -1241,7 +1242,7 @@ const fallbackManualWebsiteCases = (
       `${component} page is reachable`,
       `Open ${url}; Review the page title and main heading; Scan the visible ${component} content`,
       `The ${component} content is visible and matches the inspected page structure.`,
-      `URL=${url}; Heading=${heading}`,
+      "None",
     ),
     caseLine(
       "TC002",
@@ -1250,7 +1251,7 @@ const fallbackManualWebsiteCases = (
       `${component} page is open in a desktop browser`,
       "Set the browser to a desktop viewport; Review headings, text, buttons, links, and images; Check for clipped or overlapping content",
       "All visible content remains readable, aligned, and free of obvious overlap.",
-      `Buttons=${buttons.length}; Links=${links.length}; Fields=${fields.length}`,
+      "None",
     ),
   ];
 
@@ -1353,17 +1354,11 @@ const normalizeManualCaseResult = (text: string) =>
     .join("\n")
     .trim();
 
-const clickOnlyTestDataPattern =
-  /(?:^|[;\n]\s*)(?:button|link(?:\s*text)?|href|url|page|route|destination|selector|locator)\s*=/i;
-
-const clickOnlyCasePattern =
-  /\b(?:click|open|activate|tap|follow|navigate|navigation|link|button|menu|tab|page is open|redirect|destination)\b/i;
-
 const hasMeaningfulTestData = (value: string) =>
   cleanText(value, "None").toLowerCase() !== "none";
 
 const hasManualInputDataNeed = (value: string) =>
-  /\b(?:enter|type|input|fill|select|choose|upload|provide|sample data|valid value|invalid value|email|password|field|form|required field|csv|payload)\b/i.test(
+  /\b(?:enter|type|input|fill|select|choose|upload|provide|submit|sample data|valid value|invalid value|email|password|field|form|required field|csv|payload|file|token|role|permission|authorized|unauthorized)\b/i.test(
     value,
   );
 
@@ -1375,7 +1370,6 @@ const cleanManualWebsiteCaseLine = (line: string) => {
   const rowText = `${title} ${preconditions} ${steps} ${expectedResult}`;
   if (
     hasMeaningfulTestData(testData) &&
-    (clickOnlyTestDataPattern.test(testData) || clickOnlyCasePattern.test(rowText)) &&
     !hasManualInputDataNeed(rowText)
   ) {
     return [id, type, title, preconditions, steps, expectedResult, "None"].join(" | ");
