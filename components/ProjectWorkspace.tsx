@@ -9057,9 +9057,6 @@ export default function ProjectWorkspace({
               <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
                 Automation conversion {generationQualitySignals.automationConversionRate}%
               </span>
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-                Downstream failures {generationQualitySignals.downstreamFailureCorrelation}%
-              </span>
             </div>
           </summary>
 

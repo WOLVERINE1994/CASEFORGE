@@ -22,4 +22,5 @@ test("project workspace no longer uses the oversized marketing hero copy", () =>
   assert.doesNotMatch(source, /1\. Capture requirement/);
   assert.doesNotMatch(source, /2\. Refine output/);
   assert.doesNotMatch(source, /3\. Save and export/);
+  assert.doesNotMatch(source, /Downstream failures/);
 });
