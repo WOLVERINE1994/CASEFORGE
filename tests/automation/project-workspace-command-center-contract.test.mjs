@@ -15,6 +15,10 @@ test("project workspace starts with an action-oriented command center", () => {
   assert.match(source, /Review cases/);
   assert.match(source, /ForceLab Sandbox/);
   assert.match(source, /GlowCart Demo/);
+  assert.match(source, /<div className="grid gap-4 p-5">/);
+  assert.match(source, /<aside className="grid gap-3 md:grid-cols-2">/);
+  assert.doesNotMatch(source, /xl:grid-cols-\[minmax\(0,1fr\)_340px\]/);
+  assert.doesNotMatch(source, /xl:grid-cols-\[minmax\(240px,1\.2fr\)_minmax\(180px,0\.8fr\)_180px_220px\]/);
 });
 
 test("project workspace no longer uses the oversized marketing hero copy", () => {

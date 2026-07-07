@@ -8753,7 +8753,7 @@ export default function ProjectWorkspace({
 
   const websiteCaseGenerationPanel = (
     <section className="rounded-[24px] border border-violet-200/80 bg-violet-50/75 px-5 py-5 shadow-[0_24px_58px_-42px_rgba(91,33,182,0.48)] dark:border-violet-500/20 dark:bg-violet-500/10">
-      <div className="grid gap-4 xl:grid-cols-[minmax(240px,1.2fr)_minmax(180px,0.8fr)_180px_220px] xl:items-end">
+      <div className="grid gap-4 md:grid-cols-2 md:items-end">
         <label className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-800 dark:text-violet-200">
           Website URL
           <input
@@ -8792,7 +8792,7 @@ export default function ProjectWorkspace({
           type="button"
           onClick={() => void generateFromWebsite()}
           disabled={generatingWebsiteCases || loading}
-          className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-violet-700 bg-violet-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-white hover:text-violet-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-violet-300 dark:bg-violet-400 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-violet-100 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
+          className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-violet-700 bg-violet-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-white hover:text-violet-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-violet-300 dark:bg-violet-400 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-violet-100 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400 md:col-span-2 lg:col-span-1"
         >
           {generatingWebsiteCases ? "Generating..." : "Generate Manual Cases"}
         </button>
@@ -8920,7 +8920,7 @@ export default function ProjectWorkspace({
             </div>
           </div>
 
-          <div className="grid gap-4 p-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="grid gap-4 p-5">
             <div className="min-w-0">
               {websiteCaseGenerationPanel}
               <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -8963,7 +8963,7 @@ export default function ProjectWorkspace({
               </div>
             </div>
 
-            <aside className="grid gap-3 content-start">
+            <aside className="grid gap-3 md:grid-cols-2">
               <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/70">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
                   Continue Work
