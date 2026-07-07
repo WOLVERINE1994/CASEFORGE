@@ -338,24 +338,79 @@ export default function AutomationRecycleBinClient({ projectKey }: Props) {
                   type="button"
                   onClick={() => void restoreSelectedItems()}
                   disabled={!canBulkRestore}
-                  className="inline-flex min-h-[40px] min-w-[128px] items-center justify-center rounded-xl border border-emerald-700 bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white hover:text-emerald-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-emerald-300 dark:bg-emerald-400 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-emerald-100 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
+                  aria-label={restoringBulk ? "Restoring selected items" : "Restore selected"}
+                  title={restoringBulk ? "Restoring selected items" : "Restore selected"}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-700 bg-emerald-700 text-white transition hover:bg-white hover:text-emerald-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-emerald-300 dark:bg-emerald-400 dark:text-zinc-950 dark:hover:bg-zinc-950 dark:hover:text-emerald-100 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
                 >
-                  {restoringBulk ? "Restoring..." : "Restore selected"}
+                  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4">
+                    <path
+                      d="M6.5 6.5H11a4 4 0 1 1-3.2 6.4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="1.8"
+                    />
+                    <path
+                      d="M6.5 3.8v2.7H3.8"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="1.8"
+                    />
+                    <path
+                      d="M6.4 6.6 4.7 4.9"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="1.8"
+                    />
+                  </svg>
                 </button>
                 <button
                   type="button"
                   onClick={() => void purgeSelectedItems()}
                   disabled={!canBulkPurge}
-                  className="inline-flex min-h-[40px] min-w-[156px] items-center justify-center rounded-xl border border-rose-600 bg-white px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-rose-400 dark:bg-zinc-950 dark:text-rose-200 dark:hover:bg-rose-500 dark:hover:text-white dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
+                  aria-label={purgingBulk ? "Deleting selected items forever" : "Delete selected forever"}
+                  title={purgingBulk ? "Deleting selected items forever" : "Delete selected forever"}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-rose-600 bg-white text-rose-700 transition hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-rose-400 dark:bg-zinc-950 dark:text-rose-200 dark:hover:bg-rose-500 dark:hover:text-white dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-400"
                 >
-                  {purgingBulk ? "Deleting..." : "Delete selected forever"}
+                  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4">
+                    <path
+                      d="M7 4.5h6M8.4 4.5l.4-1.2h2.4l.4 1.2M5.5 6.8h9M7 6.8l.5 9h5l.5-9"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="1.8"
+                    />
+                    <path
+                      d="M9 9.2v4M11 9.2v4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeWidth="1.6"
+                    />
+                  </svg>
                 </button>
                 <button
                   type="button"
                   onClick={() => setSelectedItemKeys(new Set())}
-                  className="inline-flex min-h-[40px] items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:border-zinc-500"
+                  aria-label="Clear selection"
+                  title="Clear selection"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-700 transition hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:border-zinc-500"
                 >
-                  Clear
+                  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4">
+                    <path
+                      d="m6 6 8 8M14 6l-8 8"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeWidth="2"
+                    />
+                  </svg>
                 </button>
               </div>
             </div>

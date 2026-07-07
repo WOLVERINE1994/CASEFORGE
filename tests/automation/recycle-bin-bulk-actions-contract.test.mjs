@@ -13,7 +13,10 @@ test("recycle bin exposes selected-item bulk actions", () => {
   assert.match(source, /method: "PATCH"/);
   assert.match(source, /method: "DELETE"/);
   assert.match(source, /Select visible/);
-  assert.match(source, /Restore selected/);
-  assert.match(source, /Delete selected forever/);
+  assert.match(source, /aria-label=\{restoringBulk \? "Restoring selected items" : "Restore selected"\}/);
+  assert.match(source, /aria-label=\{purgingBulk \? "Deleting selected items forever" : "Delete selected forever"\}/);
+  assert.match(source, /aria-label="Clear selection"/);
+  assert.match(source, /<svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4">/);
+  assert.match(source, /className="inline-flex h-10 w-10 items-center justify-center rounded-xl/);
   assert.match(source, /Restore selected items or permanently delete them\./);
 });
