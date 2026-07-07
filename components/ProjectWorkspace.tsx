@@ -8552,6 +8552,25 @@ export default function ProjectWorkspace({
     : input.trim()
     ? "Your requirement is ready. Generate cases when you want a first draft."
     : "Paste a requirement or create a manual case to begin.";
+  const activeRows = rows.filter((row) => !row.archived);
+  const reviewedRows = activeRows.filter((row) =>
+    ["approved", "ready", "reviewed"].includes(row.reviewStatus || ""),
+  );
+  const pendingReviewRows = activeRows.filter((row) =>
+    ["draft", "needs-review", "in-review"].includes(row.reviewStatus || "draft"),
+  );
+  const automationReadyRows = activeRows.filter((row) =>
+    ["automated", "ready", "candidate"].includes(row.automationStatus || ""),
+  );
+  const failedRows = activeRows.filter((row) =>
+    ["failed", "blocked"].includes(row.executionResult || ""),
+  );
+  const readinessSnapshot = [
+    { label: "Active cases", value: activeRows.length },
+    { label: "Reviewed", value: reviewedRows.length },
+    { label: "Automation ready", value: automationReadyRows.length },
+    { label: "Needs attention", value: failedRows.length + coverageGapAnalysis.gaps.length },
+  ];
   const hasRequirementInput = Boolean(input.trim());
   const advancedRequirementSignalCount =
     requirementRiskAnalysis.risks.length +
@@ -8860,105 +8879,140 @@ export default function ProjectWorkspace({
         </section>
         )}
 
-        <section className="relative overflow-hidden rounded-[36px] border border-white/80 bg-white/85 shadow-[0_44px_120px_-52px_rgba(15,23,42,0.45)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/85">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.18),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.14),_transparent_22%)]" />
-          <div className="absolute right-0 top-0 h-56 w-56 translate-x-16 -translate-y-16 rounded-full bg-amber-200/40 blur-3xl dark:bg-amber-500/10" />
-          <div className="absolute bottom-0 left-0 h-64 w-64 -translate-x-20 translate-y-16 rounded-full bg-emerald-200/50 blur-3xl dark:bg-emerald-500/10" />
-          <div className="relative grid gap-6 px-6 py-7 lg:grid-cols-[minmax(0,1.45fr)_340px] lg:px-8 lg:py-8">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/70 bg-white/80 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.26em] text-emerald-800 shadow-sm backdrop-blur dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-                CaseForge
-              </div>
-              <h1 className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-zinc-950 sm:text-5xl xl:text-[3.45rem] dark:text-white">
-                Turn each requirement into coverage, automation, and release confidence.
-              </h1>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-600 sm:text-base dark:text-zinc-300">
-                Generate review-ready cases, capture quality signals from edits, scale reusable automation, and keep ship risk visible in one QA workflow workspace.
-              </p>
-              <div className="mt-6 flex flex-wrap gap-2.5">
-                <span className="rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/75 dark:text-zinc-300">
-                  Requirement intelligence
-                </span>
-                <span className="rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/75 dark:text-zinc-300">
-                  Coverage actions
-                </span>
-                <span className="rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/75 dark:text-zinc-300">
-                  Change-aware QA
-                </span>
-              </div>
-
-              <div className="mt-7 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-[24px] border border-white/80 bg-white/80 px-4 py-4 shadow-[0_16px_38px_-24px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-700 dark:bg-zinc-950/70">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                    Workspace Status
-                  </p>
-                  <p className="mt-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">
+        <section className="overflow-hidden rounded-[28px] border border-zinc-200/80 bg-white/94 shadow-[0_30px_86px_-54px_rgba(15,23,42,0.42)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90">
+          <div className="border-b border-zinc-200/80 px-5 py-4 dark:border-zinc-800">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    CaseForge
+                  </span>
+                  <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
                     {workspaceStatus}
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                    {workspaceStatusDetail}
-                  </p>
-                </div>
-                <div className="rounded-[24px] border border-white/80 bg-white/80 px-4 py-4 shadow-[0_16px_38px_-24px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-700 dark:bg-zinc-950/70">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                    Autosave
-                  </p>
-                  <p className="mt-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">
-                    {autosaveStatusText}
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+                  </span>
+                  <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
                     Last saved: {lastSavedText}
-                  </p>
+                  </span>
                 </div>
-                <div className="rounded-[24px] border border-white/80 bg-white/80 px-4 py-4 shadow-[0_16px_38px_-24px_rgba(15,23,42,0.35)] backdrop-blur dark:border-zinc-700 dark:bg-zinc-950/70">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                    Saved Projects
-                  </p>
-                  <p className="mt-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">
-                    {projects.length} active
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                    {typeSummaryText}
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                    {planningSummaryText}
-                  </p>
-                </div>
+                <h1 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-950 sm:text-3xl dark:text-zinc-50">
+                  QA command center
+                </h1>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+                  Generate cases, continue review, and open demo sandboxes from the first screen.
+                </p>
+              </div>
+              <div className="grid min-w-[min(100%,34rem)] grid-cols-2 gap-2 sm:grid-cols-4">
+                {readinessSnapshot.map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/70"
+                  >
+                    <p className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+                      {item.value}
+                    </p>
+                    <p className="mt-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                      {item.label}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 p-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="min-w-0">
+              {websiteCaseGenerationPanel}
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    requirementTextareaRef.current?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "center",
+                    });
+                    window.setTimeout(() => requirementTextareaRef.current?.focus(), 250);
+                  }}
+                  className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left text-sm font-semibold text-emerald-900 transition hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100 dark:hover:bg-emerald-500/20"
+                >
+                  Generate from requirement
+                  <span className="mt-1 block text-xs font-medium text-emerald-800/75 dark:text-emerald-100/70">
+                    Jump to the story editor below.
+                  </span>
+                </button>
+                <Link
+                  href={activeProjectCasesHref}
+                  onClick={(event) => handleProjectRouteClick(event, "Cases")}
+                  className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-left text-sm font-semibold text-sky-900 transition hover:border-sky-300 hover:bg-sky-100 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100 dark:hover:bg-sky-500/20"
+                >
+                  Review cases
+                  <span className="mt-1 block text-xs font-medium text-sky-800/75 dark:text-sky-100/70">
+                    {pendingReviewRows.length} pending review.
+                  </span>
+                </Link>
+                <Link
+                  href={activeProjectBoardHref}
+                  onClick={(event) => handleProjectRouteClick(event, "Board")}
+                  className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-sm font-semibold text-amber-900 transition hover:border-amber-300 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100 dark:hover:bg-amber-500/20"
+                >
+                  Open board
+                  <span className="mt-1 block text-xs font-medium text-amber-800/75 dark:text-amber-100/70">
+                    Track release and issue work.
+                  </span>
+                </Link>
               </div>
             </div>
 
-            <div className="rounded-[24px] border border-zinc-200/80 bg-zinc-50/85 p-5 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.2)] dark:border-zinc-800 dark:bg-zinc-950/72">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
-                Workflow
-              </p>
-              <div className="mt-4 space-y-3">
-                <div className="rounded-[18px] border border-zinc-200/80 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">
-                    1. Capture requirement
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                    Paste the story, user flow, or acceptance criteria.
-                  </p>
-                </div>
-                <div className="rounded-[18px] border border-zinc-200/80 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-700 dark:text-sky-300">
-                    2. Refine output
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                    Edit cells inline and drag rows to the right testing order.
-                  </p>
-                </div>
-                <div className="rounded-[18px] border border-zinc-200/80 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300">
-                    3. Save and export
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                    Keep projects locally and hand off CSV or Excel instantly.
-                  </p>
+            <aside className="grid gap-3 content-start">
+              <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/70">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                  Continue Work
+                </p>
+                <p className="mt-2 text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                  {(projectName.trim() || "Unsaved workspace").trim()}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+                  {autosaveStatusText}. {projects.length} saved project{projects.length === 1 ? "" : "s"} available.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href={activeProjectWorkspaceHref}
+                    className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    Workspace
+                  </Link>
+                  <Link
+                    href={activeProjectIssuesHref}
+                    onClick={(event) => handleProjectRouteClick(event, "Issues")}
+                    className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    Issues
+                  </Link>
                 </div>
               </div>
-            </div>
+
+              <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/70">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                  Sandboxes
+                </p>
+                <div className="mt-3 grid gap-2">
+                  <Link
+                    href="/demo/forcelab/login"
+                    target="_blank"
+                    className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-semibold text-sky-900 transition hover:bg-sky-50 dark:border-sky-500/30 dark:bg-zinc-900 dark:text-sky-100 dark:hover:bg-sky-500/10"
+                  >
+                    ForceLab Sandbox
+                  </Link>
+                  <Link
+                    href="/demo/glowcart"
+                    target="_blank"
+                    className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-zinc-900 dark:text-emerald-100 dark:hover:bg-emerald-500/10"
+                  >
+                    GlowCart Demo
+                  </Link>
+                </div>
+              </div>
+            </aside>
           </div>
         </section>
 
@@ -9147,8 +9201,6 @@ export default function ProjectWorkspace({
           </div>
         </details>
         </div>
-
-        {websiteCaseGenerationPanel}
 
         <section className="overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white/96 shadow-[0_26px_58px_-40px_rgba(15,23,42,0.24)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/94">
           <div className="border-b border-zinc-200/80 bg-zinc-50/85 px-6 py-5 dark:border-zinc-800 dark:bg-zinc-950/70">
