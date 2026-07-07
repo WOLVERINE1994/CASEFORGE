@@ -1356,6 +1356,12 @@ const normalizeManualCaseResult = (text: string) =>
 const clickOnlyTestDataPattern =
   /(?:^|[;\n]\s*)(?:button|link(?:\s*text)?|href|url|page|route|destination|selector|locator)\s*=/i;
 
+const clickOnlyCasePattern =
+  /\b(?:click|open|activate|tap|follow|navigate|navigation|link|button|menu|tab|page is open|redirect|destination)\b/i;
+
+const hasMeaningfulTestData = (value: string) =>
+  cleanText(value, "None").toLowerCase() !== "none";
+
 const hasManualInputDataNeed = (value: string) =>
   /\b(?:enter|type|input|fill|select|choose|upload|provide|sample data|valid value|invalid value|email|password|field|form|required field|csv|payload)\b/i.test(
     value,
@@ -1368,7 +1374,8 @@ const cleanManualWebsiteCaseLine = (line: string) => {
   const [id, type, title, preconditions, steps, expectedResult, testData] = columns;
   const rowText = `${title} ${preconditions} ${steps} ${expectedResult}`;
   if (
-    clickOnlyTestDataPattern.test(testData) &&
+    hasMeaningfulTestData(testData) &&
+    (clickOnlyTestDataPattern.test(testData) || clickOnlyCasePattern.test(rowText)) &&
     !hasManualInputDataNeed(rowText)
   ) {
     return [id, type, title, preconditions, steps, expectedResult, "None"].join(" | ");

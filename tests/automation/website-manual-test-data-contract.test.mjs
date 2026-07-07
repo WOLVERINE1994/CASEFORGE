@@ -9,8 +9,12 @@ test("website manual case generation keeps click/navigation hints out of test da
   assert.match(source, /For click-only, link-only, navigation-only, content review, layout, keyboard, and visual checks, Test Data must be "None"\./);
   assert.match(source, /Do not put button names, link labels, hrefs, locators, selectors, or page URLs in Test Data/);
   assert.match(source, /const clickOnlyTestDataPattern =/);
+  assert.match(source, /const clickOnlyCasePattern =/);
+  assert.match(source, /const hasMeaningfulTestData = \(value: string\) =>/);
   assert.match(source, /const cleanManualWebsiteCaseLine = \(line: string\) =>/);
   assert.match(source, /clickOnlyTestDataPattern\.test\(testData\)/);
+  assert.match(source, /clickOnlyCasePattern\.test\(rowText\)/);
+  assert.match(source, /hasMeaningfulTestData\(testData\)/);
   assert.match(source, /return \[id, type, title, preconditions, steps, expectedResult, "None"\]\.join\(" \| "\)/);
   assert.match(source, /The link opens the expected destination[\s\S]{0,180}"None"/);
   assert.match(source, /The button responds with a clear state change[\s\S]{0,180}"None"/);
