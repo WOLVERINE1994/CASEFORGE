@@ -61,6 +61,8 @@ test("automation workspace exposes one-click ForceLab authoring preview", () => 
   assert.match(workspaceSource, /const resolveForceLabDemoUrl = async/);
   assert.match(workspaceSource, /const prepareForceLabDemoAuthoring = async/);
   assert.match(workspaceSource, /\/demo\/forcelab\/start/);
+  assert.match(workspaceSource, /window\.location\.origin\}\/demo\/forcelab\/login/);
+  assert.match(workspaceSource, /ForceLab Companion endpoint is not available yet\. Using the CaseForge-hosted ForceLab demo\./);
   assert.match(workspaceSource, /data-live-preview-action="forcelab-demo"/);
   assert.match(workspaceSource, /Try ForceLab Sandbox/);
   assert.match(workspaceSource, /setAuthoringPreviewLabel\("ForceLab Sandbox"\)/);

@@ -8143,6 +8143,10 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
   const resolveForceLabDemoUrl = async () => {
     const configuredUrl = process.env.NEXT_PUBLIC_FORCELAB_DEMO_URL?.trim();
     if (configuredUrl) return normalizeUrl(configuredUrl);
+    const hostedDemoUrl =
+      typeof window === "undefined"
+        ? "/demo/forcelab/login"
+        : `${window.location.origin}/demo/forcelab/login`;
 
     try {
       const response = await fetch(`${localAgentUrl}/demo/forcelab/start`, {
@@ -8157,7 +8161,14 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
       }
       return normalizeUrl(data.url);
     } catch (error) {
-      throw new Error(companionOfflineMessage(error));
+      const message = companionOfflineMessage(error);
+      if (/outdated|unknown caseforge agent route|not found/i.test(message)) {
+        appendLog(
+          "ForceLab Companion endpoint is not available yet. Using the CaseForge-hosted ForceLab demo.",
+        );
+        return normalizeUrl(hostedDemoUrl);
+      }
+      throw new Error(message);
     }
   };
 
