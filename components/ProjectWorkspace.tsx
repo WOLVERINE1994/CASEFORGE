@@ -20,7 +20,6 @@ import BusinessReportPanel from "./BusinessReportPanel";
 import CollaborationPanel from "./CollaborationPanel";
 import TrustCenterPanel from "./TrustCenterPanel";
 import WorkflowValuePath from "./WorkflowValuePath";
-import CaseForgeWorkflowScene from "./CaseForgeWorkflowScene";
 import {
   AdvancedFiltersPanel,
   SecondaryMetadataPanel,
@@ -8920,13 +8919,6 @@ export default function ProjectWorkspace({
               </div>
             </div>
           </div>
-
-          <CaseForgeWorkflowScene
-            activeCases={activeRows.length}
-            reviewedCases={reviewedRows.length}
-            automationReady={automationReadyRows.length}
-            attentionItems={failedRows.length + coverageGapAnalysis.gaps.length}
-          />
 
           <div className="grid gap-4 p-5">
             <div className="min-w-0">
