@@ -363,12 +363,34 @@ button:disabled,
 }
 
 .cf-3d-app :where(button, [role="button"], a[href][class*="rounded"]):not(:disabled):not([aria-disabled="true"]) {
+  position: relative;
+  isolation: isolate;
+  transform: translateZ(0);
+  transform-style: preserve-3d;
   transition:
     background-color 170ms ease,
     border-color 170ms ease,
     box-shadow 170ms ease,
     color 170ms ease,
-    filter 170ms ease;
+    filter 170ms ease,
+    transform 170ms ease;
+}
+
+.cf-3d-app :where(button[class*="rounded"], [role="button"][class*="rounded"], a[href][class*="rounded"]):not(:disabled):not([aria-disabled="true"])::after {
+  pointer-events: none;
+  content: "";
+  position: absolute;
+  inset: auto 0.62rem -0.34rem;
+  z-index: -1;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.18), rgba(79, 70, 229, 0.28), rgba(15, 23, 42, 0.22));
+  filter: blur(8px);
+  opacity: 0.72;
+  transform: translateZ(-12px);
+  transition:
+    opacity 170ms ease,
+    transform 170ms ease;
 }
 
 .cf-3d-app :where(button[class*="rounded"], [role="button"][class*="rounded"], a[href][class*="rounded"]):not(:disabled):not([aria-disabled="true"]) {
@@ -379,11 +401,24 @@ button:disabled,
 .cf-3d-app :where(button[class*="rounded"], [role="button"][class*="rounded"], a[href][class*="rounded"]):not(:disabled):not([aria-disabled="true"]):focus-visible {
   box-shadow: var(--cf-control-shadow-hover);
   filter: saturate(1.04) brightness(1.03);
+  transform: translate3d(0, -2px, 18px);
+}
+
+.cf-3d-app :where(button[class*="rounded"], [role="button"][class*="rounded"], a[href][class*="rounded"]):not(:disabled):not([aria-disabled="true"]):hover::after,
+.cf-3d-app :where(button[class*="rounded"], [role="button"][class*="rounded"], a[href][class*="rounded"]):not(:disabled):not([aria-disabled="true"]):focus-visible::after {
+  opacity: 0.98;
+  transform: translate3d(0, 0.12rem, -18px) scaleX(1.06);
 }
 
 .cf-3d-app :where(button, [role="button"], a[href][class*="rounded"]):not(:disabled):not([aria-disabled="true"]):active {
   box-shadow: var(--cf-press-shadow);
   filter: saturate(0.98) brightness(0.98);
+  transform: translate3d(0, 1px, 2px) scale(0.992);
+}
+
+.cf-3d-app :where(button[class*="rounded"], [role="button"][class*="rounded"], a[href][class*="rounded"]):not(:disabled):not([aria-disabled="true"]):active::after {
+  opacity: 0.42;
+  transform: translate3d(0, -0.12rem, -6px) scaleX(0.94);
 }
 
 .cf-3d-app :where(input, select, textarea) {
@@ -394,7 +429,8 @@ button:disabled,
   transition:
     border-color 170ms ease,
     box-shadow 170ms ease,
-    filter 170ms ease;
+    filter 170ms ease,
+    transform 170ms ease;
 }
 
 .cf-3d-app :where(input, select, textarea):focus {
@@ -403,6 +439,7 @@ button:disabled,
     0 0 0 4px rgba(34, 211, 238, 0.16),
     0 22px 42px -30px rgba(8, 145, 178, 0.76);
   filter: brightness(1.02);
+  transform: translate3d(0, -1px, 8px);
 }
 
 .cf-3d-app :where(details[class*="rounded"], div[class*="rounded"][class*="border"], label[class*="rounded"][class*="border"]) {
@@ -413,7 +450,8 @@ button:disabled,
     0 22px 52px -42px rgba(2, 6, 23, 0.78);
   transition:
     border-color 180ms ease,
-    box-shadow 180ms ease;
+    box-shadow 180ms ease,
+    transform 180ms ease;
 }
 
 .cf-3d-app :where(details[class*="rounded"], div[class*="rounded"][class*="border"], label[class*="rounded"][class*="border"]):hover {
@@ -422,16 +460,19 @@ button:disabled,
     inset 0 -1px 0 rgba(2, 6, 23, 0.22),
     0 10px 0 -7px rgba(34, 211, 238, 0.2),
     0 30px 64px -44px rgba(2, 6, 23, 0.92);
+  transform: translate3d(0, -1px, 8px);
 }
 
 .cf-3d-app :where(tr) {
   transition:
     background-color 160ms ease,
-    box-shadow 160ms ease;
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .cf-3d-app :where(tbody tr):hover {
   box-shadow: inset 4px 0 0 rgba(34, 211, 238, 0.48), 0 12px 28px -28px rgba(2, 6, 23, 0.8);
+  transform: translate3d(0, -1px, 4px);
 }
 
 .cf-hover-invert:not(:disabled):not([aria-disabled="true"]):hover,
@@ -886,6 +927,11 @@ a[href][class~="bg-violet-50"]:not([data-no-hover-swap]) * {
   .cf-3d-app :where(details[class*="rounded"], div[class*="rounded"][class*="border"], label[class*="rounded"][class*="border"]),
   .cf-3d-app :where(tbody tr),
   .cf-3d-content :where(section[class*="rounded"][class*="border"], article[class*="rounded"][class*="border"]) {
+    transition: none !important;
+    transform: none !important;
+  }
+
+  .cf-3d-app :where(button[class*="rounded"], [role="button"][class*="rounded"], a[href][class*="rounded"])::after {
     transition: none !important;
     transform: none !important;
   }
