@@ -54,7 +54,7 @@ export default async function RootLayout({
       <html lang="en" className="dark" suppressHydrationWarning>
         <body
           suppressHydrationWarning
-          className="antialiased"
+          className="cf-3d-app antialiased"
         >
           <ClerkAuthProvider publishableKey={clerkPublishableKey}>
             {shell}
@@ -68,7 +68,7 @@ export default async function RootLayout({
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
         suppressHydrationWarning
-        className="antialiased"
+        className="cf-3d-app antialiased"
       >
         {shell}
       </body>
