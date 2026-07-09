@@ -1,4 +1,5 @@
 import Link from "next/link";
+import CaseForgeWorkflowScene from "../components/CaseForgeWorkflowScene";
 import HomeAuthActions from "../components/HomeAuthActions";
 
 export default function HomePage() {
@@ -8,8 +9,8 @@ export default function HomePage() {
 
   return (
     <main className="min-h-[calc(100vh-4.5rem)] bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.16),_transparent_30%),linear-gradient(180deg,_#08101d_0%,_#0b1220_54%,_#111827_100%)] px-6 py-10 text-slate-50">
-      <section className="mx-auto grid min-h-[calc(100vh-10rem)] w-full max-w-6xl items-center gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div>
+      <section className="mx-auto flex min-h-[calc(100vh-10rem)] w-full max-w-6xl flex-col justify-center gap-8">
+        <div className="max-w-3xl">
           <p className="inline-flex rounded-full border border-cyan-200/20 bg-cyan-200/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-100">
             CaseForge
           </p>
@@ -39,25 +40,29 @@ export default function HomePage() {
           )}
         </div>
 
-        <div className="rounded-[24px] border border-white/10 bg-white/[0.055] p-5 shadow-[0_28px_70px_-45px_rgba(2,6,23,0.95)] backdrop-blur">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-            Workspace Access
-          </p>
-          <div className="mt-4 space-y-3">
-            {[
-              "AI test case generation from requirements and user stories",
-              "Focused project workspaces for generated QA coverage",
-              "Browser automation authoring with Live Preview",
-              "Companion-powered real browser execution",
-            ].map((item) => (
-              <div
-                key={item}
-                className="rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-3 text-sm leading-6 text-slate-200"
-              >
-                {item}
-              </div>
-            ))}
-          </div>
+        <div className="overflow-hidden rounded-[28px] border border-white/10 shadow-[0_36px_90px_-56px_rgba(14,165,233,0.72)]">
+          <CaseForgeWorkflowScene
+            activeCases={18}
+            reviewedCases={11}
+            automationReady={7}
+            attentionItems={3}
+          />
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            "AI manual cases from requirements",
+            "Website component case generation",
+            "Review before automation",
+            "Companion browser execution",
+          ].map((item) => (
+            <div
+              key={item}
+              className="rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3 text-sm leading-6 text-slate-200 backdrop-blur"
+            >
+              {item}
+            </div>
+          ))}
         </div>
       </section>
     </main>
