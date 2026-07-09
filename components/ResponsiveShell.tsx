@@ -86,7 +86,7 @@ export default function ResponsiveShell({
     mobileSubtitle && !isUuidLike(mobileSubtitle) ? mobileSubtitle : undefined;
 
   return (
-    <div className="cf-3d-stage mx-auto w-full max-w-[1520px]">
+    <div className="mx-auto w-full max-w-[1520px]">
       <div className="xl:hidden">
         <div className="cf-panel mb-4 flex items-center justify-between gap-3 rounded-[22px] px-4 py-3">
           <div className="min-w-0 flex-1">
@@ -174,7 +174,7 @@ export default function ResponsiveShell({
       >
         <div className="hidden xl:block">
           {isDesktopCollapsed ? (
-            <aside className="cf-3d-sidebar cf-panel sticky top-6 flex min-h-[260px] flex-col items-center gap-4 rounded-[24px] px-3 py-4">
+            <aside className="cf-panel sticky top-6 flex min-h-[260px] flex-col items-center gap-4 rounded-[24px] px-3 py-4">
               <button
                 type="button"
                 onClick={() => setIsDesktopCollapsed(false)}
@@ -209,7 +209,7 @@ export default function ResponsiveShell({
               </div>
             </aside>
           ) : (
-            <div className="cf-3d-sidebar relative">
+            <div className="relative">
               <button
                 type="button"
                 onClick={() => setIsDesktopCollapsed(true)}
@@ -233,7 +233,7 @@ export default function ResponsiveShell({
             </div>
           )}
         </div>
-        <div className="cf-3d-content min-w-0">{children}</div>
+        <div className="min-w-0">{children}</div>
       </div>
     </div>
   );
