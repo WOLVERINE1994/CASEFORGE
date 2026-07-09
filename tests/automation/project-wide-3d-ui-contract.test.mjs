@@ -29,7 +29,15 @@ test("shared surfaces and controls receive subtle 3D depth safely", () => {
   assert.match(globalCss, /\.cf-panel:hover,\s*\n\.cf-card:hover/);
   assert.match(globalCss, /\.cf-primary-button/);
   assert.match(globalCss, /\.cf-secondary-button/);
+  assert.match(globalCss, /--cf-control-shadow/);
+  assert.match(globalCss, /\.cf-3d-app :where\(button, \[role="button"\], a\[href\]\[class\*="rounded"\]\)/);
+  assert.match(globalCss, /::after\s*\{\s*\n\s*pointer-events: none;/);
+  assert.match(globalCss, /\.cf-3d-app :where\(input, select, textarea\):focus/);
+  assert.match(globalCss, /\.cf-table-shell:hover/);
   assert.match(globalCss, /translate3d\(0, -1px, 18px\)/);
+  assert.match(globalCss, /translate3d\(0, -2px, 18px\)/);
+  assert.match(globalCss, /scale\(0\.992\)/);
+  assert.doesNotMatch(globalCss, /background:\s*#f8fafc !important;\s*\n\s*background-image:\s*none !important;\s*\n\s*color:\s*#020617 !important/);
   assert.match(globalCss, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(globalCss, /transform: none !important/);
 });
