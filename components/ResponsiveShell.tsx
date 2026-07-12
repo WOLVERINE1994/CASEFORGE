@@ -131,9 +131,9 @@ export default function ResponsiveShell({
               type="button"
               aria-label="Close navigation"
               onClick={() => setIsOpen(false)}
-              className="absolute inset-0 bg-zinc-950/45 backdrop-blur-[2px]"
+              className="cf-motion-scrim absolute inset-0 bg-zinc-950/45 backdrop-blur-[2px]"
             />
-            <div className="absolute inset-y-0 left-0 w-[min(92vw,344px)] overflow-y-auto p-4">
+            <div className="cf-motion-drawer-panel absolute inset-y-0 left-0 w-[min(92vw,344px)] overflow-y-auto p-4">
               <div className="cf-panel mb-3 rounded-[24px] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">

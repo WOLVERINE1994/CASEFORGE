@@ -119,6 +119,48 @@ body[data-premium-motion="enabled"]
   }
 }
 
+@keyframes cf-premium-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cf-premium-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes cf-premium-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cf-premium-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .cf-panel {
   border: 1px solid rgba(55, 65, 81, 0.88);
   background: rgba(17, 24, 39, 0.9);
@@ -231,6 +273,34 @@ body[data-premium-motion="enabled"] :where([role="tab"]) {
 
 body[data-premium-motion="enabled"] :where([role="tab"][aria-selected="true"]) {
   transform: translateY(-1px);
+}
+
+body[data-premium-motion="enabled"] :where(select, [role="combobox"]) {
+  transition:
+    border-color 180ms ease,
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+body[data-premium-motion="enabled"] :where(select, [role="combobox"]):focus-visible {
+  transform: translateY(-1px);
+}
+
+body[data-premium-motion="enabled"] .cf-motion-scrim {
+  animation: cf-premium-fade-in 160ms ease-out both;
+}
+
+body[data-premium-motion="enabled"] .cf-motion-drawer-panel {
+  animation: cf-premium-drawer-in 210ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+body[data-premium-motion="enabled"] .cf-modal-detail[open] > .cf-modal-panel,
+body[data-premium-motion="enabled"] :where([role="dialog"], [aria-modal="true"]) {
+  animation: cf-premium-panel-in 190ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+body[data-premium-motion="enabled"] :where([role="tooltip"]) {
+  animation: cf-premium-tooltip-in 150ms ease-out both;
 }
 
 .cf-safe-toolbar {

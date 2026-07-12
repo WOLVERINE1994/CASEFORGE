@@ -6,6 +6,7 @@ const globalCss = readFileSync("app/globals.css", "utf8");
 const layoutSource = readFileSync("app/layout.tsx", "utf8");
 const providerSource = readFileSync("components/PremiumMotionProvider.tsx", "utf8");
 const hookSource = readFileSync("components/usePremiumMotion.ts", "utf8");
+const responsiveShellSource = readFileSync("components/ResponsiveShell.tsx", "utf8");
 const safeLayoutSource = readFileSync("components/SafeLayout.tsx", "utf8");
 
 test("premium motion is centrally feature flagged and wired once", () => {
@@ -40,4 +41,15 @@ test("sidebar and tab motion is gated to lightweight active states", () => {
   assert.match(globalCss, /:where\(\[role="tab"\]\)/);
   assert.match(globalCss, /\[role="tab"\]\[aria-selected="true"\]/);
   assert.doesNotMatch(globalCss, /data-premium-motion[^}]+(?:width|height|top|left):/s);
+});
+
+test("overlay and dropdown motion stays CSS-gated and lightweight", () => {
+  assert.match(responsiveShellSource, /cf-motion-scrim/);
+  assert.match(responsiveShellSource, /cf-motion-drawer-panel/);
+  assert.match(globalCss, /body\[data-premium-motion="enabled"\] :where\(select, \[role="combobox"\]\)/);
+  assert.match(globalCss, /\.cf-motion-drawer-panel/);
+  assert.match(globalCss, /\.cf-modal-detail\[open\] > \.cf-modal-panel/);
+  assert.match(globalCss, /:where\(\[role="tooltip"\]\)/);
+  assert.match(globalCss, /@keyframes cf-premium-panel-in/);
+  assert.doesNotMatch(globalCss, /data-premium-motion[^}]+(?:backdrop-filter|box-shadow|filter):/s);
 });
