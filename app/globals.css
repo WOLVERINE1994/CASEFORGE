@@ -388,6 +388,827 @@ body[data-premium-motion="enabled"] .cf-motion-run-progress {
   animation: cf-premium-loading-in 180ms ease-out both;
 }
 
+.cf-marketing-page {
+  position: relative;
+}
+
+.cf-marketing-hero {
+  position: relative;
+  min-height: calc(100vh - 4.5rem);
+  padding: 4.5rem 1.5rem 3rem;
+  isolation: isolate;
+}
+
+.cf-marketing-grid {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.82), transparent 86%);
+}
+
+.cf-marketing-spotlight {
+  position: absolute;
+  inset: -18% -12% auto;
+  z-index: -2;
+  height: 34rem;
+  background:
+    radial-gradient(circle at 28% 20%, rgba(34, 211, 238, 0.22), transparent 32%),
+    radial-gradient(circle at 78% 28%, rgba(96, 165, 250, 0.18), transparent 30%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(8, 47, 73, 0.32));
+}
+
+.cf-marketing-hero-inner {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(1180px, 100%);
+  min-height: calc(100vh - 10rem);
+  margin: 0 auto;
+  align-items: center;
+  gap: 2rem;
+}
+
+.cf-marketing-copy {
+  max-width: 48rem;
+}
+
+.cf-marketing-badge,
+.cf-marketing-eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  border-radius: 999px;
+  background: rgba(8, 145, 178, 0.16);
+  padding: 0.4rem 0.75rem;
+  color: #a5f3fc;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.cf-marketing-copy h1 {
+  margin-top: 1.35rem;
+  max-width: 46rem;
+  color: #f8fafc;
+  font-size: clamp(2.5rem, 7vw, 5.9rem);
+  font-weight: 800;
+  line-height: 0.95;
+}
+
+.cf-marketing-copy > p:not(.cf-marketing-badge) {
+  margin-top: 1.25rem;
+  max-width: 42rem;
+  color: #cbd5e1;
+  font-size: 1rem;
+  line-height: 1.85;
+}
+
+.cf-marketing-proof-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.35rem;
+}
+
+.cf-marketing-proof-row span {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  padding: 0.55rem 0.75rem;
+  color: #dbeafe;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.cf-marketing-hero-preview {
+  --cf-hero-depth-x: 0px;
+  --cf-hero-depth-y: 0px;
+  position: relative;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(8, 13, 28, 0.96)),
+    radial-gradient(circle at 20% 0%, rgba(34, 211, 238, 0.12), transparent 32%);
+  padding: 1rem;
+  overflow: hidden;
+  box-shadow: 0 38px 110px -62px rgba(2, 6, 23, 0.98);
+  transform: translate3d(var(--cf-hero-depth-x), var(--cf-hero-depth-y), 0);
+}
+
+.cf-marketing-preview-ambient {
+  position: absolute;
+  inset: -20% auto auto -8%;
+  width: 18rem;
+  height: 18rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.18), transparent 68%);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-preview-ambient {
+  animation: cf-marketing-ambient 16s ease-in-out both;
+}
+
+.cf-marketing-workflow-strip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.cf-marketing-workflow-step {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+  color: #a5f3fc;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.cf-marketing-workflow-step span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cf-marketing-workflow-step svg {
+  width: 2.4rem;
+  min-width: 1.4rem;
+  stroke: rgba(103, 232, 249, 0.62);
+  stroke-width: 1.4;
+  fill: none;
+}
+
+.cf-marketing-preview-stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.08fr 0.92fr;
+  grid-auto-rows: minmax(7.4rem, auto);
+  gap: 0.75rem;
+}
+
+.cf-marketing-preview-stage section,
+.cf-marketing-feature-card,
+.cf-marketing-metric-card,
+.cf-marketing-connector-map {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.cf-marketing-preview-stage section {
+  min-width: 0;
+  padding: 0.85rem;
+}
+
+.cf-marketing-preview-stage p {
+  color: #94a3b8;
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.cf-marketing-requirement-panel {
+  grid-column: 1 / 3;
+}
+
+.cf-marketing-requirement-text {
+  margin-top: 0.85rem;
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.46);
+  padding: 0.95rem;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+.cf-marketing-entity-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+
+.cf-marketing-entity-row span {
+  border: 1px solid rgba(34, 211, 238, 0.24);
+  border-radius: 999px;
+  background: rgba(8, 145, 178, 0.12);
+  padding: 0.35rem 0.5rem;
+  color: #a5f3fc;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.cf-marketing-case-stack {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.cf-marketing-case-card {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.36);
+  padding: 0.65rem;
+}
+
+.cf-marketing-case-card[data-selected="true"] {
+  border-color: rgba(34, 211, 238, 0.52);
+  background: rgba(8, 145, 178, 0.18);
+}
+
+.cf-marketing-case-card span,
+.cf-marketing-report-panel span,
+.cf-marketing-execution-status span {
+  color: #94a3b8;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.cf-marketing-case-card strong,
+.cf-marketing-healing-panel strong,
+.cf-marketing-report-panel strong {
+  display: block;
+  margin-top: 0.28rem;
+  color: #f8fafc;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.cf-marketing-case-card p {
+  margin-top: 0.28rem;
+  color: #cbd5e1;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.45;
+  text-transform: none;
+}
+
+.cf-marketing-command-timeline {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.cf-marketing-command-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.42);
+  padding: 0.52rem;
+}
+
+.cf-marketing-command-row span {
+  display: grid;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.14);
+  color: #a5f3fc;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.cf-marketing-command-row p {
+  overflow: hidden;
+  color: #e2e8f0;
+  font-size: 0.76rem;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.cf-marketing-browser-preview {
+  grid-column: 1 / 3;
+}
+
+.cf-marketing-browser-topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.32rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  padding-bottom: 0.6rem;
+}
+
+.cf-marketing-browser-topbar span {
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.48);
+}
+
+.cf-marketing-browser-topbar p {
+  margin-left: 0.35rem;
+  overflow: hidden;
+  color: #cbd5e1;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.cf-marketing-browser-body {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.75rem 0 0.1rem;
+}
+
+.cf-marketing-page-line {
+  height: 0.58rem;
+  width: 58%;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.cf-marketing-page-line.wide {
+  width: 86%;
+}
+
+.cf-marketing-browser-body button {
+  width: fit-content;
+  border: 0;
+  border-radius: 12px;
+  background: #67e8f9;
+  padding: 0.55rem 0.8rem;
+  color: #083344;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.cf-marketing-execution-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: space-between;
+  margin-top: 0.7rem;
+  border-radius: 12px;
+  background: rgba(14, 165, 233, 0.11);
+  padding: 0.55rem;
+}
+
+.cf-marketing-execution-status strong {
+  color: #bae6fd;
+  font-size: 0.72rem;
+}
+
+.cf-marketing-healing-panel code {
+  display: block;
+  margin-top: 0.65rem;
+  overflow-wrap: anywhere;
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.5);
+  padding: 0.55rem;
+  color: #a7f3d0;
+  font-size: 0.68rem;
+}
+
+.cf-marketing-report-panel {
+  background:
+    linear-gradient(135deg, rgba(20, 83, 45, 0.58), rgba(15, 23, 42, 0.74)) !important;
+}
+
+.cf-marketing-report-panel span {
+  display: block;
+  margin-top: 0.55rem;
+  line-height: 1.5;
+}
+
+.cf-marketing-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.85rem;
+}
+
+.cf-marketing-hero-actions button {
+  border: 1px solid rgba(103, 232, 249, 0.32);
+  border-radius: 999px;
+  background: rgba(8, 145, 178, 0.16);
+  padding: 0.55rem 0.8rem;
+  color: #cffafe;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.cf-marketing-hero-actions button:disabled {
+  opacity: 0.48;
+}
+
+.cf-marketing-hero-actions span {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-workflow-step svg path {
+  stroke-dasharray: 56;
+  stroke-dashoffset: 56;
+  animation: cf-marketing-path-draw 520ms ease-out forwards;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-requirement-text,
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-entity-row span,
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-case-card,
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-command-row,
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-browser-preview,
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-healing-panel,
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-report-panel {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-requirement-text {
+  animation: cf-marketing-reveal 700ms ease-out 250ms forwards;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-entity-row span {
+  animation: cf-marketing-entity 800ms ease-out forwards;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-entity-row span:nth-child(1) {
+  animation-delay: 1.55s;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-entity-row span:nth-child(2) {
+  animation-delay: 1.78s;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-entity-row span:nth-child(3) {
+  animation-delay: 2.01s;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-case-card {
+  animation: cf-marketing-reveal 620ms ease-out forwards;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-case-card:nth-child(1) {
+  animation-delay: 3s;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-case-card:nth-child(2) {
+  animation-delay: 3.24s;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-case-card:nth-child(3) {
+  animation-delay: 3.48s;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-case-card[data-selected="true"] {
+  animation:
+    cf-marketing-reveal 620ms ease-out 3.24s forwards,
+    cf-marketing-selected-case 900ms ease-out 4.4s forwards;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-command-row {
+  animation: cf-marketing-command-dock 660ms ease-out forwards;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-command-row:nth-child(1) {
+  animation-delay: 5.35s;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-command-row:nth-child(2) {
+  animation-delay: 5.58s;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-command-row:nth-child(3) {
+  animation-delay: 5.81s;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-command-row:nth-child(4) {
+  animation-delay: 6.04s;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-browser-preview {
+  animation: cf-marketing-reveal 700ms ease-out 7.1s forwards;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-execution-status {
+  animation: cf-marketing-entity 900ms ease-out 8.6s both;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-healing-panel {
+  animation: cf-marketing-reveal 680ms ease-out 10.2s forwards;
+}
+
+.cf-marketing-hero-preview[data-marketing-motion="enabled"][data-running="true"] .cf-marketing-report-panel {
+  animation: cf-marketing-report-in 760ms ease-out 12.4s forwards;
+}
+
+.cf-marketing-sections {
+  width: min(1180px, calc(100% - 3rem));
+  margin: 0 auto;
+  padding: 0 0 5rem;
+}
+
+.cf-marketing-section {
+  display: grid;
+  gap: 1.5rem;
+  margin-top: 1.25rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding-top: 2.5rem;
+}
+
+.cf-marketing-section h2 {
+  max-width: 42rem;
+  color: #f8fafc;
+  font-size: clamp(1.8rem, 3vw, 3rem);
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.cf-marketing-section p:not(.cf-marketing-eyebrow) {
+  max-width: 39rem;
+  color: #cbd5e1;
+  line-height: 1.8;
+}
+
+.cf-marketing-section-heading {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.cf-marketing-connector-map {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 1rem;
+}
+
+.cf-marketing-connector-map span {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.42);
+  padding: 0.9rem 0.65rem;
+  color: #dbeafe;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cf-marketing-feature-grid,
+.cf-marketing-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.cf-marketing-feature-card {
+  position: relative;
+  min-height: 14rem;
+  overflow: hidden;
+  padding: 1.15rem;
+}
+
+.cf-marketing-feature-card::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: radial-gradient(
+    circle at var(--cf-card-x, 50%) var(--cf-card-y, 0%),
+    rgba(103, 232, 249, 0.16),
+    transparent 34%
+  );
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.cf-marketing-feature-card:hover::before {
+  opacity: 1;
+}
+
+.cf-marketing-feature-card p {
+  color: #67e8f9 !important;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.cf-marketing-feature-card h3 {
+  position: relative;
+  margin-top: 0.8rem;
+  color: #f8fafc;
+  font-size: 1.12rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.cf-marketing-feature-card > span {
+  display: block;
+  width: 100%;
+  height: 1px;
+  margin: 1rem 0;
+  background: linear-gradient(90deg, rgba(103, 232, 249, 0.56), transparent);
+}
+
+.cf-marketing-feature-card small {
+  position: relative;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+.cf-marketing-metric-card {
+  padding: 1.25rem;
+}
+
+.cf-marketing-metric-card strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 2.7rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.cf-marketing-metric-card span {
+  display: block;
+  margin-top: 0.55rem;
+  color: #cbd5e1;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.cf-marketing-sections[data-marketing-motion="enabled"] .cf-marketing-section {
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+.cf-marketing-sections[data-marketing-motion="enabled"] .cf-marketing-section[data-visible="true"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.cf-marketing-sections[data-marketing-motion="enabled"] .cf-marketing-feature-card,
+.cf-marketing-sections[data-marketing-motion="enabled"] .cf-marketing-metric-card,
+.cf-marketing-sections[data-marketing-motion="enabled"] .cf-marketing-connector-map span {
+  transition:
+    border-color 180ms ease,
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+.cf-marketing-sections[data-marketing-motion="enabled"] .cf-marketing-section[data-visible="true"] .cf-marketing-feature-card:hover {
+  transform: translateY(-2px) rotate(0.6deg);
+}
+
+.cf-marketing-sections[data-marketing-motion="enabled"] .cf-marketing-section[data-visible="true"] .cf-marketing-feature-card:nth-child(2):hover {
+  transform: translateY(-2px) rotate(-0.6deg);
+}
+
+@keyframes cf-marketing-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cf-marketing-entity {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(0) scale(1.015);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cf-marketing-command-dock {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes cf-marketing-selected-case {
+  from {
+    transform: translateY(0) scale(1);
+  }
+  to {
+    transform: translateY(-2px) scale(1.015);
+  }
+}
+
+@keyframes cf-marketing-report-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cf-marketing-path-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes cf-marketing-ambient {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(3rem, 1.2rem, 0);
+  }
+}
+
+@media (min-width: 1024px) {
+  .cf-marketing-hero-inner {
+    grid-template-columns: minmax(0, 0.93fr) minmax(420px, 1.07fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .cf-marketing-hero {
+    padding-top: 3rem;
+  }
+
+  .cf-marketing-hero-inner {
+    min-height: 0;
+  }
+
+  .cf-marketing-workflow-strip,
+  .cf-marketing-connector-map {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cf-marketing-feature-grid,
+  .cf-marketing-metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 540px) {
+  .cf-marketing-hero {
+    padding-inline: 1rem;
+  }
+
+  .cf-marketing-copy h1 {
+    font-size: 2.55rem;
+  }
+
+  .cf-marketing-preview-stage {
+    grid-template-columns: 1fr;
+  }
+
+  .cf-marketing-requirement-panel,
+  .cf-marketing-browser-preview {
+    grid-column: auto;
+  }
+
+  .cf-marketing-workflow-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cf-marketing-workflow-step svg {
+    display: none;
+  }
+
+  .cf-marketing-sections {
+    width: min(100% - 2rem, 1180px);
+  }
+}
+
 .cf-safe-toolbar {
   display: flex;
   min-width: 0;

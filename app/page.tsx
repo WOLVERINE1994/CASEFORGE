@@ -1,5 +1,47 @@
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import HomeAuthActions from "../components/HomeAuthActions";
+
+const MarketingHeroPreview = dynamic(
+  () => import("../components/MarketingHeroPreview"),
+  {
+    loading: () => <MarketingHeroPreviewFallback />,
+  },
+);
+
+const MarketingFeatureSections = dynamic(
+  () => import("../components/MarketingFeatureSections"),
+  {
+    loading: () => null,
+  },
+);
+
+function MarketingHeroPreviewFallback() {
+  return (
+    <div className="cf-marketing-hero-preview cf-marketing-preview-fallback" data-marketing-motion="static">
+      <div className="cf-marketing-workflow-strip" aria-label="CaseForge workflow">
+        {["Requirement", "Test Cases", "Automation", "Browser", "Healing", "Report"].map((step) => (
+          <div className="cf-marketing-workflow-step" key={step}>
+            <span>{step}</span>
+          </div>
+        ))}
+      </div>
+      <div className="cf-marketing-preview-stage">
+        <section className="cf-marketing-requirement-panel" aria-label="Requirement input">
+          <p>Requirement Studio</p>
+          <div className="cf-marketing-requirement-text">
+            Admin users approve access before the workspace opens.
+          </div>
+        </section>
+        <section className="cf-marketing-report-panel" aria-label="Final report summary">
+          <p>Execution Report</p>
+          <strong>Coverage ready</strong>
+          <span>Reviewable cases, commands and evidence are connected.</span>
+        </section>
+      </div>
+    </div>
+  );
+}
 
 export default function HomePage() {
   const hasClerkClientConfig = Boolean(
@@ -7,59 +49,53 @@ export default function HomePage() {
   );
 
   return (
-    <main className="min-h-[calc(100vh-4.5rem)] bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.16),_transparent_30%),linear-gradient(180deg,_#08101d_0%,_#0b1220_54%,_#111827_100%)] px-6 py-10 text-slate-50">
-      <section className="mx-auto grid min-h-[calc(100vh-10rem)] w-full max-w-6xl items-center gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div>
-          <p className="inline-flex rounded-full border border-cyan-200/20 bg-cyan-200/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-100">
-            CaseForge
-          </p>
-          <h1 className="mt-6 max-w-3xl text-4xl font-semibold tracking-tight sm:text-6xl">
-            Generate test cases and automate them.
-          </h1>
-          <p className="mt-5 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
-            Turn requirements into structured AI-generated test cases, then build and run browser automation from the same focused workspace.
-          </p>
-          {hasClerkClientConfig ? (
-            <HomeAuthActions />
-          ) : (
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link
-                href="/sign-up"
-                className="rounded-xl bg-[linear-gradient(135deg,_#06b6d4_0%,_#2563eb_52%,_#7c3aed_100%)] px-5 py-3 text-sm font-extrabold text-white shadow-[0_18px_45px_-25px_rgba(37,99,235,0.9)] transition hover:-translate-y-0.5 hover:brightness-110"
-              >
-                Create Account
-              </Link>
-              <Link
-                href="/sign-in"
-                className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-200/30 hover:bg-cyan-200/10"
-              >
-                Sign In
-              </Link>
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-[24px] border border-white/10 bg-white/[0.055] p-5 shadow-[0_28px_70px_-45px_rgba(2,6,23,0.95)] backdrop-blur">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-            Workspace Access
-          </p>
-          <div className="mt-4 space-y-3">
-            {[
-              "AI test case generation from requirements and user stories",
-              "Focused project workspaces for generated QA coverage",
-              "Browser automation authoring with Live Preview",
-              "Companion-powered real browser execution",
-            ].map((item) => (
-              <div
-                key={item}
-                className="rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-3 text-sm leading-6 text-slate-200"
-              >
-                {item}
+    <main className="cf-marketing-page min-h-[calc(100vh-4.5rem)] overflow-hidden bg-[#07111f] text-slate-50">
+      <section className="cf-marketing-hero">
+        <div className="cf-marketing-grid" aria-hidden="true" />
+        <div className="cf-marketing-spotlight" aria-hidden="true" />
+        <div className="cf-marketing-hero-inner">
+          <div className="cf-marketing-copy">
+            <p className="cf-marketing-badge">
+              CaseForge Precision Intelligence
+            </p>
+            <h1>
+              Turn each requirement into cases, automation, execution and proof.
+            </h1>
+            <p>
+              CaseForge helps QA teams review manual cases first, convert approved coverage into
+              editable automation, run it in a browser, heal fragile locators and produce a report
+              that still points back to the original requirement.
+            </p>
+            {hasClerkClientConfig ? (
+              <HomeAuthActions />
+            ) : (
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link
+                  href="/sign-up"
+                  className="rounded-xl bg-[linear-gradient(135deg,_#06b6d4_0%,_#2563eb_52%,_#7c3aed_100%)] px-5 py-3 text-sm font-extrabold text-white shadow-[0_18px_45px_-25px_rgba(37,99,235,0.9)] transition hover:-translate-y-0.5 hover:brightness-110"
+                >
+                  Create Account
+                </Link>
+                <Link
+                  href="/sign-in"
+                  className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-200/30 hover:bg-cyan-200/10"
+                >
+                  Sign In
+                </Link>
               </div>
-            ))}
+            )}
+            <div className="cf-marketing-proof-row" aria-label="CaseForge workflow summary">
+              {["Manual review first", "Editable commands", "Browser evidence"].map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+            </div>
           </div>
+
+          <MarketingHeroPreview />
         </div>
       </section>
+
+      <MarketingFeatureSections />
     </main>
   );
 }
