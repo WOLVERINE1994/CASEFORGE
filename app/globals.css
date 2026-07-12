@@ -82,6 +82,27 @@ button:disabled,
   cursor: not-allowed;
 }
 
+body[data-premium-motion="enabled"] :where(button, [role="button"], summary, a[href][class*="rounded"]) {
+  transition-duration: 180ms;
+  transition-property: background-color, border-color, color, opacity, transform;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  body[data-premium-motion="enabled"][data-premium-motion-input="fine"]
+    :where(button:not(:disabled), [role="button"]:not([aria-disabled="true"]), summary, a[href][class*="rounded"]):hover,
+  body[data-premium-motion="enabled"][data-premium-motion-input="fine"]
+    :where(button:not(:disabled), [role="button"]:not([aria-disabled="true"]), summary, a[href][class*="rounded"]):focus-visible {
+    transform: translateY(-1px);
+  }
+}
+
+body[data-premium-motion="enabled"]
+  :where(button:not(:disabled), [role="button"]:not([aria-disabled="true"]), summary, a[href][class*="rounded"]):active {
+  transform: translateY(0) scale(0.985);
+  transition-duration: 120ms;
+}
+
 .cf-loading-buffer {
   width: 42px;
   height: 42px;

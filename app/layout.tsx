@@ -3,6 +3,7 @@ import Link from "next/link";
 import AuthNav from "../components/AuthNav";
 import CaseForgeBrand from "../components/CaseForgeBrand";
 import ClerkAuthProvider from "../components/ClerkAuthProvider";
+import PremiumMotionProvider from "../components/PremiumMotionProvider";
 import { isClerkAuthActive } from "../lib/auth-mode";
 import "./globals.css";
 
@@ -57,7 +58,7 @@ export default async function RootLayout({
           className="antialiased"
         >
           <ClerkAuthProvider publishableKey={clerkPublishableKey}>
-            {shell}
+            <PremiumMotionProvider>{shell}</PremiumMotionProvider>
           </ClerkAuthProvider>
         </body>
       </html>
@@ -70,7 +71,7 @@ export default async function RootLayout({
         suppressHydrationWarning
         className="antialiased"
       >
-        {shell}
+        <PremiumMotionProvider>{shell}</PremiumMotionProvider>
       </body>
     </html>
   );
