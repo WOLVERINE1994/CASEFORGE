@@ -418,7 +418,7 @@ export default function ProjectBoardClient({
 
         {notice && (
           <section
-            className={`rounded-[24px] border px-4 py-3 text-sm shadow-sm ${
+            className={`cf-motion-toast rounded-[24px] border px-4 py-3 text-sm shadow-sm ${
               notice.tone === "success"
                 ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200"
                 : notice.tone === "error"

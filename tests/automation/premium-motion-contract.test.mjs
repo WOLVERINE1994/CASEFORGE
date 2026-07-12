@@ -4,6 +4,16 @@ import test from "node:test";
 
 const globalCss = readFileSync("app/globals.css", "utf8");
 const layoutSource = readFileSync("app/layout.tsx", "utf8");
+const loadingSource = readFileSync("app/loading.tsx", "utf8");
+const newProjectPageSource = readFileSync("app/projects/new/page.tsx", "utf8");
+const automationLoadingSource = readFileSync(
+  "app/projects/[projectKey]/automation/loading.tsx",
+  "utf8",
+);
+const projectBoardSource = readFileSync("components/ProjectBoardClient.tsx", "utf8");
+const projectIssuesSource = readFileSync("components/ProjectIssuesClient.tsx", "utf8");
+const projectRunsSource = readFileSync("components/ProjectRunsClient.tsx", "utf8");
+const projectWorkspaceSource = readFileSync("components/ProjectWorkspace.tsx", "utf8");
 const providerSource = readFileSync("components/PremiumMotionProvider.tsx", "utf8");
 const hookSource = readFileSync("components/usePremiumMotion.ts", "utf8");
 const responsiveShellSource = readFileSync("components/ResponsiveShell.tsx", "utf8");
@@ -52,4 +62,18 @@ test("overlay and dropdown motion stays CSS-gated and lightweight", () => {
   assert.match(globalCss, /:where\(\[role="tooltip"\]\)/);
   assert.match(globalCss, /@keyframes cf-premium-panel-in/);
   assert.doesNotMatch(globalCss, /data-premium-motion[^}]+(?:backdrop-filter|box-shadow|filter):/s);
+});
+
+test("toast and loading motion is opt-in on small surfaces only", () => {
+  assert.match(projectWorkspaceSource, /cf-motion-toast/);
+  assert.match(projectIssuesSource, /cf-motion-toast/);
+  assert.match(projectRunsSource, /cf-motion-toast/);
+  assert.match(projectBoardSource, /cf-motion-toast/);
+  assert.match(loadingSource, /cf-motion-loading-state/);
+  assert.match(newProjectPageSource, /cf-motion-loading-state/);
+  assert.match(automationLoadingSource, /cf-motion-loading-state/);
+  assert.match(globalCss, /\.cf-motion-toast/);
+  assert.match(globalCss, /\.cf-motion-loading-state/);
+  assert.match(globalCss, /@keyframes cf-premium-toast-in/);
+  assert.doesNotMatch(globalCss, /cf-motion-toast[^}]+(?:width|height|top|left):/s);
 });

@@ -15,7 +15,7 @@ export default function NewProjectWorkspacePage() {
       >
         <Suspense
           fallback={
-            <div className="rounded-[24px] border border-dashed border-zinc-300 bg-white/80 px-6 py-10 text-sm text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-300">
+            <div className="cf-motion-loading-state rounded-[24px] border border-dashed border-zinc-300 bg-white/80 px-6 py-10 text-sm text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-300">
               Loading the requirement workspace...
             </div>
           }
