@@ -162,6 +162,7 @@ export function NavItem({
         active ? activeClassName : inactiveClassName,
         className,
       )}
+      data-active={active ? "true" : undefined}
       title={title}
     >
       {children}

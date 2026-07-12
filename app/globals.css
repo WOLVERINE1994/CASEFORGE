@@ -186,6 +186,53 @@ body[data-premium-motion="enabled"]
     box-shadow 150ms ease;
 }
 
+body[data-premium-motion="enabled"] .cf-safe-nav-item {
+  transition-duration: 190ms;
+  transition-property: background-color, border-color, color, opacity, transform;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  body[data-premium-motion="enabled"][data-premium-motion-input="fine"] .cf-safe-nav-item:hover,
+  body[data-premium-motion="enabled"][data-premium-motion-input="fine"] .cf-safe-nav-item:focus-visible {
+    transform: translateX(2px);
+  }
+}
+
+body[data-premium-motion="enabled"] .cf-safe-nav-item[data-active="true"] {
+  transform: translateX(1px);
+}
+
+body[data-premium-motion="enabled"] .cf-safe-nav-item > span:first-child {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+body[data-premium-motion="enabled"] .cf-safe-nav-item[data-active="true"] > span:first-child {
+  transform: scaleY(1);
+}
+
+body[data-premium-motion="enabled"] :where([role="tab"]) {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  body[data-premium-motion="enabled"][data-premium-motion-input="fine"] :where([role="tab"]):hover,
+  body[data-premium-motion="enabled"][data-premium-motion-input="fine"] :where([role="tab"]):focus-visible {
+    transform: translateY(-1px);
+  }
+}
+
+body[data-premium-motion="enabled"] :where([role="tab"][aria-selected="true"]) {
+  transform: translateY(-1px);
+}
+
 .cf-safe-toolbar {
   display: flex;
   min-width: 0;
