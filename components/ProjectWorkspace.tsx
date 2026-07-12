@@ -8693,12 +8693,13 @@ export default function ProjectWorkspace({
             ) : null}
           </div>
           {automationGenerationProgress ? (
-            <div className="mt-4 rounded-2xl border border-emerald-200 bg-white/88 px-4 py-3 shadow-sm dark:border-emerald-500/25 dark:bg-zinc-950/70">
+            <div className="cf-motion-run-progress mt-4 rounded-2xl border border-emerald-200 bg-white/88 px-4 py-3 shadow-sm dark:border-emerald-500/25 dark:bg-zinc-950/70">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm font-semibold text-emerald-950 dark:text-emerald-100">
                   {automationGenerationProgress.message}
                 </p>
                 <span
+                  data-status={automationGenerationProgress.status}
                   className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
                     automationGenerationProgress.status === "error"
                       ? "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200"
@@ -8721,6 +8722,7 @@ export default function ProjectWorkspace({
                   return (
                     <div
                       key={stageLabel}
+                      data-progress-step={stageState}
                       className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
                         stageState === "done" || stageState === "success"
                           ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-200"

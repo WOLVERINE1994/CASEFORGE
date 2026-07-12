@@ -10,6 +10,10 @@ const automationLoadingSource = readFileSync(
   "app/projects/[projectKey]/automation/loading.tsx",
   "utf8",
 );
+const automationScenarioSource = readFileSync(
+  "components/AutomationScenarioWorkspace.tsx",
+  "utf8",
+);
 const projectBoardSource = readFileSync("components/ProjectBoardClient.tsx", "utf8");
 const projectIssuesSource = readFileSync("components/ProjectIssuesClient.tsx", "utf8");
 const projectRunsSource = readFileSync("components/ProjectRunsClient.tsx", "utf8");
@@ -76,4 +80,18 @@ test("toast and loading motion is opt-in on small surfaces only", () => {
   assert.match(globalCss, /\.cf-motion-loading-state/);
   assert.match(globalCss, /@keyframes cf-premium-toast-in/);
   assert.doesNotMatch(globalCss, /cf-motion-toast[^}]+(?:width|height|top|left):/s);
+});
+
+test("command and run progress motion is scoped to status changes", () => {
+  assert.match(automationScenarioSource, /cf-motion-command-card/);
+  assert.match(automationScenarioSource, /cf-motion-command-status/);
+  assert.match(automationScenarioSource, /cf-motion-run-status/);
+  assert.match(projectWorkspaceSource, /cf-motion-run-progress/);
+  assert.match(projectWorkspaceSource, /data-progress-step=\{stageState\}/);
+  assert.match(globalCss, /\.cf-motion-command-card\[data-status="running"\]/);
+  assert.match(globalCss, /\.cf-motion-command-status\[data-status="running"\]/);
+  assert.match(globalCss, /\.cf-motion-run-progress \[data-progress-step="running"\]/);
+  assert.match(globalCss, /@keyframes cf-premium-status-pulse/);
+  assert.doesNotMatch(globalCss, /body\[data-premium-motion="enabled"\] \[data-status="running"\]/);
+  assert.doesNotMatch(globalCss, /cf-motion-command-card[^}]+(?:width|height|top|left):/s);
 });

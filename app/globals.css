@@ -183,6 +183,18 @@ body[data-premium-motion="enabled"]
   }
 }
 
+@keyframes cf-premium-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.72;
+    transform: scale(0.985);
+  }
+}
+
 .cf-panel {
   border: 1px solid rgba(55, 65, 81, 0.88);
   background: rgba(17, 24, 39, 0.9);
@@ -330,6 +342,49 @@ body[data-premium-motion="enabled"] .cf-motion-toast {
 }
 
 body[data-premium-motion="enabled"] .cf-motion-loading-state {
+  animation: cf-premium-loading-in 180ms ease-out both;
+}
+
+body[data-premium-motion="enabled"] .cf-motion-command-card {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  body[data-premium-motion="enabled"][data-premium-motion-input="fine"] .cf-motion-command-card:hover,
+  body[data-premium-motion="enabled"][data-premium-motion-input="fine"] .cf-motion-command-card:focus-visible {
+    transform: translateY(-1px);
+  }
+}
+
+body[data-premium-motion="enabled"] .cf-motion-command-card[aria-selected="true"] {
+  transform: translateY(-1px);
+}
+
+body[data-premium-motion="enabled"] .cf-motion-command-card[data-status="running"],
+body[data-premium-motion="enabled"] .cf-motion-command-status[data-status="running"],
+body[data-premium-motion="enabled"] .cf-motion-run-status[data-status="running"],
+body[data-premium-motion="enabled"] .cf-motion-run-progress [data-progress-step="running"],
+body[data-premium-motion="enabled"] .cf-motion-run-progress [data-status="running"] {
+  animation: cf-premium-status-pulse 950ms ease-in-out infinite;
+}
+
+body[data-premium-motion="enabled"] .cf-motion-command-status,
+body[data-premium-motion="enabled"] .cf-motion-run-status,
+body[data-premium-motion="enabled"] .cf-motion-run-progress [data-status],
+body[data-premium-motion="enabled"] .cf-motion-run-progress [data-progress-step] {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+body[data-premium-motion="enabled"] .cf-motion-run-progress {
   animation: cf-premium-loading-in 180ms ease-out both;
 }
 

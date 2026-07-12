@@ -13626,6 +13626,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                         role="option"
                         aria-label={`Command ${index + 1}: ${step.commandText || readableStepLabel(step)}`}
                         aria-selected={selected}
+                        data-status={stepRunState?.status}
                         draggable={!recordingActive}
                         onFocus={() => {
                           setSelectedStepId(step.id);
@@ -13695,7 +13696,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                         }}
                         onKeyDown={(event) => handleTimelineStepKeyDown(event, step, index)}
                         onContextMenu={(event) => openTimelineContextMenu(event, step)}
-                        className={`rounded-lg border px-2.5 py-1.5 outline-none transition focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
+                        className={`cf-motion-command-card rounded-lg border px-2.5 py-1.5 outline-none transition focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
                           draggedStepId === step.id
                             ? "border-emerald-300 bg-emerald-50 opacity-60 dark:border-emerald-500/40 dark:bg-emerald-500/10"
                             : actionDropTarget?.actionStepId === step.id &&
@@ -13790,12 +13791,13 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                           ) : null}
                           {stepRunState ? (
                             <span
+                              data-status={stepRunState.status}
                               title={
                                 stepRunState.message || stepRunState.suggestion
                                   ? [stepRunState.message, stepRunState.suggestion].filter(Boolean).join(" ")
                                   : commandRunStatusLabel(stepRunState)
                               }
-                              className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${badgeClass(commandRunStatusTone(stepRunState))}`}
+                              className={`cf-motion-command-status shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${badgeClass(commandRunStatusTone(stepRunState))}`}
                             >
                               {commandRunStatusLabel(stepRunState)}
                             </span>
@@ -13889,6 +13891,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                                     tabIndex={0}
                                     role="option"
                                     aria-selected={commandSelected}
+                                    data-status={commandRunState?.status}
                                     aria-label={`Action command ${commandIndex + 1}: ${command.commandText || readableStepLabel(command)}`}
                                     onContextMenu={(event) => openActionCommandContextMenu(event, step, command)}
                                     draggable={!recordingActive && Boolean(command.id)}
@@ -13960,7 +13963,7 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                                       setDraggedActionCommand(null);
                                       setActionDropTarget(null);
                                     }}
-                                    className={`flex gap-2 rounded-lg px-2.5 py-1.5 text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
+                                    className={`cf-motion-command-card flex gap-2 rounded-lg px-2.5 py-1.5 text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
                                       actionDropTarget?.actionStepId === step.id &&
                                       actionDropTarget.commandId === command.id &&
                                       actionDropTarget.position === "before"
@@ -14030,12 +14033,13 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                                         )}
                                         {commandRunState ? (
                                           <span
+                                            data-status={commandRunState.status}
                                             title={
                                               commandRunState.message || commandRunState.suggestion
                                                 ? [commandRunState.message, commandRunState.suggestion].filter(Boolean).join(" ")
                                                 : commandRunStatusLabel(commandRunState)
                                             }
-                                            className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${badgeClass(commandRunStatusTone(commandRunState))}`}
+                                            className={`cf-motion-command-status shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${badgeClass(commandRunStatusTone(commandRunState))}`}
                                           >
                                             {commandRunStatusLabel(commandRunState)}
                                           </span>
@@ -14611,9 +14615,9 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                           ) : null}
                         </div>
                         <div className="grid gap-2 rounded-xl border border-zinc-200 bg-white p-3 font-mono text-[11px] text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
-                          <p>if {logicVariableToken("env")} == "staging" {"{"} log "staging" {"}"}</p>
+                          <p>if {logicVariableToken("env")} == &quot;staging&quot; {"{"} log &quot;staging&quot; {"}"}</p>
                           <p>for item in {logicVariableToken("activeProducts")} {"{"} log item.name {"}"}</p>
-                          <p>click css("#submit")</p>
+                          <p>click css(&quot;#submit&quot;)</p>
                         </div>
                       </div>
                     </details>
@@ -16651,7 +16655,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <span
-                    className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${
+                    data-status={liveRunReport.status}
+                    className={`cf-motion-run-status rounded-full px-3 py-1 text-xs font-bold capitalize ${
                       liveRunReport.status === "passed"
                         ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
                         : liveRunReport.status === "failed"
@@ -16705,7 +16710,8 @@ export default function AutomationScenarioWorkspace({ projectKey, scenarioId }: 
                             {row.index + 1}
                           </span>
                           <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] ${
+                            data-status={row.status}
+                            className={`cf-motion-run-status rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] ${
                               row.status === "passed"
                                 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
                                 : row.status === "failed"
