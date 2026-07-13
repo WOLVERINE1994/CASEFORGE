@@ -5,6 +5,7 @@ import SignatureDemoStaticPreview from "./SignatureDemoStaticPreview";
 
 const requirementLoader = () => import("./RequirementToCasesDemo");
 const caseToAutomationLoader = () => import("./CaseToAutomationDemo");
+const browserExecutionLoader = () => import("./BrowserExecutionDemo");
 
 export default function SignatureDemosSection() {
   return (
@@ -35,6 +36,16 @@ export default function SignatureDemosSection() {
               eyebrow="Signature Demo 02"
               title="Manual case to automation draft"
               summary="A reviewed manual case becomes a draft command timeline with locator hints, captured variables and validation checks."
+            />
+          }
+        />
+        <SignatureDemoLazySlot
+          loader={browserExecutionLoader}
+          fallback={
+            <SignatureDemoStaticPreview
+              eyebrow="Signature Demo 03"
+              title="Execute the draft in a browser"
+              summary="The automation draft runs through a simulated browser with progress, captured variables, assertions and evidence."
             />
           }
         />
