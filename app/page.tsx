@@ -16,6 +16,13 @@ const MarketingFeatureSections = dynamic(
   },
 );
 
+const SignatureDemosSection = dynamic(
+  () => import("../components/signature-demos/SignatureDemosSection"),
+  {
+    loading: () => null,
+  },
+);
+
 function MarketingHeroPreviewFallback() {
   return (
     <div className="cf-marketing-hero-preview cf-marketing-preview-fallback" data-marketing-motion="static">
@@ -96,6 +103,7 @@ export default function HomePage() {
       </section>
 
       <MarketingFeatureSections />
+      <SignatureDemosSection />
     </main>
   );
 }
