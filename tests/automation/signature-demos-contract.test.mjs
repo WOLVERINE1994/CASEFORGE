@@ -32,6 +32,10 @@ const browserExecutionDemoSource = readFileSync(
   "components/signature-demos/BrowserExecutionDemo.tsx",
   "utf8",
 );
+const selfHealingDemoSource = readFileSync(
+  "components/signature-demos/SelfHealingDemo.tsx",
+  "utf8",
+);
 
 test("signature demos require all marketing motion flags and lazy loading", () => {
   assert.match(motionHookSource, /NEXT_PUBLIC_SIGNATURE_DEMOS_ENABLED/);
@@ -42,6 +46,7 @@ test("signature demos require all marketing motion flags and lazy loading", () =
   assert.match(sectionSource, /import\("\.\/RequirementToCasesDemo"\)/);
   assert.match(sectionSource, /import\("\.\/CaseToAutomationDemo"\)/);
   assert.match(sectionSource, /import\("\.\/BrowserExecutionDemo"\)/);
+  assert.match(sectionSource, /import\("\.\/SelfHealingDemo"\)/);
 });
 
 test("shared demo timeline centralizes cleanup and playback state", () => {
@@ -92,11 +97,23 @@ test("browser execution demo stays visual-only and reports run evidence", () => 
   assert.doesNotMatch(browserExecutionDemoSource, /fetch\(|Prisma|readProjects|automation\/sessions|api\//);
 });
 
+test("self healing demo shows reviewed locator repair without running automation", () => {
+  assert.match(selfHealingDemoSource, /SelfHealingDemo/);
+  assert.match(selfHealingDemoSource, /Heal a broken locator/);
+  assert.match(selfHealingDemoSource, /Locator mismatch detected/);
+  assert.match(selfHealingDemoSource, /DOM snapshot compared/);
+  assert.match(selfHealingDemoSource, /Semantic candidate selected/);
+  assert.match(selfHealingDemoSource, /Repair confidence/);
+  assert.match(selfHealingDemoSource, /Run resumed after review gate/);
+  assert.doesNotMatch(selfHealingDemoSource, /fetch\(|Prisma|readProjects|automation\/sessions|api\//);
+});
+
 test("signature demo css is isolated from authenticated product routes", () => {
   assert.match(cssSource, /\.cf-signature-demo/);
   assert.match(cssSource, /\.cf-req-cases-demo/);
   assert.match(cssSource, /\.cf-case-automation-demo/);
   assert.match(cssSource, /\.cf-browser-execution-demo/);
+  assert.match(cssSource, /\.cf-self-healing-demo/);
   assert.doesNotMatch(cssSource, /projects\/\*/);
   assert.doesNotMatch(cssSource, /automation\/projects/);
 });
