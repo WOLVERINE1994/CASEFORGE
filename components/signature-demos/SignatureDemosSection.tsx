@@ -7,6 +7,7 @@ const requirementLoader = () => import("./RequirementToCasesDemo");
 const caseToAutomationLoader = () => import("./CaseToAutomationDemo");
 const browserExecutionLoader = () => import("./BrowserExecutionDemo");
 const selfHealingLoader = () => import("./SelfHealingDemo");
+const runReportLoader = () => import("./RunReportDemo");
 
 export default function SignatureDemosSection() {
   return (
@@ -57,6 +58,16 @@ export default function SignatureDemosSection() {
               eyebrow="Signature Demo 04"
               title="Heal a broken locator"
               summary="A failed locator becomes a reviewed repair suggestion with candidate scores, audit trail and resumed run state."
+            />
+          }
+        />
+        <SignatureDemoLazySlot
+          loader={runReportLoader}
+          fallback={
+            <SignatureDemoStaticPreview
+              eyebrow="Signature Demo 05"
+              title="Generate the release report"
+              summary="Completed run data becomes a shareable QA report with coverage, evidence, review notes and export status."
             />
           }
         />
