@@ -4,6 +4,7 @@ import SignatureDemoLazySlot from "./SignatureDemoLazySlot";
 import SignatureDemoStaticPreview from "./SignatureDemoStaticPreview";
 
 const requirementLoader = () => import("./RequirementToCasesDemo");
+const caseToAutomationLoader = () => import("./CaseToAutomationDemo");
 
 export default function SignatureDemosSection() {
   return (
@@ -24,6 +25,16 @@ export default function SignatureDemosSection() {
               eyebrow="Signature Demo 01"
               title="Requirement to test cases"
               summary="Recognised login requirement signals become reviewable cases, coverage scores and quality indicators."
+            />
+          }
+        />
+        <SignatureDemoLazySlot
+          loader={caseToAutomationLoader}
+          fallback={
+            <SignatureDemoStaticPreview
+              eyebrow="Signature Demo 02"
+              title="Manual case to automation draft"
+              summary="A reviewed manual case becomes a draft command timeline with locator hints, captured variables and validation checks."
             />
           }
         />

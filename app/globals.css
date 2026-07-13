@@ -1150,6 +1150,12 @@ body[data-premium-motion="enabled"] .cf-motion-run-progress {
   gap: 0.85rem;
 }
 
+.cf-case-automation-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+}
+
 .cf-recognized-entities,
 .cf-demo-category-grid,
 .cf-demo-signal-list {
@@ -1184,6 +1190,151 @@ body[data-premium-motion="enabled"] .cf-motion-run-progress {
 .cf-req-cases-demo[data-demo-state="replaying"] .cf-demo-category-grid span[data-visible="false"] {
   opacity: 0.22;
   transform: translateY(4px);
+}
+
+.cf-case-manual-steps {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.cf-case-manual-steps span {
+  border-left: 2px solid rgba(103, 232, 249, 0.55);
+  border-radius: 12px;
+  background: rgba(8, 145, 178, 0.1);
+  padding: 0.62rem 0.72rem;
+  color: #dbeafe;
+  font-size: 0.84rem;
+  font-weight: 750;
+  line-height: 1.35;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.cf-case-automation-demo[data-demo-state="playing"] .cf-case-manual-steps span[data-visible="false"],
+.cf-case-automation-demo[data-demo-state="replaying"] .cf-case-manual-steps span[data-visible="false"] {
+  opacity: 0.18;
+  transform: translateX(-6px);
+}
+
+.cf-command-field-grid {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+.cf-command-field-grid span {
+  display: grid;
+  gap: 0.18rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.32);
+  padding: 0.72rem;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    border-color 180ms ease;
+}
+
+.cf-case-automation-demo[data-demo-state="playing"] .cf-command-field-grid span[data-visible="false"],
+.cf-case-automation-demo[data-demo-state="replaying"] .cf-command-field-grid span[data-visible="false"] {
+  opacity: 0.18;
+  transform: translateY(7px);
+}
+
+.cf-command-field-grid small {
+  color: #94a3b8;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.cf-command-field-grid strong {
+  color: #f8fafc;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.cf-automation-command-list {
+  display: grid;
+  align-content: start;
+  gap: 0.55rem;
+}
+
+.cf-automation-command-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.68rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, 0.38);
+  padding: 0.75rem;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 190ms ease,
+    transform 190ms ease,
+    border-color 190ms ease;
+}
+
+.cf-case-automation-demo[data-demo-state="playing"] .cf-automation-command-card[data-visible="false"],
+.cf-case-automation-demo[data-demo-state="replaying"] .cf-automation-command-card[data-visible="false"] {
+  opacity: 0.16;
+  transform: translateY(8px);
+}
+
+.cf-automation-command-card > span {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.13);
+  color: #67e8f9;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.cf-automation-command-card strong,
+.cf-automation-command-card small {
+  display: block;
+}
+
+.cf-automation-command-card strong {
+  color: #f8fafc;
+  font-size: 0.87rem;
+  line-height: 1.28;
+}
+
+.cf-automation-command-card small {
+  margin-top: 0.22rem;
+  color: #cbd5e1;
+  font-size: 0.74rem;
+  line-height: 1.38;
+}
+
+.cf-automation-command-card em {
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.12);
+  padding: 0.34rem 0.52rem;
+  color: #bbf7d0;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.cf-automation-readiness-card {
+  display: grid;
+  align-content: start;
+  gap: 0.65rem;
 }
 
 .cf-demo-score-panel {
@@ -1309,9 +1460,22 @@ body[data-premium-motion="enabled"] .cf-motion-run-progress {
     grid-template-columns: 1fr 1fr;
   }
 
+  .cf-case-automation-layout {
+    grid-template-columns: 0.9fr 1.1fr;
+  }
+
   .cf-requirement-card,
   .cf-generated-case-stack {
     grid-row: span 2;
+  }
+
+  .cf-case-source-card,
+  .cf-automation-command-list {
+    grid-row: span 2;
+  }
+
+  .cf-command-field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

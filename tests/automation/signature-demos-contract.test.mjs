@@ -24,6 +24,10 @@ const requirementDemoSource = readFileSync(
   "components/signature-demos/RequirementToCasesDemo.tsx",
   "utf8",
 );
+const caseToAutomationDemoSource = readFileSync(
+  "components/signature-demos/CaseToAutomationDemo.tsx",
+  "utf8",
+);
 
 test("signature demos require all marketing motion flags and lazy loading", () => {
   assert.match(motionHookSource, /NEXT_PUBLIC_SIGNATURE_DEMOS_ENABLED/);
@@ -32,6 +36,7 @@ test("signature demos require all marketing motion flags and lazy loading", () =
   assert.match(lazySlotSource, /IntersectionObserver/);
   assert.match(lazySlotSource, /rootMargin: "420px 0px"/);
   assert.match(sectionSource, /import\("\.\/RequirementToCasesDemo"\)/);
+  assert.match(sectionSource, /import\("\.\/CaseToAutomationDemo"\)/);
 });
 
 test("shared demo timeline centralizes cleanup and playback state", () => {
@@ -60,9 +65,21 @@ test("requirement demo uses mock data and exposes required controls", () => {
   assert.doesNotMatch(requirementDemoSource, /fetch\(|Prisma|readProjects|automation\/sessions|api\//);
 });
 
+test("manual case to automation demo remains a mock-only draft simulation", () => {
+  assert.match(caseToAutomationDemoSource, /CaseToAutomationDemo/);
+  assert.match(caseToAutomationDemoSource, /Manual case to automation draft/);
+  assert.match(caseToAutomationDemoSource, /Capture hero heading/);
+  assert.match(caseToAutomationDemoSource, /Compare expected heading/);
+  assert.match(caseToAutomationDemoSource, /{{heroHeading}}/);
+  assert.match(caseToAutomationDemoSource, /Mapping confidence/);
+  assert.match(caseToAutomationDemoSource, /Automation draft/);
+  assert.doesNotMatch(caseToAutomationDemoSource, /fetch\(|Prisma|readProjects|automation\/sessions|api\//);
+});
+
 test("signature demo css is isolated from authenticated product routes", () => {
   assert.match(cssSource, /\.cf-signature-demo/);
   assert.match(cssSource, /\.cf-req-cases-demo/);
+  assert.match(cssSource, /\.cf-case-automation-demo/);
   assert.doesNotMatch(cssSource, /projects\/\*/);
   assert.doesNotMatch(cssSource, /automation\/projects/);
 });
